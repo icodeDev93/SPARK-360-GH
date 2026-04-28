@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { inventoryItems } from '@/mocks/inventory';
 
 export interface StockAlertItem {
-  id: number;
+  id: string;
   name: string;
   sku: string;
   category: string;
@@ -15,35 +15,35 @@ export interface StockAlertItem {
 const DISMISSED_KEY = 'spark360_dismissed_alerts';
 
 function getSeverity(stock: number, reorder: number): 'critical' | 'low' | 'warning' {
-  const ratio = stock / reorder;
   if (stock === 0) return 'critical';
+  const ratio = stock / reorder;
   if (ratio <= 0.3) return 'critical';
   if (ratio <= 0.6) return 'low';
   return 'warning';
 }
 
-function loadDismissed(): Set<number> {
+function loadDismissed(): Set<string> {
   try {
     const stored = localStorage.getItem(DISMISSED_KEY);
-    if (stored) return new Set(JSON.parse(stored) as number[]);
+    if (stored) return new Set(JSON.parse(stored) as string[]);
   } catch { /* ignore */ }
   return new Set();
 }
 
 export function useStockAlerts() {
-  const [dismissed, setDismissed] = useState<Set<number>>(loadDismissed);
+  const [dismissed, setDismissed] = useState<Set<string>>(loadDismissed);
 
   const allAlerts: StockAlertItem[] = inventoryItems
-    .filter((item) => item.stock <= item.reorder)
+    .filter((item) => item.currentStock <= item.reorderLevel)
     .map((item) => ({
-      id: item.id,
-      name: item.name,
+      id: item.itemId,
+      name: item.productName,
       sku: item.sku,
       category: item.category,
-      stock: item.stock,
-      reorder: item.reorder,
+      stock: item.currentStock,
+      reorder: item.reorderLevel,
       image: item.image,
-      severity: getSeverity(item.stock, item.reorder),
+      severity: getSeverity(item.currentStock, item.reorderLevel),
     }))
     .sort((a, b) => {
       const order = { critical: 0, low: 1, warning: 2 };
@@ -52,7 +52,7 @@ export function useStockAlerts() {
 
   const activeAlerts = allAlerts.filter((a) => !dismissed.has(a.id));
 
-  const dismissAlert = (id: number) => {
+  const dismissAlert = (id: string) => {
     setDismissed((prev) => {
       const next = new Set(prev);
       next.add(id);
