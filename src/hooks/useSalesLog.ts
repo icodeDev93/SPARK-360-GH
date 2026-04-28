@@ -1,193 +1,165 @@
 import { useState } from 'react';
+import type { InvoiceRecord, SaleLineItem, PaymentMethod } from '@/types/erp';
+import { generateNextInvoiceNo, buildInvoice, refundInvoice, calcLineItem } from '@/services/salesService';
 
-export interface SaleLineItem {
-  id: number;
-  name: string;
-  price: number;
-  qty: number;
-  image: string;
-}
-
-export interface SaleRecord {
-  id: string;
-  receiptNo: string;
-  date: string;
-  time: string;
-  items: SaleLineItem[];
-  subtotal: number;
-  tax: number;
-  discountAmt: number;
-  discount: number;
-  grandTotal: number;
-  paymentMethod: 'cash' | 'mobile' | 'card';
-  cashier: string;
-  status: 'completed' | 'refunded';
-}
+export type { InvoiceRecord, SaleLineItem, PaymentMethod };
 
 const SALES_KEY = 'spark360_sales_log';
 
-const SEED_SALES: SaleRecord[] = [
+const SEED_INVOICES: InvoiceRecord[] = [
   {
-    id: 's001',
-    receiptNo: 'RCP-001',
-    date: 'Apr 20, 2026',
-    time: '09:14 AM',
+    invoiceNo: 'INV001',
+    date: '2026-04-20',
+    customerId: 'C001',
+    customerName: 'Asante Mini Mart',
     items: [
-      { id: 1, name: 'Samsung Galaxy A15', price: 189.99, qty: 1, image: '' },
-      { id: 7, name: 'Screen Protector', price: 8.50, qty: 2, image: '' },
+      calcLineItem('P003', 'Milo Sachet (30g)', 100, 0, 4.00, 2.50),
+      calcLineItem('P006', 'Bourbon Biscuits (150g)', 48, 0, 18.00, 12.00),
     ],
-    subtotal: 206.99,
-    tax: 20.70,
-    discountAmt: 0,
-    discount: 0,
-    grandTotal: 227.69,
-    paymentMethod: 'cash',
-    cashier: 'Ama Owusu',
+    netSales: 400 + 864,
+    totalCost: 250 + 576,
+    grossMargin: 150 + 288,
+    paymentMethod: 'MoMo',
     status: 'completed',
+    cashier: 'Ama Owusu',
   },
   {
-    id: 's002',
-    receiptNo: 'RCP-002',
-    date: 'Apr 21, 2026',
-    time: '11:32 AM',
+    invoiceNo: 'INV002',
+    date: '2026-04-21',
+    customerId: 'C002',
+    customerName: 'Mensah Superstore',
     items: [
-      { id: 2, name: 'Wireless Earbuds Pro', price: 45.00, qty: 1, image: '' },
-      { id: 5, name: 'iPhone 15 Case', price: 12.99, qty: 1, image: '' },
+      calcLineItem('P009', 'Malta Guinness (330ml)', 120, 0, 9.00, 5.50),
+      calcLineItem('P001', 'Pringles Original (165g)', 24, 0, 42.00, 28.00),
     ],
-    subtotal: 57.99,
-    tax: 5.80,
-    discountAmt: 5.80,
-    discount: 10,
-    grandTotal: 57.99,
-    paymentMethod: 'card',
-    cashier: 'Ama Owusu',
+    netSales: 1080 + 1008,
+    totalCost: 660 + 672,
+    grossMargin: 420 + 336,
+    paymentMethod: 'Bank Transfer',
     status: 'completed',
-  },
-  {
-    id: 's003',
-    receiptNo: 'RCP-003',
-    date: 'Apr 22, 2026',
-    time: '02:05 PM',
-    items: [
-      { id: 9, name: 'Mechanical Keyboard', price: 75.00, qty: 1, image: '' },
-      { id: 10, name: 'Mouse Wireless', price: 28.00, qty: 1, image: '' },
-      { id: 3, name: 'USB-C Cable 2m', price: 8.50, qty: 2, image: '' },
-    ],
-    subtotal: 120.00,
-    tax: 12.00,
-    discountAmt: 0,
-    discount: 0,
-    grandTotal: 132.00,
-    paymentMethod: 'mobile',
     cashier: 'Kwame Mensah',
-    status: 'completed',
   },
   {
-    id: 's004',
-    receiptNo: 'RCP-004',
-    date: 'Apr 23, 2026',
-    time: '04:48 PM',
+    invoiceNo: 'INV003',
+    date: '2026-04-22',
+    customerId: 'C005',
+    customerName: 'Boateng & Sons Dist.',
     items: [
-      { id: 6, name: 'Bluetooth Speaker', price: 49.99, qty: 2, image: '' },
+      calcLineItem('P004', 'Ovaltine Tin (400g)', 30, 0, 65.00, 45.00),
+      calcLineItem('P012', "Wrigley's Spearmint Gum (10s)", 200, 0, 5.00, 3.00),
     ],
-    subtotal: 99.98,
-    tax: 10.00,
-    discountAmt: 10.00,
-    discount: 10,
-    grandTotal: 99.98,
-    paymentMethod: 'cash',
+    netSales: 1950 + 1000,
+    totalCost: 1350 + 600,
+    grossMargin: 600 + 400,
+    paymentMethod: 'Cheque',
+    status: 'completed',
     cashier: 'Ama Owusu',
+  },
+  {
+    invoiceNo: 'INV004',
+    date: '2026-04-23',
+    customerId: 'C003',
+    customerName: 'Fatima Provision Store',
+    items: [
+      calcLineItem('P011', 'Table Water 500ml (Crate/24)', 10, 0, 48.00, 28.80),
+      calcLineItem('P008', 'Choco Mallow (Pack of 6)', 20, 0, 14.00, 8.00),
+    ],
+    netSales: 480 + 280,
+    totalCost: 288 + 160,
+    grossMargin: 192 + 120,
+    paymentMethod: 'Cash',
     status: 'refunded',
-  },
-  {
-    id: 's005',
-    receiptNo: 'RCP-005',
-    date: 'Apr 24, 2026',
-    time: '10:20 AM',
-    items: [
-      { id: 8, name: 'Power Bank 20000mAh', price: 35.00, qty: 3, image: '' },
-      { id: 4, name: 'Laptop Stand Aluminum', price: 32.00, qty: 1, image: '' },
-    ],
-    subtotal: 137.00,
-    tax: 13.70,
-    discountAmt: 0,
-    discount: 0,
-    grandTotal: 150.70,
-    paymentMethod: 'card',
     cashier: 'Kwame Mensah',
-    status: 'completed',
   },
   {
-    id: 's006',
-    receiptNo: 'RCP-006',
-    date: 'Apr 25, 2026',
-    time: '03:15 PM',
+    invoiceNo: 'INV005',
+    date: '2026-04-25',
+    customerId: 'C007',
+    customerName: 'Owusu Family Store',
     items: [
-      { id: 12, name: 'Polo Shirt (M)', price: 22.00, qty: 2, image: '' },
-      { id: 11, name: 'Notebook A5', price: 4.50, qty: 4, image: '' },
+      calcLineItem('P015', 'Coca-Cola PET 500ml (Crate/24)', 20, 0, 120.00, 72.00),
+      calcLineItem('P013', 'FanChoco Bar (50g)', 100, 0, 10.00, 6.00),
     ],
-    subtotal: 62.00,
-    tax: 6.20,
-    discountAmt: 0,
-    discount: 0,
-    grandTotal: 68.20,
-    paymentMethod: 'mobile',
-    cashier: 'Ama Owusu',
+    netSales: 2400 + 1000,
+    totalCost: 1440 + 600,
+    grossMargin: 960 + 400,
+    paymentMethod: 'Bank Transfer',
     status: 'completed',
+    cashier: 'Ama Owusu',
+  },
+  {
+    invoiceNo: 'INV006',
+    date: '2026-04-26',
+    customerId: 'C004',
+    customerName: 'Osei Kiosk Junction',
+    items: [
+      calcLineItem('P002', "Lay's Classic Chips (80g)", 12, 0, 22.00, 15.00),
+      calcLineItem('P007', 'Kit Kat 4-Finger (41.5g)', 24, 0, 16.00, 10.00),
+    ],
+    netSales: 264 + 384,
+    totalCost: 180 + 240,
+    grossMargin: 84 + 144,
+    paymentMethod: 'MoMo',
+    status: 'completed',
+    cashier: 'Kwame Mensah',
   },
 ];
 
-function loadSales(): SaleRecord[] {
+function loadInvoices(): InvoiceRecord[] {
   try {
     const stored = localStorage.getItem(SALES_KEY);
     if (stored) {
-      const parsed = JSON.parse(stored) as SaleRecord[];
+      const parsed = JSON.parse(stored) as InvoiceRecord[];
       if (Array.isArray(parsed) && parsed.length > 0) return parsed;
     }
   } catch {
     // ignore
   }
-  localStorage.setItem(SALES_KEY, JSON.stringify(SEED_SALES));
-  return SEED_SALES;
+  localStorage.setItem(SALES_KEY, JSON.stringify(SEED_INVOICES));
+  return SEED_INVOICES;
 }
 
 export function useSalesLog() {
-  const [sales, setSales] = useState<SaleRecord[]>(loadSales);
+  const [invoices, setInvoices] = useState<InvoiceRecord[]>(loadInvoices);
 
-  const addSale = (sale: Omit<SaleRecord, 'id' | 'receiptNo' | 'date' | 'time' | 'status'>) => {
-    const now = new Date();
-    const newSale: SaleRecord = {
-      ...sale,
-      id: `s${Date.now()}`,
-      receiptNo: `RCP-${String(Date.now()).slice(-6)}`,
-      date: now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-      time: now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-      status: 'completed',
-    };
-    setSales((prev) => {
-      const next = [newSale, ...prev];
+  const addInvoice = (
+    data: Omit<InvoiceRecord, 'invoiceNo' | 'date' | 'status' | 'netSales' | 'totalCost' | 'grossMargin'>
+  ) => {
+    const invoiceNo = generateNextInvoiceNo(invoices);
+    const newInvoice = buildInvoice(
+      invoiceNo,
+      data.customerId,
+      data.customerName,
+      data.items,
+      data.paymentMethod,
+      data.cashier
+    );
+    setInvoices((prev) => {
+      const next = [newInvoice, ...prev];
       localStorage.setItem(SALES_KEY, JSON.stringify(next));
       return next;
     });
-    return newSale;
+    return newInvoice;
   };
 
-  const refundSale = (id: string) => {
-    setSales((prev) => {
-      const next = prev.map((s) => s.id === id ? { ...s, status: 'refunded' as const } : s);
+  const refund = (invoiceNo: string) => {
+    setInvoices((prev) => {
+      const next = prev.map((inv) =>
+        inv.invoiceNo === invoiceNo ? refundInvoice(inv) : inv
+      );
       localStorage.setItem(SALES_KEY, JSON.stringify(next));
       return next;
     });
   };
 
-  const totalRevenue = sales
-    .filter((s) => s.status === 'completed')
-    .reduce((sum, s) => sum + s.grandTotal, 0);
+  const totalRevenue = invoices
+    .filter((inv) => inv.status === 'completed')
+    .reduce((sum, inv) => sum + inv.netSales, 0);
 
-  const todaySales = sales.filter((s) => {
-    const today = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-    return s.date === today && s.status === 'completed';
+  const todayInvoices = invoices.filter((inv) => {
+    const today = new Date().toISOString().split('T')[0];
+    return inv.date === today && inv.status === 'completed';
   });
 
-  return { sales, addSale, refundSale, totalRevenue, todaySales };
+  return { invoices, addInvoice, refund, totalRevenue, todayInvoices };
 }

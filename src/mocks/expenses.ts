@@ -1,36 +1,32 @@
-export interface ExpenseRecord {
-  id: string;
-  description: string;
-  category: string;
-  amount: number;
-  date: string;
-  paidBy: string;
-  notes: string;
+import type { ExpenseRecord, ExpenseCategory } from '@/types/erp';
+import { convertToUSD } from '@/services/expenseService';
+
+export { EXPENSE_CATEGORIES, PAYMENT_METHODS } from '@/lib/constants';
+
+function makeExpense(
+  expenseId: string,
+  date: string,
+  category: ExpenseCategory,
+  description: string,
+  amountGHS: number,
+  approvedBy: string
+): ExpenseRecord {
+  return { expenseId, date, category, description, amountGHS, amountUSD: convertToUSD(amountGHS), approvedBy };
 }
 
-export const EXPENSE_CATEGORIES = [
-  'Rent',
-  'Utilities',
-  'Payroll',
-  'Supplies',
-  'Marketing',
-  'Maintenance',
-  'Transport',
-  'Insurance',
-  'Other',
-];
-
-export const PAYMENT_METHODS = ['Cash', 'Bank Transfer', 'Card', 'Mobile Money'];
-
 export const seedExpenses: ExpenseRecord[] = [
-  { id: 'e001', description: 'Store Rent - April', category: 'Rent', amount: 1200.00, date: '2026-04-01', paidBy: 'Bank Transfer', notes: 'Monthly rent for main store location' },
-  { id: 'e002', description: 'Electricity Bill', category: 'Utilities', amount: 320.00, date: '2026-04-05', paidBy: 'Cash', notes: '' },
-  { id: 'e003', description: 'Staff Salaries', category: 'Payroll', amount: 2400.00, date: '2026-04-10', paidBy: 'Bank Transfer', notes: '3 staff members' },
-  { id: 'e004', description: 'Internet & Phone', category: 'Utilities', amount: 85.00, date: '2026-04-12', paidBy: 'Mobile Money', notes: 'Fibre + mobile data bundle' },
-  { id: 'e005', description: 'Packaging Materials', category: 'Supplies', amount: 215.00, date: '2026-04-15', paidBy: 'Cash', notes: 'Bags, boxes, tape' },
-  { id: 'e006', description: 'Marketing / Ads', category: 'Marketing', amount: 500.00, date: '2026-04-18', paidBy: 'Card', notes: 'Social media ads for April campaign' },
-  { id: 'e007', description: 'Cleaning Services', category: 'Maintenance', amount: 150.00, date: '2026-04-22', paidBy: 'Cash', notes: 'Weekly cleaning contract' },
-  { id: 'e008', description: 'Printer Ink & Paper', category: 'Supplies', amount: 75.00, date: '2026-04-24', paidBy: 'Cash', notes: '' },
-  { id: 'e009', description: 'Delivery Van Fuel', category: 'Transport', amount: 180.00, date: '2026-04-25', paidBy: 'Cash', notes: 'April fuel expenses' },
-  { id: 'e010', description: 'Business Insurance', category: 'Insurance', amount: 420.00, date: '2026-04-26', paidBy: 'Bank Transfer', notes: 'Quarterly premium' },
+  makeExpense('EXP001', '2026-04-01', 'Rent',        'Warehouse Rent — April 2026',             2800.00, 'Ebenezer A.'),
+  makeExpense('EXP002', '2026-04-03', 'Utilities',   'Electricity Bill — March Invoice',          420.00, 'Ebenezer A.'),
+  makeExpense('EXP003', '2026-04-05', 'Transport',   'Delivery Van Fuel — Week 1',                380.00, 'Ama Owusu'),
+  makeExpense('EXP004', '2026-04-10', 'Salaries',    'Staff Salaries — April (5 staff)',         6500.00, 'Ebenezer A.'),
+  makeExpense('EXP005', '2026-04-12', 'Utilities',   'Internet & Mobile Data Bundle',              110.00, 'Kwame Mensah'),
+  makeExpense('EXP006', '2026-04-14', 'Transport',   'Delivery Van Fuel — Week 2',                350.00, 'Ama Owusu'),
+  makeExpense('EXP007', '2026-04-15', 'Supplies',    'Packaging: Cartons, Tape & Labels',         480.00, 'Kwame Mensah'),
+  makeExpense('EXP008', '2026-04-18', 'Marketing',   'Social Media & Radio Ads — April',          750.00, 'Ebenezer A.'),
+  makeExpense('EXP009', '2026-04-20', 'Maintenance', 'Forklift Servicing & Repairs',              620.00, 'Ebenezer A.'),
+  makeExpense('EXP010', '2026-04-21', 'Transport',   'Delivery Van Fuel — Week 3',                370.00, 'Ama Owusu'),
+  makeExpense('EXP011', '2026-04-22', 'Supplies',    'Printer Ink, Paper & Office Stationery',    145.00, 'Kwame Mensah'),
+  makeExpense('EXP012', '2026-04-25', 'Insurance',   'Business & Stock Insurance — Q2 Premium',  1800.00, 'Ebenezer A.'),
+  makeExpense('EXP013', '2026-04-26', 'Transport',   'Delivery Van Fuel — Week 4',                360.00, 'Ama Owusu'),
+  makeExpense('EXP014', '2026-04-28', 'Maintenance', 'Warehouse Cleaning & Pest Control',         280.00, 'Kwame Mensah'),
 ];

@@ -1,5 +1,9 @@
 import { useState } from 'react';
-import { ExpenseRecord, seedExpenses } from '@/mocks/expenses';
+import type { ExpenseRecord, ExpenseCategory } from '@/types/erp';
+import { seedExpenses } from '@/mocks/expenses';
+import { buildExpense, totalByCategory, grandTotalGHS, grandTotalUSD } from '@/services/expenseService';
+
+export type { ExpenseRecord };
 
 const EXPENSES_KEY = 'spark360_expenses';
 
@@ -20,8 +24,9 @@ function loadExpenses(): ExpenseRecord[] {
 export function useExpenses() {
   const [expenses, setExpenses] = useState<ExpenseRecord[]>(loadExpenses);
 
-  const addExpense = (data: Omit<ExpenseRecord, 'id'>) => {
-    const newExp: ExpenseRecord = { ...data, id: `e${Date.now()}` };
+  const addExpense = (data: Omit<ExpenseRecord, 'expenseId' | 'amountUSD'>) => {
+    const built = buildExpense(data);
+    const newExp: ExpenseRecord = { ...built, expenseId: `EXP${Date.now()}` };
     setExpenses((prev) => {
       const next = [newExp, ...prev];
       localStorage.setItem(EXPENSES_KEY, JSON.stringify(next));
@@ -29,28 +34,37 @@ export function useExpenses() {
     });
   };
 
-  const updateExpense = (id: string, data: Partial<Omit<ExpenseRecord, 'id'>>) => {
+  const updateExpense = (
+    expenseId: string,
+    data: Partial<Omit<ExpenseRecord, 'expenseId' | 'amountUSD'>>
+  ) => {
     setExpenses((prev) => {
-      const next = prev.map((e) => e.id === id ? { ...e, ...data } : e);
+      const next = prev.map((e) => {
+        if (e.expenseId !== expenseId) return e;
+        const merged = { ...e, ...data };
+        return { ...merged, amountUSD: merged.amountGHS / 15.5 };
+      });
       localStorage.setItem(EXPENSES_KEY, JSON.stringify(next));
       return next;
     });
   };
 
-  const deleteExpense = (id: string) => {
+  const deleteExpense = (expenseId: string) => {
     setExpenses((prev) => {
-      const next = prev.filter((e) => e.id !== id);
+      const next = prev.filter((e) => e.expenseId !== expenseId);
       localStorage.setItem(EXPENSES_KEY, JSON.stringify(next));
       return next;
     });
   };
 
-  const totalByCategory = expenses.reduce<Record<string, number>>((acc, e) => {
-    acc[e.category] = (acc[e.category] || 0) + e.amount;
-    return acc;
-  }, {});
-
-  const grandTotal = expenses.reduce((sum, e) => sum + e.amount, 0);
-
-  return { expenses, addExpense, updateExpense, deleteExpense, totalByCategory, grandTotal };
+  return {
+    expenses,
+    addExpense,
+    updateExpense,
+    deleteExpense,
+    totalByCategory: totalByCategory(expenses),
+    grandTotalGHS: grandTotalGHS(expenses),
+    grandTotalUSD: grandTotalUSD(expenses),
+    byCategory: (cat: ExpenseCategory) => expenses.filter((e) => e.category === cat),
+  };
 }

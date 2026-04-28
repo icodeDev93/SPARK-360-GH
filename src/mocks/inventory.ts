@@ -1,16 +1,30 @@
-export const inventoryItems = [
-  { id: 1, name: 'Samsung Galaxy A15', sku: 'EL-SGA15-001', category: 'Electronics', stock: 3, reorder: 10, costPrice: 1450.00, sellPrice: 1799.00, image: 'https://readdy.ai/api/search-image?query=Samsung%20Galaxy%20A15%20smartphone%20product%20photography%20clean%20white%20background%20minimal%20studio&width=64&height=64&seq=inv1&orientation=squarish' },
-  { id: 2, name: 'Wireless Earbuds Pro', sku: 'EL-WEP-002', category: 'Electronics', stock: 5, reorder: 15, costPrice: 280.00, sellPrice: 420.00, image: 'https://readdy.ai/api/search-image?query=wireless%20earbuds%20TWS%20product%20photography%20clean%20white%20background%20minimal%20studio&width=64&height=64&seq=inv2&orientation=squarish' },
-  { id: 3, name: 'USB-C Cable 2m', sku: 'AC-USBC-003', category: 'Accessories', stock: 42, reorder: 20, costPrice: 35.00, sellPrice: 65.00, image: 'https://readdy.ai/api/search-image?query=USB-C%20cable%202%20meter%20product%20photography%20clean%20white%20background%20minimal%20studio&width=64&height=64&seq=inv3&orientation=squarish' },
-  { id: 4, name: 'Laptop Stand Aluminum', sku: 'AC-LSA-004', category: 'Accessories', stock: 2, reorder: 8, costPrice: 180.00, sellPrice: 290.00, image: 'https://readdy.ai/api/search-image?query=aluminum%20laptop%20stand%20adjustable%20product%20photography%20clean%20white%20background%20minimal%20studio&width=64&height=64&seq=inv4&orientation=squarish' },
-  { id: 5, name: 'iPhone 15 Case', sku: 'AC-IP15C-005', category: 'Accessories', stock: 45, reorder: 20, costPrice: 45.00, sellPrice: 95.00, image: 'https://readdy.ai/api/search-image?query=iPhone%2015%20silicone%20case%20product%20photography%20clean%20white%20background%20minimal%20studio&width=64&height=64&seq=inv5&orientation=squarish' },
-  { id: 6, name: 'Bluetooth Speaker', sku: 'EL-BTS-006', category: 'Electronics', stock: 22, reorder: 10, costPrice: 250.00, sellPrice: 420.00, image: 'https://readdy.ai/api/search-image?query=portable%20bluetooth%20speaker%20cylindrical%20product%20photography%20clean%20white%20background%20minimal%20studio&width=64&height=64&seq=inv6&orientation=squarish' },
-  { id: 7, name: 'Screen Protector', sku: 'AC-SP-007', category: 'Accessories', stock: 120, reorder: 50, costPrice: 18.00, sellPrice: 45.00, image: 'https://readdy.ai/api/search-image?query=tempered%20glass%20screen%20protector%20phone%20product%20photography%20clean%20white%20background%20minimal%20studio&width=64&height=64&seq=inv7&orientation=squarish' },
-  { id: 8, name: 'Power Bank 20000mAh', sku: 'EL-PB20-008', category: 'Electronics', stock: 18, reorder: 10, costPrice: 195.00, sellPrice: 320.00, image: 'https://readdy.ai/api/search-image?query=power%20bank%2020000mAh%20portable%20charger%20slim%20product%20photography%20clean%20white%20background%20minimal%20studio&width=64&height=64&seq=inv8&orientation=squarish' },
-  { id: 9, name: 'Mechanical Keyboard', sku: 'EL-MK-009', category: 'Electronics', stock: 9, reorder: 5, costPrice: 480.00, sellPrice: 750.00, image: 'https://readdy.ai/api/search-image?query=compact%20mechanical%20keyboard%20product%20photography%20clean%20white%20background%20minimal%20studio&width=64&height=64&seq=inv9&orientation=squarish' },
-  { id: 10, name: 'Wireless Mouse', sku: 'EL-WM-010', category: 'Electronics', stock: 14, reorder: 8, costPrice: 155.00, sellPrice: 260.00, image: 'https://readdy.ai/api/search-image?query=wireless%20computer%20mouse%20ergonomic%20product%20photography%20clean%20white%20background%20minimal%20studio&width=64&height=64&seq=inv10&orientation=squarish' },
-  { id: 11, name: 'Notebook A5', sku: 'ST-NBA5-011', category: 'Stationery', stock: 200, reorder: 50, costPrice: 12.00, sellPrice: 25.00, image: 'https://readdy.ai/api/search-image?query=A5%20hardcover%20notebook%20journal%20product%20photography%20clean%20white%20background%20minimal%20studio&width=64&height=64&seq=inv11&orientation=squarish' },
-  { id: 12, name: 'Polo Shirt (M)', sku: 'CL-PSM-012', category: 'Clothing', stock: 30, reorder: 15, costPrice: 85.00, sellPrice: 150.00, image: 'https://readdy.ai/api/search-image?query=polo%20shirt%20medium%20size%20product%20photography%20clean%20white%20background%20minimal%20studio%20flat%20lay&width=64&height=64&seq=inv12&orientation=squarish' },
+import type { InventoryItem } from '@/types/erp';
+import { enrichInventoryItem } from '@/services/inventoryService';
+
+const raw: Omit<InventoryItem, 'stockStatus' | 'marginPerUnit'>[] = [
+  { itemId: 'P001', sku: 'SN-PRG-001', productName: 'Pringles Original (165g)', category: 'Chips & Crisps', supplier: 'Kelloggs GH Dist.', costPrice: 28.00, sellingPrice: 42.00, currentStock: 240, reorderLevel: 60, image: '' },
+  { itemId: 'P002', sku: 'SN-LAY-002', productName: "Lay's Classic Chips (80g)", category: 'Chips & Crisps', supplier: 'PepsiCo GH Dist.', costPrice: 15.00, sellingPrice: 22.00, currentStock: 18, reorderLevel: 50, image: '' },
+  { itemId: 'P003', sku: 'BV-MIL-003', productName: 'Milo Sachet (30g)', category: 'Beverages', supplier: 'Nestle Ghana Ltd.', costPrice: 2.50, sellingPrice: 4.00, currentStock: 1200, reorderLevel: 300, image: '' },
+  { itemId: 'P004', sku: 'BV-OVA-004', productName: 'Ovaltine Tin (400g)', category: 'Beverages', supplier: 'Associated Brand Ind.', costPrice: 45.00, sellingPrice: 65.00, currentStock: 85, reorderLevel: 30, image: '' },
+  { itemId: 'P005', sku: 'BS-DIG-005', productName: 'McVities Digestive (400g)', category: 'Biscuits', supplier: 'United Biscuits GH', costPrice: 18.00, sellingPrice: 28.00, currentStock: 0, reorderLevel: 40, image: '' },
+  { itemId: 'P006', sku: 'BS-BRB-006', productName: 'Bourbon Biscuits (150g)', category: 'Biscuits', supplier: 'United Biscuits GH', costPrice: 12.00, sellingPrice: 18.00, currentStock: 320, reorderLevel: 80, image: '' },
+  { itemId: 'P007', sku: 'CN-KIT-007', productName: 'Kit Kat 4-Finger (41.5g)', category: 'Confectionery', supplier: 'Nestle Ghana Ltd.', costPrice: 10.00, sellingPrice: 16.00, currentStock: 42, reorderLevel: 100, image: '' },
+  { itemId: 'P008', sku: 'CN-CHM-008', productName: 'Choco Mallow (Pack of 6)', category: 'Confectionery', supplier: 'Pee Gee Foods', costPrice: 8.00, sellingPrice: 14.00, currentStock: 150, reorderLevel: 60, image: '' },
+  { itemId: 'P009', sku: 'BV-MLT-009', productName: 'Malta Guinness (330ml)', category: 'Beverages', supplier: 'Guinness Ghana Brew.', costPrice: 5.50, sellingPrice: 9.00, currentStock: 500, reorderLevel: 120, image: '' },
+  { itemId: 'P010', sku: 'BV-ALV-010', productName: 'Alvaro Malt Pear (330ml)', category: 'Beverages', supplier: 'Kasapreko Co. Ltd.', costPrice: 5.00, sellingPrice: 8.00, currentStock: 25, reorderLevel: 120, image: '' },
+  { itemId: 'P011', sku: 'BV-TWR-011', productName: 'Table Water 500ml (Crate/24)', category: 'Beverages', supplier: 'Voltic GH Ltd.', costPrice: 28.80, sellingPrice: 48.00, currentStock: 60, reorderLevel: 20, image: '' },
+  { itemId: 'P012', sku: 'CN-GUM-012', productName: "Wrigley's Spearmint Gum (10s)", category: 'Confectionery', supplier: 'Wrigley West Africa', costPrice: 3.00, sellingPrice: 5.00, currentStock: 600, reorderLevel: 150, image: '' },
+  { itemId: 'P013', sku: 'SN-FCB-013', productName: 'FanChoco Bar (50g)', category: 'Confectionery', supplier: 'Fan Milk Ghana Ltd.', costPrice: 6.00, sellingPrice: 10.00, currentStock: 200, reorderLevel: 80, image: '' },
+  { itemId: 'P014', sku: 'BS-RCR-014', productName: 'Rich Tea Cream Crackers (200g)', category: 'Biscuits', supplier: 'United Biscuits GH', costPrice: 14.00, sellingPrice: 22.00, currentStock: 7, reorderLevel: 40, image: '' },
+  { itemId: 'P015', sku: 'BV-CCP-015', productName: 'Coca-Cola PET 500ml (Crate/24)', category: 'Beverages', supplier: 'Coca-Cola Bottling GH', costPrice: 72.00, sellingPrice: 120.00, currentStock: 30, reorderLevel: 15, image: '' },
 ];
 
-export const inventoryCategories = ['All', 'Electronics', 'Accessories', 'Clothing', 'Stationery', 'Food & Drinks'];
+export const inventoryItems: InventoryItem[] = raw.map(enrichInventoryItem);
+
+export const inventoryCategories = [
+  'All',
+  'Chips & Crisps',
+  'Biscuits',
+  'Confectionery',
+  'Beverages',
+];
