@@ -2,22 +2,23 @@ import { useState } from 'react';
 import AppLayout from '@/components/feature/AppLayout';
 import { reportSummary, salesByCategory, topProducts } from '@/mocks/reports';
 import SalesReport from './components/SalesReport';
+import InventoryReport from './components/InventoryReport';
 
-type ReportTab = 'overview' | 'sales' | 'expenses';
+type ReportTab = 'overview' | 'sales' | 'inventory';
 
 const colorMap: Record<string, { bg: string; icon: string }> = {
   emerald: { bg: 'bg-emerald-50', icon: 'text-emerald-600' },
-  indigo: { bg: 'bg-indigo-50', icon: 'text-indigo-600' },
-  violet: { bg: 'bg-violet-50', icon: 'text-violet-600' },
-  amber: { bg: 'bg-amber-50', icon: 'text-amber-600' },
+  indigo:  { bg: 'bg-indigo-50',  icon: 'text-indigo-600' },
+  violet:  { bg: 'bg-violet-50',  icon: 'text-violet-600' },
+  amber:   { bg: 'bg-amber-50',   icon: 'text-amber-600' },
 };
 
 const categoryColors = ['bg-indigo-500', 'bg-violet-500', 'bg-emerald-500', 'bg-amber-500', 'bg-rose-500'];
 
 const TAB_CONFIG = [
-  { key: 'overview', label: 'Overview', icon: 'ri-dashboard-3-line' },
-  { key: 'sales', label: 'Sales Report', icon: 'ri-line-chart-line' },
-  { key: 'expenses', label: 'Expenses', icon: 'ri-wallet-3-line' },
+  { key: 'overview',   label: 'Overview',          icon: 'ri-dashboard-3-line' },
+  { key: 'sales',      label: 'Sales Report',       icon: 'ri-line-chart-line' },
+  { key: 'inventory',  label: 'Inventory Report',   icon: 'ri-archive-drawer-line' },
 ];
 
 export default function ReportsPage() {
@@ -133,45 +134,40 @@ export default function ReportsPage() {
             </div>
           </div>
 
-          {/* Quick link to Sales Report */}
-          <div className="bg-indigo-600 rounded-xl p-5 flex items-center justify-between">
-            <div>
-              <p className="text-white font-bold text-base">Want detailed date-range analysis?</p>
-              <p className="text-indigo-200 text-sm mt-0.5">Switch to the Sales Report tab for daily, weekly, monthly, and custom date filtering.</p>
+          {/* Quick links */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="bg-indigo-600 rounded-xl p-5 flex items-center justify-between">
+              <div>
+                <p className="text-white font-bold text-base">Sales Analysis</p>
+                <p className="text-indigo-200 text-sm mt-0.5">Daily, weekly, monthly & custom date filtering with margin breakdown.</p>
+              </div>
+              <button
+                onClick={() => setTab('sales')}
+                className="flex items-center gap-2 bg-white text-indigo-600 px-4 py-2 rounded-lg text-sm font-bold hover:bg-indigo-50 transition-all cursor-pointer whitespace-nowrap flex-shrink-0"
+              >
+                <i className="ri-line-chart-line text-sm"></i>
+                Open
+              </button>
             </div>
-            <button
-              onClick={() => setTab('sales')}
-              className="flex items-center gap-2 bg-white text-indigo-600 px-5 py-2.5 rounded-lg text-sm font-bold hover:bg-indigo-50 transition-all cursor-pointer whitespace-nowrap flex-shrink-0"
-            >
-              <span className="w-4 h-4 flex items-center justify-center"><i className="ri-line-chart-line text-sm"></i></span>
-              Open Sales Report
-            </button>
+            <div className="bg-emerald-600 rounded-xl p-5 flex items-center justify-between">
+              <div>
+                <p className="text-white font-bold text-base">Inventory Analysis</p>
+                <p className="text-emerald-200 text-sm mt-0.5">Stock value, category breakdown, margin analysis and status alerts.</p>
+              </div>
+              <button
+                onClick={() => setTab('inventory')}
+                className="flex items-center gap-2 bg-white text-emerald-600 px-4 py-2 rounded-lg text-sm font-bold hover:bg-emerald-50 transition-all cursor-pointer whitespace-nowrap flex-shrink-0"
+              >
+                <i className="ri-archive-drawer-line text-sm"></i>
+                Open
+              </button>
+            </div>
           </div>
         </>
       )}
 
-      {/* Sales Report Tab */}
-      {tab === 'sales' && <SalesReport />}
-
-      {/* Expenses Tab */}
-      {tab === 'expenses' && (
-        <div className="bg-white rounded-xl border border-slate-100 p-8 flex flex-col items-center justify-center gap-4 text-center">
-          <div className="w-14 h-14 flex items-center justify-center bg-indigo-50 rounded-2xl">
-            <i className="ri-wallet-3-line text-indigo-600 text-2xl"></i>
-          </div>
-          <div>
-            <p className="text-slate-800 font-bold text-base">Expenses are managed separately</p>
-            <p className="text-slate-400 text-sm mt-1">Head over to the Expenses page for full expense tracking, categorization, and CRUD management.</p>
-          </div>
-          <a
-            href="/expenses"
-            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-lg text-sm font-bold transition-all cursor-pointer whitespace-nowrap"
-          >
-            <span className="w-4 h-4 flex items-center justify-center"><i className="ri-external-link-line text-sm"></i></span>
-            Go to Expenses
-          </a>
-        </div>
-      )}
+      {tab === 'sales'     && <SalesReport />}
+      {tab === 'inventory' && <InventoryReport />}
     </AppLayout>
   );
 }
