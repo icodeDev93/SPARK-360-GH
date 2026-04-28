@@ -1,21 +1,9 @@
 import type { ExpenseRecord, ExpenseCategory } from '@/types/erp';
-import { USD_RATE } from '@/lib/constants';
-
-export function convertToUSD(amountGHS: number): number {
-  return parseFloat((amountGHS / USD_RATE).toFixed(2));
-}
-
-export function convertToGHS(amountUSD: number): number {
-  return parseFloat((amountUSD * USD_RATE).toFixed(2));
-}
 
 export function buildExpense(
-  data: Omit<ExpenseRecord, 'expenseId' | 'amountUSD'>
+  data: Omit<ExpenseRecord, 'expenseId'>
 ): Omit<ExpenseRecord, 'expenseId'> {
-  return {
-    ...data,
-    amountUSD: convertToUSD(data.amountGHS),
-  };
+  return { ...data };
 }
 
 export function totalByCategory(expenses: ExpenseRecord[]): Record<ExpenseCategory, number> {
@@ -27,12 +15,6 @@ export function totalByCategory(expenses: ExpenseRecord[]): Record<ExpenseCatego
 
 export function grandTotalGHS(expenses: ExpenseRecord[]): number {
   return expenses.reduce((sum, e) => sum + e.amountGHS, 0);
-}
-
-export function grandTotalUSD(expenses: ExpenseRecord[]): number {
-  return parseFloat(
-    expenses.reduce((sum, e) => sum + e.amountUSD, 0).toFixed(2)
-  );
 }
 
 export function monthlyTotals(

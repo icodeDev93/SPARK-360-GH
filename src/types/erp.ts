@@ -67,7 +67,6 @@ export interface ExpenseRecord {
   category: ExpenseCategory;
   description: string;
   amountGHS: number;
-  amountUSD: number;   // amountGHS / USD_RATE
   approvedBy: string;
 }
 

@@ -1,5 +1,4 @@
 import type { ExpenseRecord, ExpenseCategory } from '@/types/erp';
-import { convertToUSD } from '@/services/expenseService';
 
 export { EXPENSE_CATEGORIES, PAYMENT_METHODS } from '@/lib/constants';
 
@@ -11,7 +10,7 @@ function makeExpense(
   amountGHS: number,
   approvedBy: string
 ): ExpenseRecord {
-  return { expenseId, date, category, description, amountGHS, amountUSD: convertToUSD(amountGHS), approvedBy };
+  return { expenseId, date, category, description, amountGHS, approvedBy };
 }
 
 export const seedExpenses: ExpenseRecord[] = [

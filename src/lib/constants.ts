@@ -1,6 +1,3 @@
-// GHS per 1 USD — update this when the rate changes
-export const USD_RATE = 15.5;
-
 export const INVOICE_PREFIX = 'INV';
 export const TAX_RATE = 0.10;
 export const CURRENCY_SYMBOL = '₵';

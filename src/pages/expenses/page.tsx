@@ -43,7 +43,7 @@ function formatDate(iso: string) {
 }
 
 export default function ExpensesPage() {
-  const { expenses, addExpense, updateExpense, deleteExpense, totalByCategory, grandTotalGHS, grandTotalUSD } = useExpenses();
+  const { expenses, addExpense, updateExpense, deleteExpense, totalByCategory, grandTotalGHS } = useExpenses();
   const [showForm, setShowForm]       = useState(false);
   const [editTarget, setEditTarget]   = useState<ExpenseRecord | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
@@ -62,7 +62,7 @@ export default function ExpensesPage() {
   const handleEdit = (exp: ExpenseRecord) => { setEditTarget(exp); setShowForm(true); };
   const handleClose = () => { setShowForm(false); setEditTarget(null); };
 
-  const handleSave = (data: Omit<ExpenseRecord, 'expenseId' | 'amountUSD'>) => {
+  const handleSave = (data: Omit<ExpenseRecord, 'expenseId'>) => {
     if (editTarget) {
       updateExpense(editTarget.expenseId, data);
     } else {
@@ -101,7 +101,7 @@ export default function ExpensesPage() {
             <p className="text-slate-500 text-xs font-semibold uppercase tracking-wide">Total Expenses</p>
           </div>
           <p className="text-slate-900 text-2xl font-bold font-mono">{fmt(grandTotalGHS)}</p>
-          <p className="text-slate-400 text-xs mt-1">{expenses.length} records · ${(grandTotalUSD).toFixed(2)} USD</p>
+          <p className="text-slate-400 text-xs mt-1">{expenses.length} records</p>
         </div>
 
         {/* Top 3 categories */}
@@ -196,7 +196,7 @@ export default function ExpensesPage() {
           <table className="w-full">
             <thead className="bg-slate-50 border-b border-slate-100">
               <tr>
-                {['Description', 'Category', 'Date', 'Approved By', 'Amount (GHS)', 'Amount (USD)', 'Actions'].map((h) => (
+                {['Description', 'Category', 'Date', 'Approved By', 'Amount (₵)', 'Actions'].map((h) => (
                   <th key={h} className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide px-5 py-3.5 whitespace-nowrap">{h}</th>
                 ))}
               </tr>
@@ -204,7 +204,7 @@ export default function ExpensesPage() {
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-5 py-12 text-center">
+                  <td colSpan={6} className="px-5 py-12 text-center">
                     <div className="flex flex-col items-center gap-2">
                       <i className="ri-wallet-3-line text-3xl text-slate-300"></i>
                       <p className="text-slate-400 text-sm font-medium">No expenses found</p>
@@ -237,9 +237,6 @@ export default function ExpensesPage() {
                       <span className="text-red-600 text-sm font-bold font-mono whitespace-nowrap">{fmt(e.amountGHS)}</span>
                     </td>
                     <td className="px-5 py-3.5">
-                      <span className="text-slate-400 text-xs font-mono">${e.amountUSD.toFixed(2)}</span>
-                    </td>
-                    <td className="px-5 py-3.5">
                       <div className="flex items-center gap-1">
                         <button
                           onClick={() => handleEdit(e)}
@@ -267,9 +264,6 @@ export default function ExpensesPage() {
                   </td>
                   <td className="px-5 py-3">
                     <span className="text-red-600 font-bold font-mono text-sm">{fmt(filteredTotal)}</span>
-                  </td>
-                  <td className="px-5 py-3">
-                    <span className="text-slate-400 font-mono text-xs">${(filteredTotal / 15.5).toFixed(2)}</span>
                   </td>
                   <td></td>
                 </tr>

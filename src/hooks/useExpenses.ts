@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { ExpenseRecord, ExpenseCategory } from '@/types/erp';
 import { seedExpenses } from '@/mocks/expenses';
-import { buildExpense, totalByCategory, grandTotalGHS, grandTotalUSD } from '@/services/expenseService';
+import { buildExpense, totalByCategory, grandTotalGHS } from '@/services/expenseService';
 
 export type { ExpenseRecord };
 
@@ -24,7 +24,7 @@ function loadExpenses(): ExpenseRecord[] {
 export function useExpenses() {
   const [expenses, setExpenses] = useState<ExpenseRecord[]>(loadExpenses);
 
-  const addExpense = (data: Omit<ExpenseRecord, 'expenseId' | 'amountUSD'>) => {
+  const addExpense = (data: Omit<ExpenseRecord, 'expenseId'>) => {
     const built = buildExpense(data);
     const newExp: ExpenseRecord = { ...built, expenseId: `EXP${Date.now()}` };
     setExpenses((prev) => {
@@ -36,13 +36,12 @@ export function useExpenses() {
 
   const updateExpense = (
     expenseId: string,
-    data: Partial<Omit<ExpenseRecord, 'expenseId' | 'amountUSD'>>
+    data: Partial<Omit<ExpenseRecord, 'expenseId'>>
   ) => {
     setExpenses((prev) => {
       const next = prev.map((e) => {
         if (e.expenseId !== expenseId) return e;
-        const merged = { ...e, ...data };
-        return { ...merged, amountUSD: merged.amountGHS / 15.5 };
+        return { ...e, ...data };
       });
       localStorage.setItem(EXPENSES_KEY, JSON.stringify(next));
       return next;
@@ -64,7 +63,6 @@ export function useExpenses() {
     deleteExpense,
     totalByCategory: totalByCategory(expenses),
     grandTotalGHS: grandTotalGHS(expenses),
-    grandTotalUSD: grandTotalUSD(expenses),
     byCategory: (cat: ExpenseCategory) => expenses.filter((e) => e.category === cat),
   };
 }

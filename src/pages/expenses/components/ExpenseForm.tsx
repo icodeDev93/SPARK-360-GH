@@ -1,11 +1,10 @@
 import { useState } from 'react';
 import type { ExpenseRecord } from '@/types/erp';
 import { EXPENSE_CATEGORIES } from '@/mocks/expenses';
-import { USD_RATE } from '@/lib/constants';
 
 interface Props {
   initial?: ExpenseRecord;
-  onSave: (data: Omit<ExpenseRecord, 'expenseId' | 'amountUSD'>) => void;
+  onSave: (data: Omit<ExpenseRecord, 'expenseId'>) => void;
   onClose: () => void;
 }
 
@@ -18,8 +17,6 @@ export default function ExpenseForm({ initial, onSave, onClose }: Props) {
     approvedBy:  initial?.approvedBy  ?? '',
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
-
-  const usdPreview = form.amountGHS > 0 ? (form.amountGHS / USD_RATE).toFixed(2) : '0.00';
 
   const validate = () => {
     const e: Record<string, string> = {};
@@ -103,14 +100,6 @@ export default function ExpenseForm({ initial, onSave, onClose }: Props) {
               {errors.amountGHS && <p className="text-red-500 text-xs mt-1">{errors.amountGHS}</p>}
             </div>
           </div>
-
-          {/* USD preview */}
-          {form.amountGHS > 0 && (
-            <div className="bg-slate-50 border border-slate-100 rounded-lg px-4 py-2.5 flex items-center justify-between">
-              <span className="text-xs text-slate-500 font-semibold">USD Equivalent</span>
-              <span className="text-xs font-bold font-mono text-slate-700">${usdPreview}</span>
-            </div>
-          )}
 
           <div className="grid grid-cols-2 gap-4">
             {/* Date */}
