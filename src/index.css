@@ -2,8 +2,8 @@
 @tailwind components;
 @tailwind utilities;
 
-* {
-  font-family: sans-serif;
+html, body, * {
+  font-family: sans-serif !important;
 }
 
 .font-mono {
