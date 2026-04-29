@@ -38,7 +38,7 @@ export default function SettingsPage() {
       <Sidebar />
       <div className="ml-64 flex flex-col flex-1">
         <Topbar />
-        <main className="pt-16 flex-1 p-6 lg:p-8">
+        <main className="flex-1 pt-20 px-6 pb-6 lg:px-8 lg:pb-8">
           {/* Page Header */}
           <div className="flex items-center justify-between mb-8">
             <div>
