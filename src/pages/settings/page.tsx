@@ -97,16 +97,6 @@ export default function SettingsPage() {
                 ))}
               </div>
 
-              {/* Quick Info Card */}
-              <div className="mt-4 bg-indigo-600 rounded-xl p-4 text-white">
-                <div className="w-8 h-8 flex items-center justify-center bg-white/20 rounded-lg mb-3">
-                  <i className="ri-information-line text-white text-base"></i>
-                </div>
-                <p className="text-sm font-bold mb-1">Auto-saved</p>
-                <p className="text-xs text-indigo-200 leading-relaxed">
-                  Settings are saved locally. Click &quot;Save Changes&quot; to confirm your updates.
-                </p>
-              </div>
             </div>
 
             {/* Content Panel */}
