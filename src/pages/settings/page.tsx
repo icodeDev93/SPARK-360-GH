@@ -1,6 +1,5 @@
 import { useState } from 'react';
-import Sidebar from '@/components/feature/Sidebar';
-import Topbar from '@/components/feature/Topbar';
+import AppLayout from '@/components/feature/AppLayout';
 import { useSettings } from '@/hooks/useSettings';
 import StoreInfoSection from './components/StoreInfoSection';
 import TaxSection from './components/TaxSection';
@@ -34,11 +33,7 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex">
-      <Sidebar />
-      <div className="ml-64 flex flex-col flex-1">
-        <Topbar />
-        <main className="flex-1 pt-20 px-6 pb-6 lg:px-8 lg:pb-8">
+    <AppLayout>
           {/* Page Header */}
           <div className="flex items-center justify-between mb-8">
             <div>
@@ -127,9 +122,6 @@ export default function SettingsPage() {
               )}
             </div>
           </div>
-        </main>
-      </div>
-
       {/* Reset Confirmation Modal */}
       {showReset && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
@@ -158,6 +150,6 @@ export default function SettingsPage() {
           </div>
         </div>
       )}
-    </div>
+    </AppLayout>
   );
 }
