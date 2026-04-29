@@ -42,7 +42,7 @@ function getInitials(name: string) {
   return name.trim().split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase();
 }
 
-const EMPTY_FORM = { name: '', email: '', role: 'cashier' as UserRole, status: 'Active' as 'Active' | 'Inactive' };
+const EMPTY_FORM = { name: '', email: '', role: 'cashier' as UserRole, status: 'Active' as 'Active' | 'Inactive', password: '', confirmPassword: '' };
 
 export default function UsersPage() {
   const [users, setUsers] = useState<AppUser[]>(loadUsers);
@@ -51,6 +51,8 @@ export default function UsersPage() {
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState<'All' | UserRole>('All');
 
@@ -59,8 +61,8 @@ export default function UsersPage() {
     localStorage.setItem(USERS_KEY, JSON.stringify(next));
   };
 
-  const openAdd = () => { setEditTarget(null); setForm(EMPTY_FORM); setErrors({}); setShowForm(true); };
-  const openEdit = (u: AppUser) => { setEditTarget(u); setForm({ name: u.name, email: u.email, role: u.role, status: u.status }); setErrors({}); setShowForm(true); };
+  const openAdd = () => { setEditTarget(null); setForm(EMPTY_FORM); setErrors({}); setShowPassword(false); setShowConfirm(false); setShowForm(true); };
+  const openEdit = (u: AppUser) => { setEditTarget(u); setForm({ name: u.name, email: u.email, role: u.role, status: u.status, password: '', confirmPassword: '' }); setErrors({}); setShowPassword(false); setShowConfirm(false); setShowForm(true); };
   const closeForm = () => { setShowForm(false); setEditTarget(null); };
 
   const validate = () => {
@@ -68,6 +70,15 @@ export default function UsersPage() {
     if (!form.name.trim()) e.name = 'Name is required';
     if (!form.email.trim()) e.email = 'Email is required';
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) e.email = 'Invalid email address';
+    if (!editTarget) {
+      if (!form.password) e.password = 'Password is required';
+      else if (form.password.length < 6) e.password = 'Password must be at least 6 characters';
+      if (!form.confirmPassword) e.confirmPassword = 'Please confirm the password';
+      else if (form.password !== form.confirmPassword) e.confirmPassword = 'Passwords do not match';
+    } else if (form.password) {
+      if (form.password.length < 6) e.password = 'Password must be at least 6 characters';
+      if (form.password !== form.confirmPassword) e.confirmPassword = 'Passwords do not match';
+    }
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -310,6 +321,49 @@ export default function UsersPage() {
                     <option value="Active">Active</option>
                     <option value="Inactive">Inactive</option>
                   </select>
+                </div>
+              </div>
+
+              {/* Password */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+                    Password {!editTarget && <span className="text-red-400">*</span>}
+                    {editTarget && <span className="text-slate-400 font-normal text-xs"> (leave blank to keep current)</span>}
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={form.password}
+                      onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))}
+                      placeholder="••••••••"
+                      className={`w-full border rounded-lg px-4 py-2.5 pr-10 text-sm text-slate-700 outline-none transition-all ${errors.password ? 'border-red-400' : 'border-slate-200 focus:border-indigo-400'}`}
+                    />
+                    <button type="button" onClick={() => setShowPassword((v) => !v)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer">
+                      <i className={`${showPassword ? 'ri-eye-off-line' : 'ri-eye-line'} text-sm`}></i>
+                    </button>
+                  </div>
+                  {errors.password && <p className="text-red-500 text-xs mt-1">{errors.password}</p>}
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+                    Confirm Password {!editTarget && <span className="text-red-400">*</span>}
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showConfirm ? 'text' : 'password'}
+                      value={form.confirmPassword}
+                      onChange={(e) => setForm((p) => ({ ...p, confirmPassword: e.target.value }))}
+                      placeholder="••••••••"
+                      className={`w-full border rounded-lg px-4 py-2.5 pr-10 text-sm text-slate-700 outline-none transition-all ${errors.confirmPassword ? 'border-red-400' : 'border-slate-200 focus:border-indigo-400'}`}
+                    />
+                    <button type="button" onClick={() => setShowConfirm((v) => !v)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer">
+                      <i className={`${showConfirm ? 'ri-eye-off-line' : 'ri-eye-line'} text-sm`}></i>
+                    </button>
+                  </div>
+                  {errors.confirmPassword && <p className="text-red-500 text-xs mt-1">{errors.confirmPassword}</p>}
                 </div>
               </div>
 
