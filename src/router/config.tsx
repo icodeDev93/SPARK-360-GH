@@ -10,6 +10,7 @@ import SettingsPage from '@/pages/settings/page';
 import ExpensesPage from '@/pages/expenses/page';
 import SalesHistoryPage from '@/pages/sales-history/page';
 import SuppliersPage from '@/pages/suppliers/page';
+import UsersPage from '@/pages/users/page';
 import NotFound from '@/pages/NotFound';
 
 const routes: RouteObject[] = [
@@ -24,6 +25,7 @@ const routes: RouteObject[] = [
   { path: '/reports', element: <ReportsPage /> },
   { path: '/analytics', element: <AnalyticsPage /> },
   { path: '/settings', element: <SettingsPage /> },
+  { path: '/users', element: <UsersPage /> },
   { path: '*', element: <NotFound /> },
 ];
 

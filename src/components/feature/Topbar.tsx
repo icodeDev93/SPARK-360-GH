@@ -15,6 +15,7 @@ const pageTitles: Record<string, string> = {
   '/reports': 'Reports',
   '/analytics': 'Analytics',
   '/settings': 'Settings',
+  '/users': 'User Management',
 };
 
 const SEVERITY_CONFIG = {

@@ -16,7 +16,8 @@ const ALL_NAV_ITEMS = [
 ];
 
 const BOTTOM_ITEMS = [
-  { path: '/settings', label: 'Settings', icon: 'ri-settings-3-line', permission: 'settings' },
+  { path: '/users',    label: 'User Management', icon: 'ri-user-settings-line', permission: 'users' },
+  { path: '/settings', label: 'Settings',        icon: 'ri-settings-3-line',    permission: 'settings' },
 ];
 
 export default function Sidebar() {

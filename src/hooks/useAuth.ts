@@ -39,7 +39,7 @@ export const ROLE_USERS: AuthUser[] = [
 ];
 
 export const ROLE_PERMISSIONS: Record<UserRole, string[]> = {
-  admin: ['dashboard', 'pos', 'customers', 'purchases', 'inventory', 'expenses', 'reports', 'settings', 'sales-history'],
+  admin: ['dashboard', 'pos', 'customers', 'purchases', 'inventory', 'expenses', 'reports', 'settings', 'sales-history', 'users'],
   manager: ['dashboard', 'pos', 'customers', 'purchases', 'inventory', 'expenses', 'reports', 'sales-history'],
   cashier: ['pos', 'customers', 'sales-history'],
 };
