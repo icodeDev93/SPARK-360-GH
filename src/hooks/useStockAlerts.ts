@@ -1,14 +1,9 @@
-import { useState } from 'react';
-import { inventoryItems } from '@/mocks/inventory';
+import { useState, useEffect } from 'react';
+import { supabase } from '@/lib/supabase';
 
 export interface StockAlertItem {
-  id: string;
-  name: string;
-  sku: string;
-  category: string;
-  stock: number;
-  reorder: number;
-  image: string;
+  id: string; name: string; sku: string; category: string;
+  stock: number; reorder: number; image: string;
   severity: 'critical' | 'low' | 'warning';
 }
 
@@ -31,31 +26,38 @@ function loadDismissed(): Set<string> {
 }
 
 export function useStockAlerts() {
+  const [allAlerts, setAllAlerts] = useState<StockAlertItem[]>([]);
   const [dismissed, setDismissed] = useState<Set<string>>(loadDismissed);
 
-  const allAlerts: StockAlertItem[] = inventoryItems
-    .filter((item) => item.currentStock <= item.reorderLevel)
-    .map((item) => ({
-      id: item.itemId,
-      name: item.productName,
-      sku: item.sku,
-      category: item.category,
-      stock: item.currentStock,
-      reorder: item.reorderLevel,
-      image: item.image,
-      severity: getSeverity(item.currentStock, item.reorderLevel),
-    }))
-    .sort((a, b) => {
-      const order = { critical: 0, low: 1, warning: 2 };
-      return order[a.severity] - order[b.severity];
-    });
+  useEffect(() => {
+    (async () => {
+      const { data: items, error } = await supabase
+        .from('inventory_items')
+        .select('item_id, product_name, sku, category, current_stock, reorder_level, image');
+
+      if (error) return;
+
+      const alerts: StockAlertItem[] = (items ?? [])
+        .filter((i) => i.current_stock <= i.reorder_level)
+        .map((i) => ({
+          id: i.item_id, name: i.product_name, sku: i.sku, category: i.category,
+          stock: i.current_stock, reorder: i.reorder_level, image: i.image,
+          severity: getSeverity(i.current_stock, i.reorder_level),
+        }))
+        .sort((a, b) => {
+          const order = { critical: 0, low: 1, warning: 2 };
+          return order[a.severity] - order[b.severity];
+        });
+
+      setAllAlerts(alerts);
+    })();
+  }, []);
 
   const activeAlerts = allAlerts.filter((a) => !dismissed.has(a.id));
 
   const dismissAlert = (id: string) => {
     setDismissed((prev) => {
-      const next = new Set(prev);
-      next.add(id);
+      const next = new Set(prev); next.add(id);
       localStorage.setItem(DISMISSED_KEY, JSON.stringify([...next]));
       return next;
     });
@@ -75,8 +77,9 @@ export function useStockAlerts() {
     localStorage.removeItem(DISMISSED_KEY);
   };
 
-  const criticalCount = activeAlerts.filter((a) => a.severity === 'critical').length;
-  const lowCount = activeAlerts.filter((a) => a.severity === 'low').length;
-
-  return { allAlerts, activeAlerts, dismissAlert, dismissAll, restoreAll, criticalCount, lowCount };
+  return {
+    allAlerts, activeAlerts, dismissAlert, dismissAll, restoreAll,
+    criticalCount: activeAlerts.filter((a) => a.severity === 'critical').length,
+    lowCount: activeAlerts.filter((a) => a.severity === 'low').length,
+  };
 }

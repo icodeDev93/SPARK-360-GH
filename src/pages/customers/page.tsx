@@ -1,9 +1,10 @@
 import { useState, useMemo } from 'react';
 import AppLayout from '@/components/feature/AppLayout';
-import { customers as seedCustomers, customerHistory } from '@/mocks/customers';
+import { customerHistory } from '@/mocks/customers';
 import { useSalesLog } from '@/hooks/useSalesLog';
+import { useCustomers } from '@/hooks/useCustomers';
 import { getCustomerInvoices, searchCustomers } from '@/services/crmService';
-import type { Customer, CustomerType } from '@/types/erp';
+import type { CustomerType } from '@/types/erp';
 
 const AVATAR_COLORS = [
   'bg-indigo-500', 'bg-violet-500', 'bg-emerald-500', 'bg-amber-500',
@@ -30,7 +31,7 @@ function getInitials(name: string) {
 const EMPTY_FORM = { fullName: '', companyName: '', phone: '', email: '', customerType: 'Retail' as CustomerType };
 
 export default function CustomersPage() {
-  const [customers, setCustomers] = useState<Customer[]>(seedCustomers);
+  const { customers, addCustomer: dbAddCustomer } = useCustomers();
   const [search, setSearch] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -57,20 +58,15 @@ export default function CustomersPage() {
 
   const addCustomer = () => {
     if (!form.fullName.trim()) return;
-    const newCustomer: Customer = {
-      customerId:         `C${Date.now()}`,
-      fullName:           form.fullName.trim(),
-      companyName:        form.companyName.trim(),
-      phone:              form.phone.trim(),
-      email:              form.email.trim(),
-      customerType:       form.customerType,
-      totalPurchases:     0,
-      outstandingBalance: 0,
-      statusFlag:         'Active',
-      avatar:             getInitials(form.fullName),
-      lastOrderDate:      today,
-    };
-    setCustomers((prev) => [newCustomer, ...prev]);
+    dbAddCustomer({
+      fullName:     form.fullName.trim(),
+      companyName:  form.companyName.trim(),
+      phone:        form.phone.trim(),
+      email:        form.email.trim(),
+      customerType: form.customerType,
+      statusFlag:   'Active',
+      avatar:       getInitials(form.fullName),
+    });
     setShowAddForm(false);
     setForm(EMPTY_FORM);
   };

@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
-import { inventoryCategories } from '@/mocks/inventory';
 import type { InventoryItem } from '@/types/erp';
 
 interface ItemDrawerProps {
-  open:    boolean;
-  item:    InventoryItem | null;
-  onClose: () => void;
-  onSave:  (item: InventoryItem) => void;
+  open:       boolean;
+  item:       InventoryItem | null;
+  categories: string[];
+  onClose:    () => void;
+  onSave:     (item: InventoryItem) => void;
 }
 
 const EMPTY: Omit<InventoryItem, 'stockStatus' | 'marginPerUnit'> = {
@@ -22,7 +22,7 @@ const EMPTY: Omit<InventoryItem, 'stockStatus' | 'marginPerUnit'> = {
   image:        '',
 };
 
-export default function ItemDrawer({ open, item, onClose, onSave }: ItemDrawerProps) {
+export default function ItemDrawer({ open, item, categories, onClose, onSave }: ItemDrawerProps) {
   const [form, setForm] = useState<Omit<InventoryItem, 'stockStatus' | 'marginPerUnit'>>(EMPTY);
 
   useEffect(() => {
@@ -93,7 +93,7 @@ export default function ItemDrawer({ open, item, onClose, onSave }: ItemDrawerPr
                 onChange={(e) => set('category', e.target.value)}
                 className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 transition-all cursor-pointer"
               >
-                {inventoryCategories.filter((c) => c !== 'All').map((c) => (
+                {categories.map((c) => (
                   <option key={c} value={c}>{c}</option>
                 ))}
               </select>

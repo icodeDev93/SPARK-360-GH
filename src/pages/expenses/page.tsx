@@ -3,12 +3,12 @@ import AppLayout from '@/components/feature/AppLayout';
 import { useExpenses } from '@/hooks/useExpenses';
 import { EXPENSE_CATEGORIES } from '@/mocks/expenses';
 import ExpenseForm from './components/ExpenseForm';
-import type { ExpenseRecord } from '@/types/erp';
+import type { ExpenseRecord, PaymentMethod } from '@/types/erp';
 
 const CATEGORY_COLORS: Record<string, string> = {
   Rent:        'bg-emerald-100 text-emerald-700',
   Utilities:   'bg-amber-100 text-amber-700',
-  Salaries:    'bg-indigo-100 text-indigo-700',
+  Payroll:     'bg-indigo-100 text-indigo-700',
   Supplies:    'bg-cyan-100 text-cyan-700',
   Marketing:   'bg-rose-100 text-rose-700',
   Maintenance: 'bg-orange-100 text-orange-700',
@@ -20,13 +20,20 @@ const CATEGORY_COLORS: Record<string, string> = {
 const CATEGORY_ICONS: Record<string, string> = {
   Rent:        'ri-building-line',
   Utilities:   'ri-flashlight-line',
-  Salaries:    'ri-group-line',
+  Payroll:     'ri-group-line',
   Supplies:    'ri-box-3-line',
   Marketing:   'ri-megaphone-line',
   Maintenance: 'ri-tools-line',
   Transport:   'ri-car-line',
   Insurance:   'ri-shield-check-line',
   Other:       'ri-more-line',
+};
+
+const PAYMENT_ICONS: Record<PaymentMethod, string> = {
+  Cash:            'ri-money-dollar-circle-line',
+  MoMo:            'ri-smartphone-line',
+  Cheque:          'ri-file-list-3-line',
+  'Bank Transfer': 'ri-bank-line',
 };
 
 const BAR_COLORS  = ['bg-indigo-500','bg-emerald-500','bg-amber-500','bg-rose-500','bg-cyan-500','bg-violet-500','bg-orange-500','bg-slate-400'];
@@ -44,11 +51,11 @@ function formatDate(iso: string) {
 
 export default function ExpensesPage() {
   const { expenses, addExpense, updateExpense, deleteExpense, totalByCategory, grandTotalGHS } = useExpenses();
-  const [showForm, setShowForm]       = useState(false);
-  const [editTarget, setEditTarget]   = useState<ExpenseRecord | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
-  const [filterCat, setFilterCat]     = useState('All');
-  const [search, setSearch]           = useState('');
+  const [showForm, setShowForm]           = useState(false);
+  const [editTarget, setEditTarget]       = useState<ExpenseRecord | null>(null);
+  const [deleteTarget, setDeleteTarget]   = useState<string | null>(null);
+  const [filterCat, setFilterCat]         = useState('All');
+  const [search, setSearch]               = useState('');
 
   const filtered = expenses.filter((e) => {
     const matchCat    = filterCat === 'All' || e.category === filterCat;
@@ -56,10 +63,11 @@ export default function ExpensesPage() {
     return matchCat && matchSearch;
   });
 
-  const sortedCats = Object.entries(totalByCategory).sort((a, b) => b[1] - a[1]);
-  const topCats    = sortedCats.slice(0, 4);
+  const sortedCats  = Object.entries(totalByCategory).sort((a, b) => b[1] - a[1]);
+  const topCats     = sortedCats.slice(0, 3);
+  const filteredTotal = filtered.reduce((s, e) => s + e.amountGHS, 0);
 
-  const handleEdit = (exp: ExpenseRecord) => { setEditTarget(exp); setShowForm(true); };
+  const handleEdit  = (exp: ExpenseRecord) => { setEditTarget(exp); setShowForm(true); };
   const handleClose = () => { setShowForm(false); setEditTarget(null); };
 
   const handleSave = (data: Omit<ExpenseRecord, 'expenseId'>) => {
@@ -70,8 +78,6 @@ export default function ExpensesPage() {
     }
     setEditTarget(null);
   };
-
-  const filteredTotal = filtered.reduce((s, e) => s + e.amountGHS, 0);
 
   return (
     <AppLayout>
@@ -92,7 +98,6 @@ export default function ExpensesPage() {
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-        {/* Total Expenses */}
         <div className="bg-white rounded-xl p-5 border border-slate-100">
           <div className="flex items-center gap-3 mb-3">
             <div className="w-10 h-10 flex items-center justify-center bg-red-50 rounded-xl">
@@ -104,7 +109,6 @@ export default function ExpensesPage() {
           <p className="text-slate-400 text-xs mt-1">{expenses.length} records</p>
         </div>
 
-        {/* Top 3 categories */}
         {topCats.map(([cat, total]) => (
           <div key={cat} className="bg-white rounded-xl p-5 border border-slate-100">
             <div className="flex items-center gap-3 mb-3">
@@ -119,7 +123,7 @@ export default function ExpensesPage() {
         ))}
       </div>
 
-      {/* Remaining category cards (5th+) */}
+      {/* Extra category cards (5th+) */}
       {sortedCats.length > 4 && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
           {sortedCats.slice(4).map(([cat, total]) => (
@@ -146,7 +150,7 @@ export default function ExpensesPage() {
               key={cat}
               className={`${BAR_COLORS[i % BAR_COLORS.length]} rounded-sm transition-all`}
               style={{ width: `${(total / grandTotalGHS) * 100}%` }}
-              title={`${cat}: ${fmt(total)} (${((total / grandTotalGHS) * 100).toFixed(1)}%)`}
+              title={`${cat}: ${fmt(total)}`}
             />
           ))}
         </div>
@@ -196,7 +200,7 @@ export default function ExpensesPage() {
           <table className="w-full">
             <thead className="bg-slate-50 border-b border-slate-100">
               <tr>
-                {['Description', 'Category', 'Date', 'Approved By', 'Amount (₵)', 'Actions'].map((h) => (
+                {['Description', 'Category', 'Date', 'Paid By', 'Notes', 'Amount (₵)', 'Actions'].map((h) => (
                   <th key={h} className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide px-5 py-3.5 whitespace-nowrap">{h}</th>
                 ))}
               </tr>
@@ -204,7 +208,7 @@ export default function ExpensesPage() {
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-5 py-12 text-center">
+                  <td colSpan={7} className="px-5 py-12 text-center">
                     <div className="flex flex-col items-center gap-2">
                       <i className="ri-wallet-3-line text-3xl text-slate-300"></i>
                       <p className="text-slate-400 text-sm font-medium">No expenses found</p>
@@ -229,9 +233,12 @@ export default function ExpensesPage() {
                     </td>
                     <td className="px-5 py-3.5">
                       <span className="flex items-center gap-1.5 text-slate-600 text-sm whitespace-nowrap">
-                        <i className="ri-user-line text-slate-400 text-sm"></i>
-                        {e.approvedBy}
+                        <i className={`${PAYMENT_ICONS[e.paidBy]} text-slate-400 text-sm`}></i>
+                        {e.paidBy}
                       </span>
+                    </td>
+                    <td className="px-5 py-3.5 max-w-[180px]">
+                      <span className="text-slate-500 text-sm truncate block">{e.notes || <span className="text-slate-300">—</span>}</span>
                     </td>
                     <td className="px-5 py-3.5">
                       <span className="text-red-600 text-sm font-bold font-mono whitespace-nowrap">{fmt(e.amountGHS)}</span>
@@ -259,7 +266,7 @@ export default function ExpensesPage() {
             {filtered.length > 0 && (
               <tfoot className="bg-slate-50 border-t border-slate-200">
                 <tr>
-                  <td colSpan={4} className="px-5 py-3 text-sm font-bold text-slate-600">
+                  <td colSpan={5} className="px-5 py-3 text-sm font-bold text-slate-600">
                     {filtered.length} expense{filtered.length !== 1 ? 's' : ''} shown
                   </td>
                   <td className="px-5 py-3">

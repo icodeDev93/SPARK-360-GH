@@ -4,7 +4,7 @@ export const CURRENCY_SYMBOL = '₵';
 
 export const EXPENSE_CATEGORIES = [
   'Transport',
-  'Salaries',
+  'Payroll',
   'Rent',
   'Utilities',
   'Supplies',

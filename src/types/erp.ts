@@ -52,7 +52,7 @@ export interface InvoiceRecord {
 
 export type ExpenseCategory =
   | 'Transport'
-  | 'Salaries'
+  | 'Payroll'
   | 'Rent'
   | 'Utilities'
   | 'Supplies'
@@ -67,7 +67,8 @@ export interface ExpenseRecord {
   category: ExpenseCategory;
   description: string;
   amountGHS: number;
-  approvedBy: string;
+  paidBy: PaymentMethod;
+  notes: string;
 }
 
 // ─── CRM ──────────────────────────────────────────────────────────────────────

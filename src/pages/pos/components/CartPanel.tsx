@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { useSettings } from '@/hooks/useSettings';
 import { useSalesLog } from '@/hooks/useSalesLog';
 import { useAuth } from '@/hooks/useAuth';
+import { calcLineItem } from '@/services/salesService';
+import type { PaymentMethod } from '@/types/erp';
 import ReceiptModal from './ReceiptModal';
 
 interface CartItem {
@@ -19,31 +21,38 @@ interface CartPanelProps {
   onClear: () => void;
 }
 
+const PAYMENT_METHODS: { key: PaymentMethod; label: string; icon: string }[] = [
+  { key: 'Cash',          label: 'Cash',   icon: 'ri-money-dollar-circle-line' },
+  { key: 'MoMo',          label: 'MoMo',   icon: 'ri-smartphone-line' },
+  { key: 'Cheque',        label: 'Cheque', icon: 'ri-file-text-line' },
+  { key: 'Bank Transfer', label: 'Bank',   icon: 'ri-bank-line' },
+];
+
 export default function CartPanel({ items, onUpdateQty, onRemove, onClear }: CartPanelProps) {
   const { settings } = useSettings();
-  const { addSale } = useSalesLog();
+  const { addInvoice } = useSalesLog();
   const { currentUser } = useAuth();
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'mobile' | 'card'>('cash');
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('Cash');
   const [discount, setDiscount] = useState(0);
   const [showReceipt, setShowReceipt] = useState(false);
 
-  const taxRate = settings.taxEnabled ? settings.taxRate / 100 : 0;
-  const subtotal = items.reduce((sum, i) => sum + i.price * i.qty, 0);
-  const tax = subtotal * taxRate;
+  const taxRate    = settings.taxEnabled ? settings.taxRate / 100 : 0;
+  const subtotal   = items.reduce((sum, i) => sum + i.price * i.qty, 0);
+  const tax        = subtotal * taxRate;
   const discountAmt = (subtotal * discount) / 100;
   const grandTotal = subtotal + tax - discountAmt;
 
   const handleCompleteSale = () => {
     if (items.length === 0) return;
-    addSale({
-      items,
-      subtotal,
-      tax,
-      discountAmt,
-      discount,
-      grandTotal,
+    const saleItems = items.map((item) =>
+      calcLineItem(String(item.id), item.name, item.qty, 0, item.price, 0)
+    );
+    addInvoice({
+      customerId:   'walk-in',
+      customerName: 'Walk-in Customer',
+      items:        saleItems,
       paymentMethod,
-      cashier: currentUser.name,
+      cashier:      currentUser.name,
     });
     setShowReceipt(true);
   };
@@ -52,14 +61,14 @@ export default function CartPanel({ items, onUpdateQty, onRemove, onClear }: Car
     setShowReceipt(false);
     onClear();
     setDiscount(0);
-    setPaymentMethod('cash');
+    setPaymentMethod('Cash');
   };
 
   const handleCloseReceipt = () => {
     setShowReceipt(false);
     onClear();
     setDiscount(0);
-    setPaymentMethod('cash');
+    setPaymentMethod('Cash');
   };
 
   return (
@@ -133,9 +142,7 @@ export default function CartPanel({ items, onUpdateQty, onRemove, onClear }: Car
           <div className="flex items-center gap-2">
             <label className="text-xs text-slate-500 font-medium whitespace-nowrap">Discount %</label>
             <input
-              type="number"
-              min={0}
-              max={100}
+              type="number" min={0} max={100}
               value={discount}
               onChange={(e) => setDiscount(Math.min(100, Math.max(0, Number(e.target.value))))}
               className="flex-1 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-700 outline-none focus:border-indigo-400 font-mono"
@@ -167,24 +174,18 @@ export default function CartPanel({ items, onUpdateQty, onRemove, onClear }: Car
           </div>
 
           {/* Payment Method */}
-          <div className="grid grid-cols-3 gap-2">
-            {[
-              { key: 'cash', label: 'Cash', icon: 'ri-money-dollar-circle-line' },
-              { key: 'mobile', label: 'Mobile', icon: 'ri-smartphone-line' },
-              { key: 'card', label: 'Card', icon: 'ri-bank-card-line' },
-            ].map((m) => (
+          <div className="grid grid-cols-4 gap-1.5">
+            {PAYMENT_METHODS.map((m) => (
               <button
                 key={m.key}
-                onClick={() => setPaymentMethod(m.key as 'cash' | 'mobile' | 'card')}
-                className={`flex flex-col items-center gap-1 py-2.5 rounded-lg border text-xs font-semibold transition-all cursor-pointer whitespace-nowrap ${
+                onClick={() => setPaymentMethod(m.key)}
+                className={`flex flex-col items-center gap-1 py-2 rounded-lg border text-xs font-semibold transition-all cursor-pointer whitespace-nowrap ${
                   paymentMethod === m.key
                     ? 'bg-indigo-600 border-indigo-600 text-white'
                     : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-300'
                 }`}
               >
-                <span className="w-5 h-5 flex items-center justify-center">
-                  <i className={`${m.icon} text-base`}></i>
-                </span>
+                <i className={`${m.icon} text-base`}></i>
                 {m.label}
               </button>
             ))}
@@ -200,9 +201,7 @@ export default function CartPanel({ items, onUpdateQty, onRemove, onClear }: Car
                 : 'bg-emerald-600 hover:bg-emerald-700 text-white'
             }`}
           >
-            <span className="w-5 h-5 flex items-center justify-center">
-              <i className="ri-check-line text-lg"></i>
-            </span>
+            <i className="ri-check-line text-lg"></i>
             Complete Sale
           </button>
         </div>

@@ -7,8 +7,7 @@ const ALL_NAV_ITEMS = [
   { path: '/pos', label: 'Sales (POS)', icon: 'ri-shopping-cart-2-line', badge: 'Live', permission: 'pos' },
   { path: '/sales-history', label: 'Sales History', icon: 'ri-receipt-line', permission: 'sales-history' },
   { path: '/customers', label: 'Customers', icon: 'ri-group-line', permission: 'customers' },
-  { path: '/purchases', label: 'Purchases', icon: 'ri-truck-line', permission: 'purchases' },
-  { path: '/suppliers', label: 'Suppliers', icon: 'ri-store-3-line', permission: 'purchases' },
+  { path: '/suppliers', label: 'Purchases & Supplies', icon: 'ri-store-3-line', permission: 'purchases' },
   { path: '/inventory', label: 'Inventory', icon: 'ri-archive-drawer-line', permission: 'inventory' },
   { path: '/expenses', label: 'Expenses', icon: 'ri-wallet-3-line', permission: 'expenses' },
   { path: '/reports', label: 'Reports', icon: 'ri-bar-chart-box-line', permission: 'reports' },
@@ -54,7 +53,7 @@ export default function Sidebar() {
                 to={item.path}
                 end={item.exact}
                 className={({ isActive }) =>
-                  `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all cursor-pointer whitespace-nowrap ${
+                  `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-bold transition-all cursor-pointer whitespace-nowrap ${
                     isActive
                       ? 'bg-indigo-600 text-white'
                       : 'text-slate-400 hover:text-white hover:bg-slate-800'
@@ -89,7 +88,7 @@ export default function Sidebar() {
                   <NavLink
                     to={item.path}
                     className={({ isActive }) =>
-                      `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all cursor-pointer whitespace-nowrap ${
+                      `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-bold transition-all cursor-pointer whitespace-nowrap ${
                         isActive
                           ? 'bg-indigo-600 text-white'
                           : 'text-slate-400 hover:text-white hover:bg-slate-800'

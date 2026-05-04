@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import type { ExpenseRecord } from '@/types/erp';
-import { EXPENSE_CATEGORIES } from '@/mocks/expenses';
+import type { ExpenseRecord, PaymentMethod } from '@/types/erp';
+import { EXPENSE_CATEGORIES, PAYMENT_METHODS } from '@/mocks/expenses';
 
 interface Props {
   initial?: ExpenseRecord;
@@ -8,13 +8,21 @@ interface Props {
   onClose: () => void;
 }
 
+const PAYMENT_ICONS: Record<PaymentMethod, string> = {
+  Cash:            'ri-money-dollar-circle-line',
+  MoMo:            'ri-smartphone-line',
+  Cheque:          'ri-file-list-3-line',
+  'Bank Transfer': 'ri-bank-line',
+};
+
 export default function ExpenseForm({ initial, onSave, onClose }: Props) {
   const [form, setForm] = useState({
     description: initial?.description ?? '',
     category:    initial?.category    ?? EXPENSE_CATEGORIES[0],
     amountGHS:   initial?.amountGHS   ?? 0,
     date:        initial?.date        ?? new Date().toISOString().split('T')[0],
-    approvedBy:  initial?.approvedBy  ?? '',
+    paidBy:      (initial?.paidBy     ?? 'Cash') as PaymentMethod,
+    notes:       initial?.notes       ?? '',
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -23,7 +31,6 @@ export default function ExpenseForm({ initial, onSave, onClose }: Props) {
     if (!form.description.trim()) e.description = 'Description is required';
     if (!form.amountGHS || form.amountGHS <= 0) e.amountGHS = 'Enter a valid amount';
     if (!form.date) e.date = 'Date is required';
-    if (!form.approvedBy.trim()) e.approvedBy = 'Approved by is required';
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -114,18 +121,34 @@ export default function ExpenseForm({ initial, onSave, onClose }: Props) {
               {errors.date && <p className="text-red-500 text-xs mt-1">{errors.date}</p>}
             </div>
 
-            {/* Approved By */}
+            {/* Paid By */}
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5">Approved By <span className="text-red-400">*</span></label>
-              <input
-                type="text"
-                value={form.approvedBy}
-                onChange={(e) => set('approvedBy', e.target.value)}
-                placeholder="e.g. Kwame Asante"
-                className={`w-full border rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none transition-all ${errors.approvedBy ? 'border-red-400' : 'border-slate-200 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100'}`}
-              />
-              {errors.approvedBy && <p className="text-red-500 text-xs mt-1">{errors.approvedBy}</p>}
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5">Paid By</label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                  <i className={`${PAYMENT_ICONS[form.paidBy]} text-sm`}></i>
+                </span>
+                <select
+                  value={form.paidBy}
+                  onChange={(e) => set('paidBy', e.target.value)}
+                  className="w-full border border-slate-200 rounded-lg pl-8 pr-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 bg-white cursor-pointer"
+                >
+                  {PAYMENT_METHODS.map((m) => <option key={m}>{m}</option>)}
+                </select>
+              </div>
             </div>
+          </div>
+
+          {/* Notes */}
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-1.5">Notes</label>
+            <textarea
+              value={form.notes}
+              onChange={(e) => set('notes', e.target.value)}
+              placeholder="Optional notes or remarks..."
+              rows={2}
+              className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 resize-none transition-all"
+            />
           </div>
         </div>
 

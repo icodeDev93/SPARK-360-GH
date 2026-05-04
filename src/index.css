@@ -7,11 +7,11 @@ html {
 }
 
 html, body, * {
-  font-family: sans-serif !important;
+  font-family: 'Inter', sans-serif !important;
 }
 
 .font-mono {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'Inter', sans-serif !important;
 }
 
 .scrollbar-hide {
