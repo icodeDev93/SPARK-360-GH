@@ -8,13 +8,13 @@ const pageTitles: Record<string, string> = {
   '/pos': 'Sales (POS)',
   '/sales-history': 'Sales History',
   '/customers': 'Customers',
-  '/purchases': 'Purchases',
-  '/suppliers': 'Suppliers',
+  '/suppliers': 'Purchases & Supplies',
   '/inventory': 'Inventory',
   '/expenses': 'Expenses',
   '/reports': 'Reports',
   '/analytics': 'Analytics',
   '/settings': 'Settings',
+  '/users': 'User Management',
 };
 
 const SEVERITY_CONFIG = {

@@ -43,7 +43,11 @@ export default function SuppliersPage() {
 
   const totalSpent = orders.filter((o) => o.status !== 'Cancelled').reduce((s, o) => s + o.total, 0);
   const pendingCount = orders.filter((o) => o.status === 'Pending').length;
+  const receivedCount = orders.filter((o) => o.status === 'Received').length;
+  const cancelledCount = orders.filter((o) => o.status === 'Cancelled').length;
   const unpaidTotal = orders.filter((o) => o.paymentStatus === 'Unpaid').reduce((s, o) => s + o.total, 0);
+  const activeSuppliers = suppliers.filter((s) => s.status === 'active').length;
+  const inactiveSuppliers = suppliers.filter((s) => s.status === 'inactive').length;
 
   const handleNewOrderForSupplier = (supplierId: string) => {
     setDefaultSupplierId(supplierId);
@@ -76,13 +80,37 @@ export default function SuppliersPage() {
         </div>
       </div>
 
-      {/* Summary Cards */}
+      {/* Purchase Summaries */}
+      <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">Purchase Orders</p>
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+        {[
+          { label: 'Total Orders',   value: String(orders.length),    sub: 'All time',                icon: 'ri-file-list-3-line',         color: 'bg-indigo-50 text-indigo-600' },
+          { label: 'Received',       value: String(receivedCount),    sub: 'Fulfilled orders',          icon: 'ri-checkbox-circle-line',     color: 'bg-emerald-50 text-emerald-600' },
+          { label: 'Pending',        value: String(pendingCount),     sub: 'Awaiting delivery',         icon: 'ri-time-line',                color: 'bg-amber-50 text-amber-600' },
+          { label: 'Cancelled',      value: String(cancelledCount),   sub: 'Not fulfilled',             icon: 'ri-close-circle-line',        color: 'bg-slate-100 text-slate-500' },
+          { label: 'Total Spent',    value: `₵${totalSpent.toLocaleString('en-US', { minimumFractionDigits: 0 })}`, sub: 'Received orders', icon: 'ri-money-dollar-circle-line', color: 'bg-violet-50 text-violet-600' },
+        ].map((s) => (
+          <div key={s.label} className="bg-white rounded-xl p-5 border border-slate-100 flex items-center gap-4">
+            <div className={`w-11 h-11 flex items-center justify-center rounded-xl flex-shrink-0 ${s.color}`}>
+              <i className={`${s.icon} text-xl`}></i>
+            </div>
+            <div>
+              <p className="text-slate-500 text-xs font-semibold uppercase tracking-wide">{s.label}</p>
+              <p className="text-slate-900 text-xl font-bold mt-0.5 font-mono">{s.value}</p>
+              <p className="text-slate-400 text-xs">{s.sub}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Supplier Summaries */}
+      <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">Suppliers</p>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         {[
-          { label: 'Total Suppliers', value: String(suppliers.filter((s) => s.status === 'active').length), sub: `${suppliers.filter((s) => s.status === 'inactive').length} inactive`, icon: 'ri-store-3-line', color: 'bg-indigo-50 text-indigo-600' },
-          { label: 'Total Orders', value: String(orders.length), sub: `${pendingCount} pending`, icon: 'ri-file-list-3-line', color: 'bg-amber-50 text-amber-600' },
-          { label: 'Total Spent', value: `₵${totalSpent.toLocaleString('en-US', { minimumFractionDigits: 0 })}`, sub: 'All time', icon: 'ri-money-dollar-circle-line', color: 'bg-emerald-50 text-emerald-600' },
-          { label: 'Unpaid Balance', value: `₵${unpaidTotal.toLocaleString('en-US', { minimumFractionDigits: 0 })}`, sub: `${orders.filter((o) => o.paymentStatus === 'Unpaid').length} orders`, icon: 'ri-bank-card-line', color: 'bg-red-50 text-red-500' },
+          { label: 'Total Suppliers', value: String(suppliers.length),   sub: `${activeSuppliers} active`,            icon: 'ri-store-3-line',    color: 'bg-indigo-50 text-indigo-600' },
+          { label: 'Active',          value: String(activeSuppliers),    sub: 'Currently trading',                    icon: 'ri-checkbox-circle-line', color: 'bg-emerald-50 text-emerald-600' },
+          { label: 'Inactive',        value: String(inactiveSuppliers),  sub: 'Not trading',                          icon: 'ri-forbid-line',     color: 'bg-slate-100 text-slate-500' },
+          { label: 'Unpaid Balance',  value: `₵${unpaidTotal.toLocaleString('en-US', { minimumFractionDigits: 0 })}`, sub: `${orders.filter((o) => o.paymentStatus === 'Unpaid').length} orders`, icon: 'ri-bank-card-line', color: 'bg-red-50 text-red-500' },
         ].map((s) => (
           <div key={s.label} className="bg-white rounded-xl p-5 border border-slate-100 flex items-center gap-4">
             <div className={`w-11 h-11 flex items-center justify-center rounded-xl flex-shrink-0 ${s.color}`}>

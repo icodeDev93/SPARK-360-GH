@@ -6,10 +6,9 @@ interface Props {
 }
 
 const currencies = [
-  { code: 'USD', symbol: '$', label: 'US Dollar' },
+  { code: 'GHS', symbol: '₵', label: 'Ghanaian Cedi' },
   { code: 'EUR', symbol: '€', label: 'Euro' },
   { code: 'GBP', symbol: '£', label: 'British Pound' },
-  { code: 'GHS', symbol: '₵', label: 'Ghanaian Cedi' },
   { code: 'NGN', symbol: '₦', label: 'Nigerian Naira' },
   { code: 'KES', symbol: 'KSh', label: 'Kenyan Shilling' },
   { code: 'ZAR', symbol: 'R', label: 'South African Rand' },

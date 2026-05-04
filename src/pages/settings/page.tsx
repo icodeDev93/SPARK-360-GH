@@ -1,6 +1,5 @@
 import { useState } from 'react';
-import Sidebar from '@/components/feature/Sidebar';
-import Topbar from '@/components/feature/Topbar';
+import AppLayout from '@/components/feature/AppLayout';
 import { useSettings } from '@/hooks/useSettings';
 import StoreInfoSection from './components/StoreInfoSection';
 import TaxSection from './components/TaxSection';
@@ -34,11 +33,7 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex">
-      <Sidebar />
-      <div className="ml-64 flex flex-col flex-1">
-        <Topbar />
-        <main className="pt-16 flex-1 p-6 lg:p-8">
+    <AppLayout>
           {/* Page Header */}
           <div className="flex items-center justify-between mb-8">
             <div>
@@ -102,16 +97,6 @@ export default function SettingsPage() {
                 ))}
               </div>
 
-              {/* Quick Info Card */}
-              <div className="mt-4 bg-indigo-600 rounded-xl p-4 text-white">
-                <div className="w-8 h-8 flex items-center justify-center bg-white/20 rounded-lg mb-3">
-                  <i className="ri-information-line text-white text-base"></i>
-                </div>
-                <p className="text-sm font-bold mb-1">Auto-saved</p>
-                <p className="text-xs text-indigo-200 leading-relaxed">
-                  Settings are saved locally. Click &quot;Save Changes&quot; to confirm your updates.
-                </p>
-              </div>
             </div>
 
             {/* Content Panel */}
@@ -127,9 +112,6 @@ export default function SettingsPage() {
               )}
             </div>
           </div>
-        </main>
-      </div>
-
       {/* Reset Confirmation Modal */}
       {showReset && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
@@ -158,6 +140,6 @@ export default function SettingsPage() {
           </div>
         </div>
       )}
-    </div>
+    </AppLayout>
   );
 }
