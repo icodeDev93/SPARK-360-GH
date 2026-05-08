@@ -4,24 +4,24 @@ import { customers as seedCustomers } from '@/mocks/customers';
 import { supabase } from '@/lib/supabase';
 
 type Row = {
-  customer_id: string; full_name: string; company_name: string; customer_type: string;
-  phone: string; email: string; total_purchases: number; outstanding_balance: number;
-  status_flag: string; avatar: string; last_order_date: string;
+  id: string; full_name: string;
+  customer_type: string; phone: string | null; email: string | null;
+  outstanding_balance: number; status: string; avatar_url: string | null;
+  created_at?: string;
 };
 
 const toCustomer = (r: Row): Customer => ({
-  customerId: r.customer_id, fullName: r.full_name, companyName: r.company_name,
-  customerType: r.customer_type as CustomerType, phone: r.phone, email: r.email,
-  totalPurchases: r.total_purchases, outstandingBalance: r.outstanding_balance,
-  statusFlag: r.status_flag as CustomerStatus, avatar: r.avatar,
-  lastOrderDate: r.last_order_date,
+  customerId: r.id, fullName: r.full_name,
+  customerType: r.customer_type as CustomerType, phone: r.phone ?? '', email: r.email ?? '',
+  totalPurchases: 0, outstandingBalance: r.outstanding_balance,
+  statusFlag: r.status as CustomerStatus, avatar: r.avatar_url ?? '',
+  lastOrderDate: r.created_at?.split('T')[0] ?? '',
 });
 
-const toRow = (c: Customer): Row => ({
-  customer_id: c.customerId, full_name: c.fullName, company_name: c.companyName,
+const toRow = (c: Customer): Omit<Row, 'id'> => ({
+  full_name: c.fullName,
   customer_type: c.customerType, phone: c.phone, email: c.email,
-  total_purchases: c.totalPurchases, outstanding_balance: c.outstandingBalance,
-  status_flag: c.statusFlag, avatar: c.avatar, last_order_date: c.lastOrderDate,
+  outstanding_balance: c.outstandingBalance, status: c.statusFlag, avatar_url: c.avatar,
 });
 
 export function useCustomers() {
@@ -35,8 +35,12 @@ export function useCustomers() {
       if (error) { console.error(error); setLoading(false); return; }
 
       if (!data || data.length === 0) {
-        await supabase.from('customers').insert(seedCustomers.map(toRow));
-        setCustomers(seedCustomers);
+        const { data: seeded, error: seedError } = await supabase
+          .from('customers')
+          .insert(seedCustomers.map(toRow))
+          .select('*');
+        if (seedError) console.error(seedError);
+        setCustomers(seeded ? seeded.map(toCustomer) : seedCustomers);
       } else {
         setCustomers(data.map(toCustomer));
       }
@@ -51,9 +55,16 @@ export function useCustomers() {
       lastOrderDate: new Date().toISOString().split('T')[0],
     };
     setCustomers((prev) => [...prev, newCustomer]);
-    const { error } = await supabase.from('customers').insert(toRow(newCustomer));
+    const { data: inserted, error } = await supabase
+      .from('customers')
+      .insert(toRow(newCustomer))
+      .select('*')
+      .single();
     if (error) console.error(error);
-    return newCustomer;
+    if (!inserted) return newCustomer;
+    const savedCustomer = toCustomer(inserted);
+    setCustomers((prev) => prev.map((c) => c.customerId === newCustomer.customerId ? savedCustomer : c));
+    return savedCustomer;
   };
 
   const updateCustomer = async (customerId: string, data: Partial<Customer>) => {
@@ -61,13 +72,13 @@ export function useCustomers() {
     const updated = customers.find((c) => c.customerId === customerId);
     if (!updated) return;
     const { error } = await supabase.from('customers')
-      .update(toRow({ ...updated, ...data })).eq('customer_id', customerId);
+      .update(toRow({ ...updated, ...data })).eq('id', customerId);
     if (error) console.error(error);
   };
 
   const deleteCustomer = async (customerId: string) => {
     setCustomers((prev) => prev.filter((c) => c.customerId !== customerId));
-    const { error } = await supabase.from('customers').delete().eq('customer_id', customerId);
+    const { error } = await supabase.from('customers').delete().eq('id', customerId);
     if (error) console.error(error);
   };
 

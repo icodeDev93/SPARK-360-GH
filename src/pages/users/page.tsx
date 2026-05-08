@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import AppLayout from '@/components/feature/AppLayout';
 import type { UserRole } from '@/hooks/useAuth';
-import { ROLE_LABELS, ROLE_USERS } from '@/hooks/useAuth';
+import { ROLE_LABELS } from '@/hooks/useAuth';
+import { supabase } from '@/lib/supabase';
+import PasswordInput from '@/components/ui/PasswordInput';
 
 interface AppUser {
   id: string;
@@ -18,52 +20,52 @@ const AVATAR_COLORS = [
   'bg-rose-500', 'bg-violet-600', 'bg-cyan-600', 'bg-orange-500',
 ];
 
-const SEED_USERS: AppUser[] = ROLE_USERS.map((u, i) => ({
-  ...u,
-  status: 'Active',
-  avatarColor: u.avatarColor || AVATAR_COLORS[i % AVATAR_COLORS.length],
-}));
-
-const USERS_KEY = 'spark360_app_users';
-
-function loadUsers(): AppUser[] {
-  try {
-    const stored = localStorage.getItem(USERS_KEY);
-    if (stored) {
-      const parsed = JSON.parse(stored) as AppUser[];
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-    }
-  } catch { /* ignore */ }
-  localStorage.setItem(USERS_KEY, JSON.stringify(SEED_USERS));
-  return SEED_USERS;
-}
-
 function getInitials(name: string) {
   return name.trim().split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase();
 }
 
-const EMPTY_FORM = { name: '', email: '', role: 'cashier' as UserRole, status: 'Active' as 'Active' | 'Inactive', password: '', confirmPassword: '' };
+function mapRow(r: Record<string, unknown>): AppUser {
+  return {
+    id:          r.id as string,
+    name:        r.name as string,
+    email:       r.email as string,
+    role:        r.role as UserRole,
+    initials:    r.initials as string,
+    avatarColor: r.avatar_color as string,
+    status:      (r.status as 'Active' | 'Inactive') ?? 'Active',
+  };
+}
+
+const EMPTY_FORM = {
+  name: '', email: '', role: 'cashier' as UserRole,
+  status: 'Active' as 'Active' | 'Inactive',
+  password: '', confirmPassword: '',
+};
 
 export default function UsersPage() {
-  const [users, setUsers] = useState<AppUser[]>(loadUsers);
-  const [showForm, setShowForm] = useState(false);
+  const [users, setUsers]           = useState<AppUser[]>([]);
+  const [loading, setLoading]       = useState(true);
+  const [saving, setSaving]         = useState(false);
+  const [formError, setFormError]   = useState('');
+  const [showForm, setShowForm]     = useState(false);
   const [editTarget, setEditTarget] = useState<AppUser | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
-  const [form, setForm] = useState(EMPTY_FORM);
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirm, setShowConfirm] = useState(false);
-  const [search, setSearch] = useState('');
+  const [form, setForm]             = useState(EMPTY_FORM);
+  const [errors, setErrors]         = useState<Record<string, string>>({});
+  const [search, setSearch]         = useState('');
   const [roleFilter, setRoleFilter] = useState<'All' | UserRole>('All');
 
-  const save = (next: AppUser[]) => {
-    setUsers(next);
-    localStorage.setItem(USERS_KEY, JSON.stringify(next));
-  };
+  useEffect(() => {
+    (async () => {
+      const { data, error } = await supabase.from('profiles').select('*').order('name');
+      if (!error && data) setUsers(data.map(mapRow));
+      setLoading(false);
+    })();
+  }, []);
 
-  const openAdd = () => { setEditTarget(null); setForm(EMPTY_FORM); setErrors({}); setShowPassword(false); setShowConfirm(false); setShowForm(true); };
-  const openEdit = (u: AppUser) => { setEditTarget(u); setForm({ name: u.name, email: u.email, role: u.role, status: u.status, password: '', confirmPassword: '' }); setErrors({}); setShowPassword(false); setShowConfirm(false); setShowForm(true); };
-  const closeForm = () => { setShowForm(false); setEditTarget(null); };
+  const openAdd  = () => { setEditTarget(null); setForm(EMPTY_FORM); setErrors({}); setFormError(''); setShowForm(true); };
+  const openEdit = (u: AppUser) => { setEditTarget(u); setForm({ name: u.name, email: u.email, role: u.role, status: u.status, password: '', confirmPassword: '' }); setErrors({}); setFormError(''); setShowForm(true); };
+  const closeForm = () => { setShowForm(false); setEditTarget(null); setSaving(false); };
 
   const validate = () => {
     const e: Record<string, string> = {};
@@ -72,53 +74,106 @@ export default function UsersPage() {
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) e.email = 'Invalid email address';
     if (!editTarget) {
       if (!form.password) e.password = 'Password is required';
-      else if (form.password.length < 6) e.password = 'Password must be at least 6 characters';
+      else if (form.password.length < 6) e.password = 'Minimum 6 characters';
       if (!form.confirmPassword) e.confirmPassword = 'Please confirm the password';
       else if (form.password !== form.confirmPassword) e.confirmPassword = 'Passwords do not match';
     } else if (form.password) {
-      if (form.password.length < 6) e.password = 'Password must be at least 6 characters';
+      if (form.password.length < 6) e.password = 'Minimum 6 characters';
       if (form.password !== form.confirmPassword) e.confirmPassword = 'Passwords do not match';
     }
     setErrors(e);
     return Object.keys(e).length === 0;
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!validate()) return;
-    if (editTarget) {
-      save(users.map((u) => u.id === editTarget.id
-        ? { ...u, name: form.name, email: form.email, role: form.role, status: form.status, initials: getInitials(form.name) }
-        : u
-      ));
-    } else {
-      const colorIdx = users.length % AVATAR_COLORS.length;
-      const newUser: AppUser = {
-        id: `u${Date.now()}`,
-        name: form.name,
-        email: form.email,
-        role: form.role,
-        status: form.status,
-        initials: getInitials(form.name),
-        avatarColor: AVATAR_COLORS[colorIdx],
-      };
-      save([...users, newUser]);
+    setSaving(true);
+    setFormError('');
+
+    try {
+      if (editTarget) {
+        // ── Edit: update profile row only ──
+        const initials = getInitials(form.name);
+        const { error } = await supabase
+          .from('profiles')
+          .update({ name: form.name, email: form.email, role: form.role, status: form.status, initials })
+          .eq('id', editTarget.id);
+
+        if (error) { setFormError(error.message); return; }
+
+        setUsers((prev) => prev.map((u) =>
+          u.id === editTarget.id ? { ...u, name: form.name, email: form.email, role: form.role, status: form.status, initials } : u
+        ));
+      } else {
+        // ── Create: Supabase Auth sign-up → insert profile ──
+
+        // Save current admin session so we can restore it after signUp takes over.
+        const { data: { session: adminSession } } = await supabase.auth.getSession();
+
+        const { data: authData, error: authError } = await supabase.auth.signUp({
+          email: form.email.toLowerCase().trim(),
+          password: form.password,
+        });
+
+        if (authError || !authData.user) {
+          setFormError(authError?.message ?? 'Failed to create auth account.');
+          return;
+        }
+
+        const initials    = getInitials(form.name);
+        const avatarColor = AVATAR_COLORS[users.length % AVATAR_COLORS.length];
+
+        const { error: profileError } = await supabase.from('profiles').insert({
+          id:           authData.user.id,
+          name:         form.name,
+          email:        form.email.toLowerCase().trim(),
+          role:         form.role,
+          status:       form.status,
+          initials,
+          avatar_color: avatarColor,
+        });
+
+        if (profileError) {
+          setFormError('Account created but profile setup failed: ' + profileError.message);
+          return;
+        }
+
+        // Restore admin session (signUp signs in as the new user when email confirmation is off).
+        if (adminSession) {
+          await supabase.auth.setSession({
+            access_token:  adminSession.access_token,
+            refresh_token: adminSession.refresh_token,
+          });
+        }
+
+        const newUser: AppUser = { id: authData.user.id, name: form.name, email: form.email.toLowerCase().trim(), role: form.role, status: form.status, initials, avatarColor };
+        setUsers((prev) => [...prev, newUser]);
+      }
+
+      closeForm();
+    } finally {
+      setSaving(false);
     }
-    closeForm();
   };
 
-  const handleDelete = (id: string) => {
-    save(users.filter((u) => u.id !== id));
+  const handleDelete = async (id: string) => {
+    const { error } = await supabase.from('profiles').delete().eq('id', id);
+    if (!error) setUsers((prev) => prev.filter((u) => u.id !== id));
     setDeleteTarget(null);
   };
 
   const filtered = users.filter((u) => {
     const q = search.toLowerCase();
     const matchSearch = u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q);
-    const matchRole = roleFilter === 'All' || u.role === roleFilter;
+    const matchRole   = roleFilter === 'All' || u.role === roleFilter;
     return matchSearch && matchRole;
   });
 
-  const counts = { admin: users.filter((u) => u.role === 'admin').length, manager: users.filter((u) => u.role === 'manager').length, cashier: users.filter((u) => u.role === 'cashier').length };
+  const counts = {
+    admin:   users.filter((u) => u.role === 'admin').length,
+    manager: users.filter((u) => u.role === 'manager').length,
+    cashier: users.filter((u) => u.role === 'cashier').length,
+  };
 
   return (
     <AppLayout>
@@ -140,10 +195,10 @@ export default function UsersPage() {
       {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         {[
-          { label: 'Total Users',  value: users.length,      icon: 'ri-team-line',         color: 'bg-indigo-50 text-indigo-600' },
-          { label: 'Administrators', value: counts.admin,    icon: 'ri-shield-user-line',  color: 'bg-violet-50 text-violet-600' },
-          { label: 'Managers',     value: counts.manager,    icon: 'ri-user-star-line',    color: 'bg-emerald-50 text-emerald-600' },
-          { label: 'Cashiers',     value: counts.cashier,    icon: 'ri-user-line',         color: 'bg-amber-50 text-amber-600' },
+          { label: 'Total Users',    value: users.length,   icon: 'ri-team-line',        color: 'bg-indigo-50 text-indigo-600' },
+          { label: 'Administrators', value: counts.admin,   icon: 'ri-shield-user-line', color: 'bg-violet-50 text-violet-600' },
+          { label: 'Managers',       value: counts.manager, icon: 'ri-user-star-line',   color: 'bg-emerald-50 text-emerald-600' },
+          { label: 'Cashiers',       value: counts.cashier, icon: 'ri-user-line',        color: 'bg-amber-50 text-amber-600' },
         ].map((s) => (
           <div key={s.label} className="bg-white rounded-xl p-4 flex items-center gap-3 border border-slate-100">
             <div className={`w-10 h-10 flex items-center justify-center rounded-lg flex-shrink-0 ${s.color}`}>
@@ -169,7 +224,7 @@ export default function UsersPage() {
             className="bg-transparent text-sm text-slate-600 placeholder-slate-400 outline-none flex-1"
           />
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {(['All', 'admin', 'manager', 'cashier'] as const).map((r) => (
             <button
               key={r}
@@ -196,7 +251,16 @@ export default function UsersPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.length === 0 ? (
+              {loading ? (
+                <tr>
+                  <td colSpan={5} className="px-5 py-14 text-center">
+                    <div className="flex flex-col items-center gap-2">
+                      <i className="ri-loader-4-line animate-spin text-2xl text-indigo-400"></i>
+                      <p className="text-slate-400 text-sm">Loading users…</p>
+                    </div>
+                  </td>
+                </tr>
+              ) : filtered.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="px-5 py-14 text-center">
                     <div className="flex flex-col items-center gap-2">
@@ -218,9 +282,7 @@ export default function UsersPage() {
                           <span className="text-slate-800 text-sm font-semibold">{u.name}</span>
                         </div>
                       </td>
-                      <td className="px-5 py-3.5">
-                        <span className="text-slate-500 text-sm">{u.email}</span>
-                      </td>
+                      <td className="px-5 py-3.5"><span className="text-slate-500 text-sm">{u.email}</span></td>
                       <td className="px-5 py-3.5">
                         <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full ${role.bg} ${role.color}`}>
                           {role.label}
@@ -236,16 +298,10 @@ export default function UsersPage() {
                       </td>
                       <td className="px-5 py-3.5">
                         <div className="flex items-center gap-1">
-                          <button
-                            onClick={() => openEdit(u)}
-                            className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-indigo-50 text-slate-400 hover:text-indigo-600 transition-all cursor-pointer"
-                          >
+                          <button onClick={() => openEdit(u)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-indigo-50 text-slate-400 hover:text-indigo-600 transition-all cursor-pointer">
                             <i className="ri-edit-line text-sm"></i>
                           </button>
-                          <button
-                            onClick={() => setDeleteTarget(u.id)}
-                            className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition-all cursor-pointer"
-                          >
+                          <button onClick={() => setDeleteTarget(u.id)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition-all cursor-pointer">
                             <i className="ri-delete-bin-line text-sm"></i>
                           </button>
                         </div>
@@ -274,6 +330,13 @@ export default function UsersPage() {
             </div>
 
             <div className="px-6 py-5 space-y-4">
+              {formError && (
+                <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2.5">
+                  <i className="ri-error-warning-line text-red-500 text-base flex-shrink-0 mt-0.5"></i>
+                  <p className="text-red-600 text-sm">{formError}</p>
+                </div>
+              )}
+
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-1.5">Full Name <span className="text-red-400">*</span></label>
                 <input
@@ -281,6 +344,7 @@ export default function UsersPage() {
                   value={form.name}
                   onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
                   placeholder="e.g. Kofi Boateng"
+                  autoComplete="off"
                   className={`w-full border rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none transition-all ${errors.name ? 'border-red-400' : 'border-slate-200 focus:border-indigo-400'}`}
                 />
                 {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name}</p>}
@@ -292,8 +356,10 @@ export default function UsersPage() {
                   type="email"
                   value={form.email}
                   onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
-                  placeholder="e.g. kofi@spark360.com"
-                  className={`w-full border rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none transition-all ${errors.email ? 'border-red-400' : 'border-slate-200 focus:border-indigo-400'}`}
+                  placeholder="e.g. kofi@spark360gh.com"
+                  autoComplete="off"
+                  disabled={!!editTarget}
+                  className={`w-full border rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none transition-all disabled:bg-slate-50 disabled:text-slate-400 ${errors.email ? 'border-red-400' : 'border-slate-200 focus:border-indigo-400'}`}
                 />
                 {errors.email && <p className="text-red-500 text-xs mt-1">{errors.email}</p>}
               </div>
@@ -324,50 +390,35 @@ export default function UsersPage() {
                 </div>
               </div>
 
-              {/* Password */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-1.5">
-                    Password {!editTarget && <span className="text-red-400">*</span>}
-                    {editTarget && <span className="text-slate-400 font-normal text-xs"> (leave blank to keep current)</span>}
-                  </label>
-                  <div className="relative">
-                    <input
-                      type={showPassword ? 'text' : 'password'}
+              {!editTarget && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1.5">Password <span className="text-red-400">*</span></label>
+                    <PasswordInput
                       value={form.password}
                       onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))}
                       placeholder="••••••••"
-                      className={`w-full border rounded-lg px-4 py-2.5 pr-10 text-sm text-slate-700 outline-none transition-all ${errors.password ? 'border-red-400' : 'border-slate-200 focus:border-indigo-400'}`}
+                      autoComplete="new-password"
+                      iconClassName="text-sm"
+                      inputClassName={`w-full border rounded-lg px-4 py-2.5 pr-10 text-sm text-slate-700 outline-none transition-all ${errors.password ? 'border-red-400' : 'border-slate-200 focus:border-indigo-400'}`}
                     />
-                    <button type="button" onClick={() => setShowPassword((v) => !v)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer">
-                      <i className={`${showPassword ? 'ri-eye-off-line' : 'ri-eye-line'} text-sm`}></i>
-                    </button>
+                    {errors.password && <p className="text-red-500 text-xs mt-1">{errors.password}</p>}
                   </div>
-                  {errors.password && <p className="text-red-500 text-xs mt-1">{errors.password}</p>}
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-1.5">
-                    Confirm Password {!editTarget && <span className="text-red-400">*</span>}
-                  </label>
-                  <div className="relative">
-                    <input
-                      type={showConfirm ? 'text' : 'password'}
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1.5">Confirm Password <span className="text-red-400">*</span></label>
+                    <PasswordInput
                       value={form.confirmPassword}
                       onChange={(e) => setForm((p) => ({ ...p, confirmPassword: e.target.value }))}
                       placeholder="••••••••"
-                      className={`w-full border rounded-lg px-4 py-2.5 pr-10 text-sm text-slate-700 outline-none transition-all ${errors.confirmPassword ? 'border-red-400' : 'border-slate-200 focus:border-indigo-400'}`}
+                      autoComplete="new-password"
+                      iconClassName="text-sm"
+                      inputClassName={`w-full border rounded-lg px-4 py-2.5 pr-10 text-sm text-slate-700 outline-none transition-all ${errors.confirmPassword ? 'border-red-400' : 'border-slate-200 focus:border-indigo-400'}`}
                     />
-                    <button type="button" onClick={() => setShowConfirm((v) => !v)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer">
-                      <i className={`${showConfirm ? 'ri-eye-off-line' : 'ri-eye-line'} text-sm`}></i>
-                    </button>
+                    {errors.confirmPassword && <p className="text-red-500 text-xs mt-1">{errors.confirmPassword}</p>}
                   </div>
-                  {errors.confirmPassword && <p className="text-red-500 text-xs mt-1">{errors.confirmPassword}</p>}
                 </div>
-              </div>
+              )}
 
-              {/* Role permissions hint */}
               <div className="bg-slate-50 border border-slate-100 rounded-lg p-3">
                 <p className="text-xs font-semibold text-slate-600 mb-1">
                   {form.role === 'admin' ? 'Administrator' : form.role === 'manager' ? 'Manager' : 'Cashier'} Permissions
@@ -383,11 +434,11 @@ export default function UsersPage() {
             </div>
 
             <div className="flex gap-3 px-6 py-4 border-t border-slate-100">
-              <button onClick={closeForm} className="flex-1 py-2.5 border border-slate-200 rounded-lg text-sm font-semibold text-slate-600 hover:bg-slate-50 cursor-pointer whitespace-nowrap transition-all">
+              <button onClick={closeForm} disabled={saving} className="flex-1 py-2.5 border border-slate-200 rounded-lg text-sm font-semibold text-slate-600 hover:bg-slate-50 cursor-pointer whitespace-nowrap transition-all disabled:opacity-50">
                 Cancel
               </button>
-              <button onClick={handleSave} className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-bold cursor-pointer whitespace-nowrap transition-all">
-                {editTarget ? 'Save Changes' : 'Add User'}
+              <button onClick={handleSave} disabled={saving} className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white rounded-lg text-sm font-bold cursor-pointer whitespace-nowrap transition-all flex items-center justify-center gap-2">
+                {saving ? <><i className="ri-loader-4-line animate-spin"></i> Saving…</> : editTarget ? 'Save Changes' : 'Add User'}
               </button>
             </div>
           </div>
@@ -402,7 +453,7 @@ export default function UsersPage() {
               <i className="ri-delete-bin-line text-red-600 text-xl"></i>
             </div>
             <h3 className="text-slate-800 font-bold text-base mb-2">Remove User?</h3>
-            <p className="text-slate-500 text-sm mb-6 leading-relaxed">This user account will be permanently removed.</p>
+            <p className="text-slate-500 text-sm mb-6 leading-relaxed">This will remove the user's profile and access to the app.</p>
             <div className="flex gap-3">
               <button onClick={() => setDeleteTarget(null)} className="flex-1 py-2.5 rounded-lg border border-slate-200 text-slate-700 text-sm font-semibold hover:bg-slate-50 cursor-pointer whitespace-nowrap">Cancel</button>
               <button onClick={() => handleDelete(deleteTarget)} className="flex-1 py-2.5 rounded-lg bg-red-500 hover:bg-red-600 text-white text-sm font-bold cursor-pointer whitespace-nowrap">Remove</button>

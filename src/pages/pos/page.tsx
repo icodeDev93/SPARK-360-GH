@@ -5,10 +5,12 @@ import ProductGrid from './components/ProductGrid';
 import CartPanel from './components/CartPanel';
 
 interface CartItem {
-  id: number;
+  id: string;
   name: string;
   price: number;
+  costPrice: number;
   qty: number;
+  stock: number;
   image: string;
 }
 
@@ -19,17 +21,17 @@ export default function POSPage() {
     setCartItems((prev) => {
       const existing = prev.find((i) => i.id === item.id);
       if (existing) {
-        return prev.map((i) => i.id === item.id ? { ...i, qty: i.qty + 1 } : i);
+        return prev.map((i) => i.id === item.id ? { ...i, qty: Math.min(i.stock, i.qty + 1) } : i);
       }
       return [...prev, item];
     });
   };
 
-  const handleUpdateQty = (id: number, qty: number) => {
-    setCartItems((prev) => prev.map((i) => i.id === id ? { ...i, qty } : i));
+  const handleUpdateQty = (id: string, qty: number) => {
+    setCartItems((prev) => prev.map((i) => i.id === id ? { ...i, qty: Math.min(i.stock, Math.max(1, qty)) } : i));
   };
 
-  const handleRemove = (id: number) => {
+  const handleRemove = (id: string) => {
     setCartItems((prev) => prev.filter((i) => i.id !== id));
   };
 

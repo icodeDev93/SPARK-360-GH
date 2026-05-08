@@ -3,7 +3,10 @@ import { useSalesLog } from '@/hooks/useSalesLog';
 import { inventoryItems } from '@/mocks/inventory';
 import type { AnalyticsFilter } from '@/hooks/useAnalyticsFilter';
 
-interface Props { filter: AnalyticsFilter; }
+interface Props {
+  filter: AnalyticsFilter;
+  variant?: 'full' | 'top';
+}
 
 const CATEGORY_COLORS: Record<string, string> = {
   Electronics: 'bg-indigo-500',
@@ -13,9 +16,10 @@ const CATEGORY_COLORS: Record<string, string> = {
   'Food & Drinks': 'bg-rose-500',
 };
 
-export default function ProductsTab({ filter }: Props) {
+export default function ProductsTab({ filter, variant = 'full' }: Props) {
   const { sales } = useSalesLog();
   const [sortBy, setSortBy] = useState<'revenue' | 'profit' | 'qty'>('revenue');
+  const isTopOnly = variant === 'top';
 
   const completedSales = useMemo(
     () => sales.filter((s) => s.status === 'completed' && filter.isInRange(s.date)),
@@ -26,7 +30,7 @@ export default function ProductsTab({ filter }: Props) {
     const map = new Map<number, { name: string; category: string; qty: number; revenue: number; cost: number; profit: number; image: string }>();
     completedSales.forEach((sale) => {
       sale.items.forEach((item) => {
-        const inv = inventoryItems.find((i) => i.id === item.id);
+        const inv = inventoryItems.find((i) => Number(i.itemId.replace(/\D/g, '')) === item.id);
         const cost = inv ? inv.costPrice * item.qty : 0;
         const revenue = item.price * item.qty;
         const existing = map.get(item.id);
@@ -77,8 +81,8 @@ export default function ProductsTab({ filter }: Props) {
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2 bg-white rounded-xl p-6 border border-slate-100">
+      <div className={`grid grid-cols-1 ${isTopOnly ? '' : 'lg:grid-cols-3'} gap-4`}>
+        <div className={`${isTopOnly ? '' : 'lg:col-span-2'} bg-white rounded-xl p-6 border border-slate-100`}>
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-slate-800 font-bold text-base">Top Products</h3>
             <span className="text-slate-400 text-xs">{productStats.length} products · {filter.label}</span>
@@ -140,7 +144,7 @@ export default function ProductsTab({ filter }: Props) {
           )}
         </div>
 
-        <div className="bg-white rounded-xl p-6 border border-slate-100">
+        {!isTopOnly && <div className="bg-white rounded-xl p-6 border border-slate-100">
           <h3 className="text-slate-800 font-bold text-base mb-5">By Category</h3>
           {categoryStats.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-32 text-slate-300">
@@ -170,11 +174,11 @@ export default function ProductsTab({ filter }: Props) {
               })}
             </div>
           )}
-        </div>
+        </div>}
       </div>
 
       {/* Performance Matrix */}
-      <div className="bg-white rounded-xl p-6 border border-slate-100">
+      {!isTopOnly && <div className="bg-white rounded-xl p-6 border border-slate-100">
         <h3 className="text-slate-800 font-bold text-base mb-4">Product Performance Matrix</h3>
         {productStats.length === 0 ? (
           <p className="text-slate-400 text-sm text-center py-8">No data for this period</p>
@@ -205,7 +209,7 @@ export default function ProductsTab({ filter }: Props) {
             })}
           </div>
         )}
-      </div>
+      </div>}
     </div>
   );
 }

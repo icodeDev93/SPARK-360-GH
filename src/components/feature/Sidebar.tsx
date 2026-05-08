@@ -1,6 +1,5 @@
-import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { useAuth, ROLE_PERMISSIONS, ROLE_LABELS, ROLE_USERS } from '@/hooks/useAuth';
+import { useAuth, ROLE_PERMISSIONS } from '@/hooks/useAuth';
 
 const ALL_NAV_ITEMS = [
   { path: '/', label: 'Dashboard', icon: 'ri-dashboard-3-line', exact: true, permission: 'dashboard' },
@@ -10,8 +9,7 @@ const ALL_NAV_ITEMS = [
   { path: '/suppliers', label: 'Purchases & Supplies', icon: 'ri-store-3-line', permission: 'purchases' },
   { path: '/inventory', label: 'Inventory', icon: 'ri-archive-drawer-line', permission: 'inventory' },
   { path: '/expenses', label: 'Expenses', icon: 'ri-wallet-3-line', permission: 'expenses' },
-  { path: '/reports', label: 'Reports', icon: 'ri-bar-chart-box-line', permission: 'reports' },
-  { path: '/analytics', label: 'Analytics', icon: 'ri-pie-chart-2-line', permission: 'reports' },
+  { path: '/analytics', label: 'Analytics & Reports', icon: 'ri-pie-chart-2-line', permission: 'reports' },
 ];
 
 const BOTTOM_ITEMS = [
@@ -20,10 +18,8 @@ const BOTTOM_ITEMS = [
 ];
 
 export default function Sidebar() {
-  const { currentUser, switchUser, allUsers } = useAuth();
-  const [showRoleSwitcher, setShowRoleSwitcher] = useState(false);
-  const permissions = ROLE_PERMISSIONS[currentUser.role];
-  const roleInfo = ROLE_LABELS[currentUser.role];
+  const { currentUser } = useAuth();
+  const permissions = currentUser ? ROLE_PERMISSIONS[currentUser.role] : [];
 
   const visibleNav = ALL_NAV_ITEMS.filter((item) => permissions.includes(item.permission));
   const visibleBottom = BOTTOM_ITEMS.filter((item) => permissions.includes(item.permission));
@@ -111,59 +107,6 @@ export default function Sidebar() {
         )}
       </nav>
 
-      {/* User Profile + Role Switcher */}
-      <div className="px-3 py-4 border-t border-slate-700/50 relative">
-        <button
-          onClick={() => setShowRoleSwitcher(!showRoleSwitcher)}
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-800 cursor-pointer transition-all"
-        >
-          <div className={`w-9 h-9 rounded-full ${currentUser.avatarColor} flex items-center justify-center text-white text-sm font-bold flex-shrink-0`}>
-            {currentUser.initials}
-          </div>
-          <div className="flex-1 min-w-0 text-left">
-            <p className="text-white text-sm font-semibold truncate">{currentUser.name}</p>
-            <span className={`text-xs font-semibold px-1.5 py-0.5 rounded ${roleInfo.bg} ${roleInfo.color}`}>
-              {roleInfo.label}
-            </span>
-          </div>
-          <span className="w-4 h-4 flex items-center justify-center text-slate-400">
-            <i className={showRoleSwitcher ? 'ri-arrow-down-s-line text-sm' : 'ri-arrow-up-s-line text-sm'}></i>
-          </span>
-        </button>
-
-        {/* Role Switcher Dropdown */}
-        {showRoleSwitcher && (
-          <div className="absolute bottom-full left-3 right-3 mb-2 bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-            <div className="px-4 py-2.5 border-b border-slate-700">
-              <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider">Switch User / Role</p>
-            </div>
-            {allUsers.map((user) => {
-              const info = ROLE_LABELS[user.role];
-              const isActive = user.id === currentUser.id;
-              return (
-                <button
-                  key={user.id}
-                  onClick={() => { switchUser(user.id); setShowRoleSwitcher(false); }}
-                  className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-700 transition-all cursor-pointer text-left ${isActive ? 'bg-slate-700/50' : ''}`}
-                >
-                  <div className={`w-8 h-8 rounded-full ${user.avatarColor} flex items-center justify-center text-white text-xs font-bold flex-shrink-0`}>
-                    {user.initials}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-white text-sm font-semibold truncate">{user.name}</p>
-                    <span className={`text-xs font-semibold ${info.color}`}>{info.label}</span>
-                  </div>
-                  {isActive && (
-                    <span className="w-5 h-5 flex items-center justify-center text-emerald-400">
-                      <i className="ri-checkbox-circle-fill text-sm"></i>
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </div>
     </aside>
   );
 }

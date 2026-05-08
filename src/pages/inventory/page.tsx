@@ -2,6 +2,7 @@ import { useState } from 'react';
 import AppLayout from '@/components/feature/AppLayout';
 import ItemDrawer from './components/ItemDrawer';
 import { useInventory } from '@/hooks/useInventory';
+import { useSuppliers } from '@/hooks/useSuppliers';
 import type { InventoryItem } from '@/types/erp';
 
 const CAT_COLORS = [
@@ -45,6 +46,7 @@ function StockBar({ current, reorder }: { current: number; reorder: number }) {
 
 export default function InventoryPage() {
   const { items, categories, saveItem, deleteItem, addCategory, renameCategory, deleteCategory } = useInventory();
+  const { suppliers } = useSuppliers();
   const [pageTab, setPageTab] = useState<'items' | 'categories'>('items');
 
   // ── Categories ──────────────────────────────────────────────────────────────
@@ -88,8 +90,8 @@ export default function InventoryPage() {
     return matchSearch && matchCat && matchStock;
   });
 
-  const handleSave = (item: InventoryItem) => {
-    saveItem(item);
+  const handleSave = async (item: InventoryItem) => {
+    await saveItem(item);
     setDrawerOpen(false);
     setEditItem(null);
   };
@@ -103,6 +105,10 @@ export default function InventoryPage() {
   const outCount = items.filter((i) => i.stockStatus === 'OUT OF STOCK').length;
 
   const allFilterCategories = ['All', ...categories];
+  const supplierNames = suppliers
+    .map((supplier) => supplier.name)
+    .filter((name, index, names) => name && names.indexOf(name) === index)
+    .sort((a, b) => a.localeCompare(b));
 
   return (
     <AppLayout>
@@ -460,6 +466,7 @@ export default function InventoryPage() {
         open={drawerOpen}
         item={editItem}
         categories={categories}
+        suppliers={supplierNames}
         onClose={() => { setDrawerOpen(false); setEditItem(null); }}
         onSave={handleSave}
       />

@@ -3,10 +3,12 @@ import { useSettings } from '@/hooks/useSettings';
 import type { PaymentMethod } from '@/types/erp';
 
 interface CartItem {
-  id: number;
+  id: string;
   name: string;
   price: number;
+  costPrice: number;
   qty: number;
+  stock: number;
   image: string;
 }
 
@@ -17,14 +19,10 @@ interface ReceiptModalProps {
   discountAmt: number;
   grandTotal: number;
   discount: number;
+  receiptNo: string;
   paymentMethod: PaymentMethod;
   onClose: () => void;
   onNewSale: () => void;
-}
-
-function generateReceiptNo() {
-  const ts = Date.now().toString().slice(-6);
-  return `RCP-${ts}`;
 }
 
 const paymentLabels: Record<string, string> = {
@@ -48,13 +46,13 @@ export default function ReceiptModal({
   discountAmt,
   grandTotal,
   discount,
+  receiptNo,
   paymentMethod,
   onClose,
   onNewSale,
 }: ReceiptModalProps) {
   const { settings } = useSettings();
   const receiptRef = useRef<HTMLDivElement>(null);
-  const receiptNo = useRef(generateReceiptNo()).current;
   const now = new Date();
   const dateStr = now.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
   const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });

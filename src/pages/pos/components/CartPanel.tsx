@@ -2,22 +2,24 @@ import { useState } from 'react';
 import { useSettings } from '@/hooks/useSettings';
 import { useSalesLog } from '@/hooks/useSalesLog';
 import { useAuth } from '@/hooks/useAuth';
-import { calcLineItem } from '@/services/salesService';
+import { calcLineItem, generateReceiptNo } from '@/services/salesService';
 import type { PaymentMethod } from '@/types/erp';
 import ReceiptModal from './ReceiptModal';
 
 interface CartItem {
-  id: number;
+  id: string;
   name: string;
   price: number;
+  costPrice: number;
   qty: number;
+  stock: number;
   image: string;
 }
 
 interface CartPanelProps {
   items: CartItem[];
-  onUpdateQty: (id: number, qty: number) => void;
-  onRemove: (id: number) => void;
+  onUpdateQty: (id: string, qty: number) => void;
+  onRemove: (id: string) => void;
   onClear: () => void;
 }
 
@@ -35,6 +37,7 @@ export default function CartPanel({ items, onUpdateQty, onRemove, onClear }: Car
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('Cash');
   const [discount, setDiscount] = useState(0);
   const [showReceipt, setShowReceipt] = useState(false);
+  const [receiptNo, setReceiptNo] = useState('');
 
   const taxRate    = settings.taxEnabled ? settings.taxRate / 100 : 0;
   const subtotal   = items.reduce((sum, i) => sum + i.price * i.qty, 0);
@@ -45,9 +48,12 @@ export default function CartPanel({ items, onUpdateQty, onRemove, onClear }: Car
   const handleCompleteSale = () => {
     if (items.length === 0) return;
     const saleItems = items.map((item) =>
-      calcLineItem(String(item.id), item.name, item.qty, 0, item.price, 0)
+      calcLineItem(item.id, item.name, item.qty, 0, item.price, item.costPrice)
     );
+    const nextReceiptNo = generateReceiptNo();
+    setReceiptNo(nextReceiptNo);
     addInvoice({
+      receiptNo:    nextReceiptNo,
       customerId:   'walk-in',
       customerName: 'Walk-in Customer',
       items:        saleItems,
@@ -120,7 +126,8 @@ export default function CartPanel({ items, onUpdateQty, onRemove, onClear }: Car
                   <span className="w-8 text-center text-sm font-bold text-slate-800 font-mono">{item.qty}</span>
                   <button
                     onClick={() => onUpdateQty(item.id, item.qty + 1)}
-                    className="w-7 h-7 flex items-center justify-center rounded-md border border-slate-200 hover:bg-indigo-100 hover:border-indigo-300 text-slate-600 hover:text-indigo-600 transition-all cursor-pointer"
+                    disabled={item.qty >= item.stock}
+                    className="w-7 h-7 flex items-center justify-center rounded-md border border-slate-200 hover:bg-indigo-100 hover:border-indigo-300 disabled:bg-slate-100 disabled:text-slate-300 disabled:hover:border-slate-200 text-slate-600 hover:text-indigo-600 transition-all cursor-pointer"
                   >
                     <i className="ri-add-line text-xs"></i>
                   </button>
@@ -216,6 +223,7 @@ export default function CartPanel({ items, onUpdateQty, onRemove, onClear }: Car
           discountAmt={discountAmt}
           grandTotal={grandTotal}
           discount={discount}
+          receiptNo={receiptNo}
           paymentMethod={paymentMethod}
           onClose={handleCloseReceipt}
           onNewSale={handleNewSale}

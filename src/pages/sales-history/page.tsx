@@ -34,6 +34,7 @@ export default function SalesHistoryPage() {
     const matchPayment = filterPayment === 'all' || inv.paymentMethod === filterPayment;
     const q = searchQuery.toLowerCase();
     const matchSearch  =
+      inv.receiptNo.toLowerCase().includes(q) ||
       inv.invoiceNo.toLowerCase().includes(q) ||
       inv.customerName.toLowerCase().includes(q) ||
       inv.cashier.toLowerCase().includes(q) ||
@@ -81,7 +82,7 @@ export default function SalesHistoryPage() {
           <i className="ri-search-line text-slate-400 text-sm"></i>
           <input
             type="text"
-            placeholder="Search invoice, cashier, item..."
+            placeholder="Search receipt, cashier, item..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="bg-transparent text-sm text-slate-600 placeholder-slate-400 outline-none flex-1"
@@ -121,7 +122,7 @@ export default function SalesHistoryPage() {
           <table className="w-full">
             <thead className="bg-slate-50 border-b border-slate-100">
               <tr>
-                {['Invoice No.', 'Date', 'Customer', 'Items', 'Cashier', 'Payment', 'Net Sales', 'Margin', 'Status', 'Actions'].map((h) => (
+                {['Receipt No.', 'Date', 'Customer', 'Items', 'Cashier', 'Payment', 'Net Sales', 'Margin', 'Status', 'Actions'].map((h) => (
                   <th key={h} className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide px-5 py-3.5 whitespace-nowrap">
                     {h}
                   </th>
@@ -134,7 +135,7 @@ export default function SalesHistoryPage() {
                   <td colSpan={10} className="px-5 py-12 text-center">
                     <div className="flex flex-col items-center gap-2">
                       <i className="ri-receipt-line text-3xl text-slate-300"></i>
-                      <p className="text-slate-400 text-sm font-medium">No invoices found</p>
+                      <p className="text-slate-400 text-sm font-medium">No receipts found</p>
                       <p className="text-slate-300 text-xs">Adjust your filters or complete a sale</p>
                     </div>
                   </td>
@@ -143,9 +144,9 @@ export default function SalesHistoryPage() {
                 filtered.map((inv, i) => {
                   const totalQty = inv.items.reduce((s, item) => s + item.netQty, 0);
                   return (
-                    <tr key={inv.invoiceNo} className={`border-b border-slate-50 hover:bg-slate-50 transition-all ${i % 2 !== 0 ? 'bg-slate-50/40' : ''}`}>
+                    <tr key={inv.receiptNo} className={`border-b border-slate-50 hover:bg-slate-50 transition-all ${i % 2 !== 0 ? 'bg-slate-50/40' : ''}`}>
                       <td className="px-5 py-3.5">
-                        <span className="text-indigo-600 font-bold text-sm font-mono">{inv.invoiceNo}</span>
+                        <span className="text-indigo-600 font-bold text-sm font-mono">{inv.receiptNo}</span>
                       </td>
                       <td className="px-5 py-3.5 whitespace-nowrap">
                         <p className="text-slate-700 text-sm font-semibold">{formatDate(inv.date)}</p>
@@ -214,14 +215,14 @@ export default function SalesHistoryPage() {
         </div>
       </div>
 
-      {/* Invoice Detail Modal */}
+      {/* Receipt Detail Modal */}
       {selectedInvoice && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl w-full max-w-lg overflow-hidden">
             <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
               <div>
-                <h2 className="text-slate-800 font-bold text-base">Invoice Details</h2>
-                <p className="text-indigo-600 text-xs font-bold font-mono mt-0.5">{selectedInvoice.invoiceNo}</p>
+                <h2 className="text-slate-800 font-bold text-base">Receipt Details</h2>
+                <p className="text-indigo-600 text-xs font-bold font-mono mt-0.5">{selectedInvoice.receiptNo}</p>
               </div>
               <button
                 onClick={() => setSelectedInvoice(null)}
@@ -323,7 +324,7 @@ export default function SalesHistoryPage() {
             </div>
             <h3 className="text-slate-800 font-bold text-base mb-2">Mark as Refunded?</h3>
             <p className="text-slate-500 text-sm mb-2 leading-relaxed">
-              Invoice <span className="font-bold text-indigo-600">{refundTarget}</span> will be marked as refunded.
+              Receipt <span className="font-bold text-indigo-600">{invoices.find((inv) => inv.invoiceNo === refundTarget)?.receiptNo ?? refundTarget}</span> will be marked as refunded.
             </p>
             <p className="text-slate-400 text-xs mb-6">This action cannot be undone.</p>
             <div className="flex gap-3">

@@ -19,7 +19,7 @@ const DEFAULT_SETTINGS: StoreSettings = {
 };
 
 type Row = {
-  id: number; store_name: string; store_address: string; store_phone: string;
+  id: string; settings_key: string; store_name: string; store_address: string; store_phone: string;
   store_email: string; store_logo: string; currency: string; currency_symbol: string;
   tax_rate: number; tax_label: string; tax_enabled: boolean; receipt_footer: string;
   receipt_show_logo: boolean; receipt_show_tax: boolean; receipt_show_barcode: boolean;
@@ -42,10 +42,10 @@ export function useSettings() {
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase.from('store_settings').select('*').eq('id', 1).single();
+      const { data } = await supabase.from('store_settings').select('*').eq('settings_key', 'default').single();
       if (data) setSettings(toSettings(data as Row));
       else {
-        await supabase.from('store_settings').insert({ id: 1, ...Object.fromEntries(
+        await supabase.from('store_settings').insert({ settings_key: 'default', ...Object.fromEntries(
           Object.entries(DEFAULT_SETTINGS).map(([k, v]) => [
             k.replace(/([A-Z])/g, '_$1').toLowerCase(), v
           ])
@@ -66,20 +66,20 @@ export function useSettings() {
       receipt_show_barcode: next.receiptShowBarcode, receipt_theme: next.receiptTheme,
       timezone: next.timezone,
     };
-    const { error } = await supabase.from('store_settings').upsert({ id: 1, ...row });
+    const { error } = await supabase.from('store_settings').upsert({ settings_key: 'default', ...row }, { onConflict: 'settings_key' });
     if (error) console.error(error);
   };
 
   const resetSettings = async () => {
     setSettings(DEFAULT_SETTINGS);
-    await supabase.from('store_settings').upsert({ id: 1,
+    await supabase.from('store_settings').upsert({ settings_key: 'default',
       store_name: DEFAULT_SETTINGS.storeName, store_address: DEFAULT_SETTINGS.storeAddress,
       store_phone: DEFAULT_SETTINGS.storePhone, store_email: DEFAULT_SETTINGS.storeEmail,
       store_logo: '', currency: 'GHS', currency_symbol: '₵', tax_rate: 10, tax_label: 'VAT',
       tax_enabled: true, receipt_footer: DEFAULT_SETTINGS.receiptFooter,
       receipt_show_logo: true, receipt_show_tax: true, receipt_show_barcode: true,
       receipt_theme: 'minimal', timezone: 'Africa/Accra',
-    });
+    }, { onConflict: 'settings_key' });
   };
 
   return { settings, updateSettings, resetSettings };

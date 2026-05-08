@@ -36,6 +36,7 @@ export interface SaleLineItem {
 
 export interface InvoiceRecord {
   invoiceNo: string;
+  receiptNo: string;
   date: string;
   customerId: string;
   customerName: string;
@@ -79,7 +80,6 @@ export type CustomerStatus = 'Active' | 'Inactive' | 'Blocked';
 export interface Customer {
   customerId: string;
   fullName: string;
-  companyName: string;
   customerType: CustomerType;
   phone: string;
   email: string;
@@ -151,7 +151,6 @@ export interface MonthlyPerformance {
 export interface TopCustomer {
   customerId: string;
   fullName: string;
-  companyName: string;
   customerType: CustomerType;
   totalPurchases: number;
   avatar: string;

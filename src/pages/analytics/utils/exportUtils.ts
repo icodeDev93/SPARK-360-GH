@@ -1,5 +1,5 @@
 import type { SaleRecord } from '@/hooks/useSalesLog';
-import type { ExpenseRecord } from '@/mocks/expenses';
+import type { ExpenseRecord, InventoryItem } from '@/types/erp';
 import { inventoryItems } from '@/mocks/inventory';
 
 // ─── CSV helpers ────────────────────────────────────────────────────────────
@@ -59,7 +59,7 @@ export function exportProductsCSV(sales: SaleRecord[], label: string): void {
 
   completed.forEach((sale) => {
     sale.items.forEach((item) => {
-      const inv = inventoryItems.find((i) => i.id === item.id);
+      const inv = inventoryItems.find((i) => Number(i.itemId.replace(/\D/g, '')) === item.id);
       const cost = inv ? inv.costPrice * item.qty : 0;
       const revenue = item.price * item.qty;
       const existing = map.get(item.id);
@@ -97,6 +97,42 @@ export function exportProductsCSV(sales: SaleRecord[], label: string): void {
   downloadCSV(`products-report-${label}.csv`, buildCSV(headers, rows));
 }
 
+export function exportInventoryCSV(items: InventoryItem[], label: string): void {
+  const headers = [
+    'Product',
+    'SKU',
+    'Category',
+    'Supplier',
+    'Current Stock',
+    'Reorder Level',
+    'Cost Price (GHS)',
+    'Selling Price (GHS)',
+    'Stock Value (GHS)',
+    'Margin (%)',
+    'Status',
+  ];
+  const rows = items.map((item) => {
+    const stockValue = item.costPrice * item.currentStock;
+    const marginPct = item.sellingPrice > 0
+      ? ((item.sellingPrice - item.costPrice) / item.sellingPrice) * 100
+      : 0;
+    return [
+      item.productName,
+      item.sku,
+      item.category,
+      item.supplier,
+      item.currentStock,
+      item.reorderLevel,
+      item.costPrice.toFixed(2),
+      item.sellingPrice.toFixed(2),
+      stockValue.toFixed(2),
+      marginPct.toFixed(1),
+      item.stockStatus,
+    ];
+  });
+  downloadCSV(`inventory-report-${label}.csv`, buildCSV(headers, rows));
+}
+
 // ─── Expenses CSV ────────────────────────────────────────────────────────────
 
 export function exportExpensesCSV(expenses: ExpenseRecord[], label: string): void {
@@ -104,7 +140,7 @@ export function exportExpensesCSV(expenses: ExpenseRecord[], label: string): voi
   const rows = expenses.map((e) => [
     e.description,
     e.category,
-    e.amount.toFixed(2),
+    e.amountGHS.toFixed(2),
     e.date,
     e.paidBy,
     e.notes,
@@ -119,11 +155,11 @@ export function exportProfitCSV(sales: SaleRecord[], expenses: ExpenseRecord[], 
   const totalRevenue = completed.reduce((s, t) => s + t.grandTotal, 0);
   const totalCOGS = completed.reduce((sum, sale) => {
     return sum + sale.items.reduce((itemSum, item) => {
-      const inv = inventoryItems.find((i) => i.id === item.id);
+      const inv = inventoryItems.find((i) => Number(i.itemId.replace(/\D/g, '')) === item.id);
       return itemSum + (inv ? inv.costPrice * item.qty : 0);
     }, 0);
   }, 0);
-  const totalExpenses = expenses.reduce((s, e) => s + e.amount, 0);
+  const totalExpenses = expenses.reduce((s, e) => s + e.amountGHS, 0);
   const grossProfit = totalRevenue - totalCOGS;
   const netProfit = grossProfit - totalExpenses;
 

@@ -1,7 +1,6 @@
-import { useState, useMemo } from 'react';
+import { useMemo } from 'react';
 import { useSalesLog } from '@/hooks/useSalesLog';
-
-type Period = 'daily' | 'weekly' | 'monthly' | 'custom';
+import type { AnalyticsFilter } from '@/hooks/useAnalyticsFilter';
 
 interface PeriodSummary {
   label: string;
@@ -41,34 +40,23 @@ const PAYMENT_COLORS: Record<string, string> = {
 
 const fmt = (n: number) => `₵${n.toLocaleString('en-GH', { minimumFractionDigits: 2 })}`;
 
-export default function SalesReport() {
+export default function SalesReport({ filter }: { filter: AnalyticsFilter }) {
+  void getWeekLabel;
+  void getMonthKey;
   const { invoices } = useSalesLog();
-  const [period, setPeriod]       = useState<Period>('daily');
-  const [customFrom, setCustomFrom] = useState('');
-  const [customTo, setCustomTo]   = useState('');
 
   const completedInvoices = invoices.filter((inv) => inv.status === 'completed');
 
   const filteredInvoices = useMemo(() => {
-    if (period !== 'custom' || !customFrom) return completedInvoices;
-    const from = new Date(customFrom);
-    const to   = customTo ? new Date(customTo) : new Date();
-    to.setHours(23, 59, 59);
-    return completedInvoices.filter((inv) => {
-      const d = parseDate(inv.date);
-      return d >= from && d <= to;
-    });
-  }, [completedInvoices, period, customFrom, customTo]);
+    return completedInvoices.filter((inv) => filter.isInRange(inv.date));
+  }, [completedInvoices, filter]);
 
   const grouped = useMemo((): PeriodSummary[] => {
     const map = new Map<string, { revenue: number; margin: number; transactions: number; date: string }>();
 
     filteredInvoices.forEach((inv) => {
       const d = parseDate(inv.date);
-      let key = '';
-      if (period === 'daily' || period === 'custom') key = formatDateKey(d);
-      else if (period === 'weekly') key = getWeekLabel(d);
-      else key = getMonthKey(d);
+      const key = formatDateKey(d);
 
       const ex = map.get(key) || { revenue: 0, margin: 0, transactions: 0, date: inv.date };
       map.set(key, {
@@ -89,7 +77,7 @@ export default function SalesReport() {
         avgOrder: data.transactions > 0 ? data.revenue / data.transactions : 0,
       }))
       .sort((a, b) => parseDate(b.date).getTime() - parseDate(a.date).getTime());
-  }, [filteredInvoices, period]);
+  }, [filteredInvoices]);
 
   const paymentBreakdown = useMemo(() => {
     const map: Record<string, number> = {};
@@ -110,34 +98,7 @@ export default function SalesReport() {
   const maxRevenue   = Math.max(...grouped.map((g) => g.revenue), 1);
 
   return (
-    <div className="space-y-6">
-      {/* Period Selector */}
-      <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
-        <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-xl p-1">
-          {(['daily', 'weekly', 'monthly', 'custom'] as Period[]).map((p) => (
-            <button
-              key={p}
-              onClick={() => setPeriod(p)}
-              className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap capitalize ${
-                period === p ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              {p}
-            </button>
-          ))}
-        </div>
-
-        {period === 'custom' && (
-          <div className="flex items-center gap-2">
-            <input type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)}
-              className="border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 outline-none focus:border-indigo-400 cursor-pointer" />
-            <span className="text-slate-400 text-sm">to</span>
-            <input type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)}
-              className="border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 outline-none focus:border-indigo-400 cursor-pointer" />
-          </div>
-        )}
-      </div>
-
+    <div className="space-y-6" id="analytics-print-area">
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
@@ -162,7 +123,7 @@ export default function SalesReport() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Revenue Chart */}
         <div className="lg:col-span-2 bg-white rounded-xl p-6 border border-slate-100">
-          <h3 className="text-slate-800 font-bold text-base mb-5 capitalize">{period} Revenue Breakdown</h3>
+          <h3 className="text-slate-800 font-bold text-base mb-5">Daily Revenue Breakdown</h3>
           {grouped.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-40 text-slate-300">
               <i className="ri-bar-chart-2-line text-4xl mb-2"></i>

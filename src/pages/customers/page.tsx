@@ -4,7 +4,7 @@ import { customerHistory } from '@/mocks/customers';
 import { useSalesLog } from '@/hooks/useSalesLog';
 import { useCustomers } from '@/hooks/useCustomers';
 import { getCustomerInvoices, searchCustomers } from '@/services/crmService';
-import type { CustomerType } from '@/types/erp';
+import type { Customer, CustomerType } from '@/types/erp';
 
 const AVATAR_COLORS = [
   'bg-indigo-500', 'bg-violet-500', 'bg-emerald-500', 'bg-amber-500',
@@ -28,7 +28,7 @@ function getInitials(name: string) {
   return name.split(' ').slice(0, 2).map((w) => w[0]).join('').toUpperCase();
 }
 
-const EMPTY_FORM = { fullName: '', companyName: '', phone: '', email: '', customerType: 'Retail' as CustomerType };
+const EMPTY_FORM = { fullName: '', phone: '', email: '', customerType: 'Retail' as CustomerType };
 
 export default function CustomersPage() {
   const { customers, addCustomer: dbAddCustomer } = useCustomers();
@@ -57,10 +57,9 @@ export default function CustomersPage() {
   const activeToday   = customers.filter((c) => c.lastOrderDate === today).length;
 
   const addCustomer = () => {
-    if (!form.fullName.trim()) return;
+    if (!form.fullName.trim() || !form.phone.trim()) return;
     dbAddCustomer({
       fullName:     form.fullName.trim(),
-      companyName:  form.companyName.trim(),
       phone:        form.phone.trim(),
       email:        form.email.trim(),
       customerType: form.customerType,
@@ -147,7 +146,6 @@ export default function CustomersPage() {
                         </div>
                         <div>
                           <p className="text-slate-800 text-sm font-semibold">{c.fullName}</p>
-                          {c.companyName && <p className="text-slate-400 text-xs">{c.companyName}</p>}
                         </div>
                       </div>
                     </td>
@@ -212,7 +210,7 @@ export default function CustomersPage() {
                   </div>
                   <div>
                     <h2 className="text-slate-800 font-bold text-base">{selectedCustomer.fullName}</h2>
-                    <p className="text-slate-400 text-xs">{selectedCustomer.companyName} · Purchase History</p>
+                    <p className="text-slate-400 text-xs">Purchase History</p>
                   </div>
                 </div>
                 <button onClick={() => setSelectedCustomer(null)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 cursor-pointer">
@@ -304,8 +302,7 @@ export default function CustomersPage() {
             <div className="px-6 py-5 space-y-4">
               {[
                 { label: 'Full Name *',     key: 'fullName',    placeholder: 'e.g. Kwame Asante' },
-                { label: 'Company Name',    key: 'companyName', placeholder: 'e.g. Asante Mini Mart' },
-                { label: 'Phone Number',    key: 'phone',       placeholder: '+233 XX XXX XXXX' },
+                { label: 'Phone Number *',  key: 'phone',       placeholder: 'Phone number' },
                 { label: 'Email Address',   key: 'email',       placeholder: 'email@example.com' },
               ].map((f) => (
                 <div key={f.key}>
@@ -313,6 +310,7 @@ export default function CustomersPage() {
                   <input
                     value={form[f.key as keyof typeof form]}
                     onChange={(e) => setForm((p) => ({ ...p, [f.key]: e.target.value }))}
+                    required={f.key === 'fullName' || f.key === 'phone'}
                     className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 transition-all"
                     placeholder={f.placeholder}
                   />
@@ -334,7 +332,11 @@ export default function CustomersPage() {
               <button onClick={() => { setShowAddForm(false); setForm(EMPTY_FORM); }} className="flex-1 py-2.5 border border-slate-200 rounded-lg text-sm font-semibold text-slate-600 hover:bg-slate-50 cursor-pointer whitespace-nowrap">
                 Cancel
               </button>
-              <button onClick={addCustomer} className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-semibold cursor-pointer whitespace-nowrap">
+              <button
+                onClick={addCustomer}
+                disabled={!form.fullName.trim() || !form.phone.trim()}
+                className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400 text-white rounded-lg text-sm font-semibold cursor-pointer whitespace-nowrap"
+              >
                 Save Customer
               </button>
             </div>

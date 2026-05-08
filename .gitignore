@@ -1,6 +1,7 @@
 node_modules/
 out/
 .env
+.env.admin
 .env.local
 .env.*.local
 *.map

@@ -31,12 +31,12 @@ export default function ProfitTab({ filter }: Props) {
 
   const totalCOGS = useMemo(() => completedSales.reduce((sum, sale) =>
     sum + sale.items.reduce((itemSum, item) => {
-      const inv = inventoryItems.find((i) => i.id === item.id);
+      const inv = inventoryItems.find((i) => Number(i.itemId.replace(/\D/g, '')) === item.id);
       return itemSum + (inv ? inv.costPrice * item.qty : 0);
     }, 0), 0), [completedSales]);
 
   const totalRevenue = completedSales.reduce((s, t) => s + t.grandTotal, 0);
-  const totalExpenses = filteredExpenses.reduce((s, e) => s + e.amount, 0);
+  const totalExpenses = filteredExpenses.reduce((s, e) => s + e.amountGHS, 0);
   const grossProfit = totalRevenue - totalCOGS;
   const netProfit = grossProfit - totalExpenses;
   const grossMargin = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0;
@@ -46,7 +46,7 @@ export default function ProfitTab({ filter }: Props) {
     const map: Record<string, { revenue: number; cogs: number; grossProfit: number }> = {};
     completedSales.forEach((sale) => {
       sale.items.forEach((item) => {
-        const inv = inventoryItems.find((i) => i.id === item.id);
+        const inv = inventoryItems.find((i) => Number(i.itemId.replace(/\D/g, '')) === item.id);
         const category = inv?.category || 'Other';
         const revenue = item.price * item.qty;
         const cogs = inv ? inv.costPrice * item.qty : 0;
@@ -61,7 +61,7 @@ export default function ProfitTab({ filter }: Props) {
 
   const expenseByCategory = useMemo(() => {
     const map: Record<string, number> = {};
-    filteredExpenses.forEach((e) => { map[e.category] = (map[e.category] || 0) + e.amount; });
+    filteredExpenses.forEach((e) => { map[e.category] = (map[e.category] || 0) + e.amountGHS; });
     return Object.entries(map).map(([category, amount]) => ({ category, amount })).sort((a, b) => b.amount - a.amount);
   }, [filteredExpenses]);
 
@@ -74,7 +74,7 @@ export default function ProfitTab({ filter }: Props) {
       const key = sale.date;
       const existing = map.get(key) || { revenue: 0, cogs: 0, expenses: 0 };
       const saleCogs = sale.items.reduce((sum, item) => {
-        const inv = inventoryItems.find((i) => i.id === item.id);
+        const inv = inventoryItems.find((i) => Number(i.itemId.replace(/\D/g, '')) === item.id);
         return sum + (inv ? inv.costPrice * item.qty : 0);
       }, 0);
       map.set(key, { revenue: existing.revenue + sale.grandTotal, cogs: existing.cogs + saleCogs, expenses: existing.expenses });
@@ -83,7 +83,7 @@ export default function ProfitTab({ filter }: Props) {
       const d = new Date(e.date);
       const key = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
       const existing = map.get(key) || { revenue: 0, cogs: 0, expenses: 0 };
-      map.set(key, { ...existing, expenses: existing.expenses + e.amount });
+      map.set(key, { ...existing, expenses: existing.expenses + e.amountGHS });
     });
     return Array.from(map.entries())
       .map(([date, data]) => ({ date, grossProfit: data.revenue - data.cogs, netProfit: data.revenue - data.cogs - data.expenses }))

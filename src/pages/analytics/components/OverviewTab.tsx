@@ -34,7 +34,7 @@ export default function OverviewTab({ filter }: Props) {
   }, [completedSales]);
 
   const totalRevenue = completedSales.reduce((s, t) => s + t.grandTotal, 0);
-  const totalExpenses = filteredExpenses.reduce((s, e) => s + e.amount, 0);
+  const totalExpenses = filteredExpenses.reduce((s, e) => s + e.amountGHS, 0);
   const netProfit = totalRevenue - totalExpenses;
   const profitMargin = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
   const maxDaily = Math.max(...dailyRevenue.map((d) => d.revenue), 1);

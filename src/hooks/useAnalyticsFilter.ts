@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 
-export type PresetKey = 'today' | '7d' | '30d' | '90d' | 'custom';
+export type PresetKey = 'today' | '7d' | '30d' | '90d' | 'year' | 'custom';
 
 export interface DateRange {
   from: Date | null;
@@ -42,6 +42,7 @@ const PRESET_LABELS: Record<PresetKey, string> = {
   '7d': 'Last 7 Days',
   '30d': 'Last 30 Days',
   '90d': 'Last 90 Days',
+  year: 'This Year',
   custom: 'Custom Range',
 };
 
@@ -61,6 +62,8 @@ export function useAnalyticsFilter(): AnalyticsFilter {
         return { from: daysAgo(30), to: endOfDay(now) };
       case '90d':
         return { from: daysAgo(90), to: endOfDay(now) };
+      case 'year':
+        return { from: startOfDay(new Date(now.getFullYear(), 0, 1)), to: endOfDay(now) };
       case 'custom': {
         const from = customFrom ? startOfDay(new Date(customFrom)) : null;
         const to = customTo ? endOfDay(new Date(customTo)) : endOfDay(now);

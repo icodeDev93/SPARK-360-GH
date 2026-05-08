@@ -10,6 +10,11 @@ export function generateNextInvoiceNo(existingInvoices: InvoiceRecord[]): string
   return `${INVOICE_PREFIX}${String(next).padStart(3, '0')}`;
 }
 
+export function generateReceiptNo(): string {
+  const ts = Date.now().toString().slice(-6);
+  return `RCP-${ts}`;
+}
+
 export function loadInvoiceById(
   invoices: InvoiceRecord[],
   invoiceNo: string
@@ -59,6 +64,7 @@ export function calcInvoiceTotals(items: SaleLineItem[]): {
 
 export function buildInvoice(
   invoiceNo: string,
+  receiptNo: string,
   customerId: string,
   customerName: string,
   items: SaleLineItem[],
@@ -69,6 +75,7 @@ export function buildInvoice(
   const now = new Date();
   return {
     invoiceNo,
+    receiptNo,
     date: now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
     customerId,
     customerName,
