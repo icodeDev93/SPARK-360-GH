@@ -90,7 +90,7 @@ export default function ExportMenu({ activeTab, filter }: Props) {
       .split('-')
       .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
       .join(' ');
-    printAnalyticsPDF(tabLabel, filter.label);
+    printAnalyticsPDF(tabLabel, activeTab, filter.label, filteredSales, filteredExpenses, items);
   }
 
   const btnClass = status === 'done'

@@ -7,6 +7,7 @@ type Row = {
   id: string; full_name: string;
   customer_type: string; phone: string | null; email: string | null;
   outstanding_balance: number; status: string; avatar_url: string | null;
+  notes: string | null;
   created_at?: string;
 };
 
@@ -16,12 +17,14 @@ const toCustomer = (r: Row): Customer => ({
   totalPurchases: 0, outstandingBalance: r.outstanding_balance,
   statusFlag: r.status as CustomerStatus, avatar: r.avatar_url ?? '',
   lastOrderDate: r.created_at?.split('T')[0] ?? '',
+  notes: r.notes ?? undefined,
 });
 
 const toRow = (c: Customer): Omit<Row, 'id'> => ({
   full_name: c.fullName,
   customer_type: c.customerType, phone: c.phone, email: c.email,
   outstanding_balance: c.outstandingBalance, status: c.statusFlag, avatar_url: c.avatar,
+  notes: c.notes ?? null,
 });
 
 export function useCustomers() {

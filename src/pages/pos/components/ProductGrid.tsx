@@ -31,7 +31,7 @@ export default function ProductGrid({ onAddToCart }: ProductGridProps) {
   });
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full min-w-0">
       <div className="p-4 border-b border-slate-100">
         <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5">
           <span className="w-5 h-5 flex items-center justify-center text-slate-400">
@@ -51,12 +51,12 @@ export default function ProductGrid({ onAddToCart }: ProductGridProps) {
           )}
         </div>
 
-        <div className="flex gap-2 mt-3 overflow-x-auto pb-1 scrollbar-hide">
+        <div className="flex flex-wrap gap-2 mt-3">
           {posCategories.map((cat) => (
             <button
               key={cat}
               onClick={() => setActiveCategory(cat)}
-              className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
+              className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer ${
                 activeCategory === cat
                   ? 'bg-indigo-600 text-white'
                   : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
@@ -68,7 +68,7 @@ export default function ProductGrid({ onAddToCart }: ProductGridProps) {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className="flex-1 overflow-y-auto p-4 min-w-0">
         {loading ? (
           <div className="flex flex-col items-center justify-center h-48 text-slate-400">
             <span className="w-12 h-12 flex items-center justify-center text-3xl mb-2">
@@ -84,7 +84,7 @@ export default function ProductGrid({ onAddToCart }: ProductGridProps) {
             <p className="text-sm">No products found</p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 xl:grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
             {filtered.map((product) => (
               <div
                 key={product.itemId}

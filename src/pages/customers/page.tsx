@@ -31,11 +31,13 @@ function getInitials(name: string) {
 const EMPTY_FORM = { fullName: '', phone: '', email: '', customerType: 'Retail' as CustomerType };
 
 export default function CustomersPage() {
-  const { customers, addCustomer: dbAddCustomer } = useCustomers();
+  const { customers, addCustomer: dbAddCustomer, updateCustomer } = useCustomers();
   const [search, setSearch] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
+  const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
+  const [editForm, setEditForm] = useState(EMPTY_FORM);
   const { invoices } = useSalesLog();
 
   const today = new Date().toISOString().split('T')[0];
@@ -44,7 +46,17 @@ export default function CustomersPage() {
     const map: Record<string, number> = {};
     invoices.forEach((inv) => {
       if (inv.status === 'completed') {
-        map[inv.customerId] = (map[inv.customerId] ?? 0) + 1;
+        map[inv.customerName] = (map[inv.customerName] ?? 0) + 1;
+      }
+    });
+    return map;
+  }, [invoices]);
+
+  const totalSpentByCustomer = useMemo(() => {
+    const map: Record<string, number> = {};
+    invoices.forEach((inv) => {
+      if (inv.status === 'completed') {
+        map[inv.customerName] = (map[inv.customerName] ?? 0) + inv.netSales;
       }
     });
     return map;
@@ -52,7 +64,9 @@ export default function CustomersPage() {
 
   const filtered = searchCustomers(customers, search);
 
-  const totalRevenue  = customers.reduce((s, c) => s + c.totalPurchases, 0);
+  const totalRevenue  = Object.entries(totalSpentByCustomer)
+    .filter(([name]) => name !== 'Walk-in Customer')
+    .reduce((s, [, v]) => s + v, 0);
   const avgSpent      = customers.length ? totalRevenue / customers.length : 0;
   const activeToday   = customers.filter((c) => c.lastOrderDate === today).length;
 
@@ -68,6 +82,24 @@ export default function CustomersPage() {
     });
     setShowAddForm(false);
     setForm(EMPTY_FORM);
+  };
+
+  const openEdit = (c: Customer) => {
+    setEditingCustomer(c);
+    setEditForm({ fullName: c.fullName, phone: c.phone, email: c.email, customerType: c.customerType });
+  };
+
+  const saveEdit = () => {
+    if (!editingCustomer || !editForm.fullName.trim() || !editForm.phone.trim()) return;
+    updateCustomer(editingCustomer.customerId, {
+      fullName:     editForm.fullName.trim(),
+      phone:        editForm.phone.trim(),
+      email:        editForm.email.trim(),
+      customerType: editForm.customerType,
+      avatar:       getInitials(editForm.fullName.trim()),
+    });
+    setEditingCustomer(null);
+    setEditForm(EMPTY_FORM);
   };
 
   return (
@@ -162,11 +194,11 @@ export default function CustomersPage() {
                     </td>
                     <td className="px-5 py-3.5">
                       <span className="text-slate-700 text-sm font-semibold">
-                        {invoiceCountByCustomer[c.customerId] ?? 0}
+                        {invoiceCountByCustomer[c.fullName] ?? 0}
                       </span>
                     </td>
                     <td className="px-5 py-3.5">
-                      <span className="text-slate-800 text-sm font-bold font-mono">{fmt(c.totalPurchases)}</span>
+                      <span className="text-slate-800 text-sm font-bold font-mono">{fmt(totalSpentByCustomer[c.fullName] ?? 0)}</span>
                     </td>
                     <td className="px-5 py-3.5">
                       <span className="text-slate-500 text-sm">{formatDate(c.lastOrderDate)}</span>
@@ -181,6 +213,7 @@ export default function CustomersPage() {
                           <i className="ri-history-line text-sm"></i>
                         </button>
                         <button
+                          onClick={() => openEdit(c)}
                           className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-all cursor-pointer"
                           title="Edit"
                         >
@@ -222,11 +255,11 @@ export default function CustomersPage() {
                 {/* Summary */}
                 <div className="grid grid-cols-3 gap-4 mb-5">
                   <div className="bg-indigo-50 rounded-lg p-3 text-center">
-                    <p className="text-indigo-700 font-bold text-lg">{invoiceCountByCustomer[selectedCustomer.customerId] ?? 0}</p>
+                    <p className="text-indigo-700 font-bold text-lg">{invoiceCountByCustomer[selectedCustomer.fullName] ?? 0}</p>
                     <p className="text-indigo-500 text-xs">Total Orders</p>
                   </div>
                   <div className="bg-emerald-50 rounded-lg p-3 text-center">
-                    <p className="text-emerald-700 font-bold text-lg">{fmt(selectedCustomer.totalPurchases)}</p>
+                    <p className="text-emerald-700 font-bold text-lg">{fmt(totalSpentByCustomer[selectedCustomer.fullName] ?? 0)}</p>
                     <p className="text-emerald-500 text-xs">Total Spent</p>
                   </div>
                   <div className="bg-amber-50 rounded-lg p-3 text-center">
@@ -235,20 +268,19 @@ export default function CustomersPage() {
                   </div>
                 </div>
 
-                {/* Invoice list */}
                 {custInvoices.length > 0 ? (
                   <table className="w-full">
                     <thead className="bg-slate-50">
                       <tr>
-                        {['Invoice', 'Date', 'Items', 'Net Sales', 'Margin', 'Method'].map((h) => (
+                        {['Receipt No.', 'Date', 'Items', 'Net Sales', 'Margin', 'Method'].map((h) => (
                           <th key={h} className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3">{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
                       {custInvoices.map((inv) => (
-                        <tr key={inv.invoiceNo} className="border-b border-slate-50 hover:bg-slate-50 transition-all">
-                          <td className="px-4 py-3"><span className="text-indigo-600 text-sm font-semibold font-mono">{inv.invoiceNo}</span></td>
+                        <tr key={inv.receiptNo} className="border-b border-slate-50 hover:bg-slate-50 transition-all">
+                          <td className="px-4 py-3"><span className="text-indigo-600 text-sm font-semibold font-mono">{inv.receiptNo}</span></td>
                           <td className="px-4 py-3"><span className="text-slate-500 text-sm">{formatDate(inv.date)}</span></td>
                           <td className="px-4 py-3"><span className="text-slate-600 text-sm">{inv.items.length}</span></td>
                           <td className="px-4 py-3"><span className="text-slate-800 text-sm font-bold font-mono">{fmt(inv.netSales)}</span></td>
@@ -262,15 +294,15 @@ export default function CustomersPage() {
                   <table className="w-full">
                     <thead className="bg-slate-50">
                       <tr>
-                        {['Invoice', 'Date', 'Items', 'Amount', 'Method', 'Status'].map((h) => (
+                        {['Receipt No.', 'Date', 'Items', 'Amount', 'Method', 'Status'].map((h) => (
                           <th key={h} className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3">{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
                       {customerHistory.map((h) => (
-                        <tr key={h.invoiceNo} className="border-b border-slate-50 hover:bg-slate-50 transition-all">
-                          <td className="px-4 py-3"><span className="text-indigo-600 text-sm font-semibold font-mono">{h.invoiceNo}</span></td>
+                        <tr key={h.receiptNo} className="border-b border-slate-50 hover:bg-slate-50 transition-all">
+                          <td className="px-4 py-3"><span className="text-indigo-600 text-sm font-semibold font-mono">{h.receiptNo}</span></td>
                           <td className="px-4 py-3"><span className="text-slate-500 text-sm">{formatDate(h.date)}</span></td>
                           <td className="px-4 py-3"><span className="text-slate-600 text-sm">{h.items}</span></td>
                           <td className="px-4 py-3"><span className="text-slate-800 text-sm font-bold font-mono">₵{h.amountGHS.toFixed(2)}</span></td>
@@ -338,6 +370,59 @@ export default function CustomersPage() {
                 className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400 text-white rounded-lg text-sm font-semibold cursor-pointer whitespace-nowrap"
               >
                 Save Customer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Edit Customer Modal */}
+      {editingCustomer && (
+        <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl w-full max-w-md shadow-xl">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
+              <h2 className="text-slate-800 font-bold text-lg">Edit Customer</h2>
+              <button onClick={() => { setEditingCustomer(null); setEditForm(EMPTY_FORM); }} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 cursor-pointer">
+                <i className="ri-close-line text-lg"></i>
+              </button>
+            </div>
+            <div className="px-6 py-5 space-y-4">
+              {[
+                { label: 'Full Name *',    key: 'fullName', placeholder: 'e.g. Kwame Asante' },
+                { label: 'Phone Number *', key: 'phone',    placeholder: 'Phone number' },
+                { label: 'Email Address',  key: 'email',    placeholder: 'email@example.com' },
+              ].map((f) => (
+                <div key={f.key}>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">{f.label}</label>
+                  <input
+                    value={editForm[f.key as keyof typeof editForm]}
+                    onChange={(e) => setEditForm((p) => ({ ...p, [f.key]: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 transition-all"
+                    placeholder={f.placeholder}
+                  />
+                </div>
+              ))}
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Customer Type</label>
+                <select
+                  value={editForm.customerType}
+                  onChange={(e) => setEditForm((p) => ({ ...p, customerType: e.target.value as CustomerType }))}
+                  className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 bg-white cursor-pointer"
+                >
+                  <option value="Wholesale">Wholesale</option>
+                  <option value="Retail">Retail</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-3 px-6 py-4 border-t border-slate-100">
+              <button onClick={() => { setEditingCustomer(null); setEditForm(EMPTY_FORM); }} className="flex-1 py-2.5 border border-slate-200 rounded-lg text-sm font-semibold text-slate-600 hover:bg-slate-50 cursor-pointer whitespace-nowrap">
+                Cancel
+              </button>
+              <button
+                onClick={saveEdit}
+                disabled={!editForm.fullName.trim() || !editForm.phone.trim()}
+                className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400 text-white rounded-lg text-sm font-semibold cursor-pointer whitespace-nowrap"
+              >
+                Save Changes
               </button>
             </div>
           </div>

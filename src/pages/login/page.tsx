@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import PasswordInput from '@/components/ui/PasswordInput';
@@ -11,7 +11,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
-  const handleSubmit = async (e: FormEvent) => {
+  const handleSubmit = async (e: { preventDefault(): void }) => {
     e.preventDefault();
     setError('');
 
@@ -70,7 +70,18 @@ export default function LoginPage() {
         </div>
 
         {/* Footer */}
-        <p className="text-slate-600 text-sm">&copy; {new Date().getFullYear()} SPark360. All rights reserved.</p>
+        <p className="text-slate-600 text-sm">
+          Powered By{' '}
+          <a
+            href="https://www.triaxistechnologies.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-slate-400 hover:text-emerald-400 transition-colors"
+          >
+            TriAxis Technologies
+          </a>
+          {' '}&copy; {new Date().getFullYear()}. All rights reserved.
+        </p>
       </div>
 
       {/* Right panel — form */}
@@ -143,6 +154,10 @@ export default function LoginPage() {
                 'Sign In'
               )}
             </button>
+
+            <p className="text-center text-slate-400 text-sm leading-relaxed">
+              Don&apos;t have an account or forgotten your password, please contact the Administrator. Thank you.
+            </p>
           </form>
         </div>
       </div>

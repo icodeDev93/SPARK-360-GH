@@ -11,6 +11,7 @@ export interface InventoryItem {
   sellingPrice: number;   // GHS
   currentStock: number;
   reorderLevel: number;
+  expiryDate: string;
   stockStatus: StockStatus;
   marginPerUnit: number;  // sellingPrice - costPrice
   sku: string;
@@ -88,6 +89,7 @@ export interface Customer {
   statusFlag: CustomerStatus;
   avatar: string;
   lastOrderDate: string;
+  notes?: string;
 }
 
 // ─── Suppliers ────────────────────────────────────────────────────────────────

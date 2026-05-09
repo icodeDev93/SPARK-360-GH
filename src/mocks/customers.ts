@@ -100,9 +100,9 @@ export const customers: Customer[] = [
 ];
 
 export const customerHistory = [
-  { invoiceNo: 'INV041', date: '2026-04-26', items: 4, amountGHS: 1240.00, status: 'Paid', method: 'Bank Transfer' },
-  { invoiceNo: 'INV035', date: '2026-04-18', items: 2, amountGHS: 680.00, status: 'Paid', method: 'MoMo' },
-  { invoiceNo: 'INV028', date: '2026-04-10', items: 6, amountGHS: 2150.00, status: 'Paid', method: 'Cheque' },
-  { invoiceNo: 'INV019', date: '2026-03-28', items: 3, amountGHS: 980.00, status: 'Paid', method: 'Cash' },
-  { invoiceNo: 'INV012', date: '2026-03-15', items: 5, amountGHS: 3300.00, status: 'Paid', method: 'Bank Transfer' },
+  { receiptNo: 'RCP-000041', date: '2026-04-26', items: 4, amountGHS: 1240.00, status: 'Paid', method: 'Bank Transfer' },
+  { receiptNo: 'RCP-000035', date: '2026-04-18', items: 2, amountGHS: 680.00, status: 'Paid', method: 'MoMo' },
+  { receiptNo: 'RCP-000028', date: '2026-04-10', items: 6, amountGHS: 2150.00, status: 'Paid', method: 'Cheque' },
+  { receiptNo: 'RCP-000019', date: '2026-03-28', items: 3, amountGHS: 980.00, status: 'Paid', method: 'Cash' },
+  { receiptNo: 'RCP-000012', date: '2026-03-15', items: 5, amountGHS: 3300.00, status: 'Paid', method: 'Bank Transfer' },
 ];

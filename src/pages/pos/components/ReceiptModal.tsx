@@ -21,6 +21,7 @@ interface ReceiptModalProps {
   discount: number;
   receiptNo: string;
   paymentMethod: PaymentMethod;
+  customerName?: string;
   onClose: () => void;
   onNewSale: () => void;
 }
@@ -48,6 +49,7 @@ export default function ReceiptModal({
   discount,
   receiptNo,
   paymentMethod,
+  customerName,
   onClose,
   onNewSale,
 }: ReceiptModalProps) {
@@ -145,6 +147,10 @@ export default function ReceiptModal({
       <span style="color:#64748b;">Receipt No.</span>
       <span style="font-weight:700;color:#1e293b;">${receiptNo}</span>
     </div>
+    ${customerName ? `<div style="display:flex;justify-content:space-between;margin-bottom:5px;font-size:11px;">
+      <span style="color:#64748b;">Customer</span>
+      <span style="color:#1e293b;font-weight:500;">${customerName}</span>
+    </div>` : ''}
     <div style="display:flex;justify-content:space-between;margin-bottom:5px;font-size:11px;">
       <span style="color:#64748b;">Date</span>
       <span style="color:#1e293b;">${dateStr}</span>
@@ -256,6 +262,12 @@ export default function ReceiptModal({
                 <span>Receipt No.</span>
                 <span className="font-bold text-slate-700">{receiptNo}</span>
               </div>
+              {customerName && (
+                <div className="flex justify-between text-xs text-slate-500 mb-1">
+                  <span>Customer</span>
+                  <span className="text-slate-700 font-medium">{customerName}</span>
+                </div>
+              )}
               <div className="flex justify-between text-xs text-slate-500 mb-1">
                 <span>Date</span>
                 <span className="text-slate-700">{dateStr}</span>

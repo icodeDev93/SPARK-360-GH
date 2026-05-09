@@ -21,6 +21,7 @@ const EMPTY: Omit<InventoryItem, 'stockStatus' | 'marginPerUnit'> = {
   sellingPrice: 0,
   currentStock: 0,
   reorderLevel: 10,
+  expiryDate:   '',
   image:        '',
 };
 
@@ -261,6 +262,17 @@ export default function ItemDrawer({ open, item, categories, suppliers, onClose,
             {supplierError && (
               <p className="mt-1.5 text-xs text-red-500">{supplierError}</p>
             )}
+          </div>
+
+          {/* Expiry Date */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Expiry Date</label>
+            <input
+              type="date"
+              value={form.expiryDate}
+              onChange={(e) => set('expiryDate', e.target.value)}
+              className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 transition-all"
+            />
           </div>
 
           {/* Product Image */}

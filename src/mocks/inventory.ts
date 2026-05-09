@@ -1,7 +1,7 @@
 import type { InventoryItem } from '@/types/erp';
 import { enrichInventoryItem } from '@/services/inventoryService';
 
-const raw: Omit<InventoryItem, 'stockStatus' | 'marginPerUnit'>[] = [
+const raw: Omit<InventoryItem, 'stockStatus' | 'marginPerUnit' | 'expiryDate'>[] = [
   { itemId: 'P001', sku: 'SN-PRG-001', productName: 'Pringles Original (165g)', category: 'Chips & Crisps', supplier: 'Kelloggs GH Dist.', costPrice: 28.00, sellingPrice: 42.00, currentStock: 240, reorderLevel: 60, image: '' },
   { itemId: 'P002', sku: 'SN-LAY-002', productName: "Lay's Classic Chips (80g)", category: 'Chips & Crisps', supplier: 'PepsiCo GH Dist.', costPrice: 15.00, sellingPrice: 22.00, currentStock: 18, reorderLevel: 50, image: '' },
   { itemId: 'P003', sku: 'BV-MIL-003', productName: 'Milo Sachet (30g)', category: 'Beverages', supplier: 'Nestle Ghana Ltd.', costPrice: 2.50, sellingPrice: 4.00, currentStock: 1200, reorderLevel: 300, image: '' },
@@ -23,8 +23,15 @@ export const inventoryItems: InventoryItem[] = raw.map(enrichInventoryItem);
 
 export const inventoryCategories = [
   'All',
-  'Chips & Crisps',
-  'Biscuits',
-  'Confectionery',
   'Beverages',
+  'Confectionery',
+  'Cleaning Supplies',
+  'Household Items',
+  'Baby Products',
+  'Personal Care',
+  'Food Staples',
+  'Canned Foods',
+  'Bakery',
+  'Packaging',
+  'Miscellaneous',
 ];

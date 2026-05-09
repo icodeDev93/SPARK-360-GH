@@ -8,21 +8,23 @@ type Row = {
   id?: string; product_code: string; product_name: string; sku: string;
   category_name: string | null; supplier_name: string | null;
   cost_price: number; selling_price: number; current_stock: number;
-  reorder_level: number; image_url: string | null;
+  reorder_level: number; expiry_date: string | null; image_url: string | null;
 };
 
 const toItem = (r: Row): InventoryItem => enrichInventoryItem({
   itemId: r.product_code, productName: r.product_name, sku: r.sku,
   category: r.category_name ?? '', supplier: r.supplier_name ?? '',
   costPrice: r.cost_price, sellingPrice: r.selling_price,
-  currentStock: r.current_stock, reorderLevel: r.reorder_level, image: r.image_url ?? '',
+  currentStock: r.current_stock, reorderLevel: r.reorder_level,
+  expiryDate: r.expiry_date ?? '', image: r.image_url ?? '',
 } as InventoryItem);
 
 const toRow = (i: InventoryItem): Omit<Row, 'id' | 'product_code' | 'sku'> => ({
   product_name: i.productName,
   category_name: i.category, supplier_name: i.supplier,
   cost_price: i.costPrice, selling_price: i.sellingPrice,
-  current_stock: i.currentStock, reorder_level: i.reorderLevel, image_url: i.image,
+  current_stock: i.currentStock, reorder_level: i.reorderLevel,
+  expiry_date: i.expiryDate || null, image_url: i.image,
 });
 
 export function useInventory() {

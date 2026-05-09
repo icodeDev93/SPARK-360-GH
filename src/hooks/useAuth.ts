@@ -22,7 +22,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, string[]> = {
 export const ROLE_LABELS: Record<UserRole, { label: string; color: string; bg: string }> = {
   admin:   { label: 'Administrator', color: 'text-indigo-700',  bg: 'bg-indigo-100' },
   manager: { label: 'Manager',       color: 'text-emerald-700', bg: 'bg-emerald-100' },
-  cashier: { label: 'Cashier',       color: 'text-amber-700',   bg: 'bg-amber-100' },
+  cashier: { label: 'Attendant',      color: 'text-amber-700',   bg: 'bg-amber-100' },
 };
 
 // Kept for backward compatibility with any component that imports it.

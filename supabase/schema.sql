@@ -152,6 +152,7 @@ create table if not exists public.inventory (
   selling_price numeric(12,2) not null default 0 check (selling_price >= 0),
   current_stock integer not null default 0 check (current_stock >= 0),
   reorder_level integer not null default 0 check (reorder_level >= 0),
+  expiry_date date,
   image_url text,
   is_active boolean not null default true,
   created_at timestamptz not null default now(),

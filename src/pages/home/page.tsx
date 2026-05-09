@@ -36,21 +36,15 @@ export default function DashboardPage() {
     <AppLayout>
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        {KPI_CONFIG.map(({ key, label, icon, color }) => {
-          const value = kpi[key];
-          const isNegative = value < 0;
-          return (
-            <KpiCard
-              key={key}
-              label={label}
-              value={fmt(value)}
-              trend={isNegative ? 'Loss' : 'Profit'}
-              up={!isNegative}
-              icon={icon}
-              color={color}
-            />
-          );
-        })}
+        {KPI_CONFIG.map(({ key, label, icon, color }) => (
+          <KpiCard
+            key={key}
+            label={label}
+            value={fmt(kpi[key])}
+            icon={icon}
+            color={color}
+          />
+        ))}
       </div>
 
       {/* Stock Value banner */}

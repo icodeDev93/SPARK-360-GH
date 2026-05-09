@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import AppLayout from '@/components/feature/AppLayout';
 import type { UserRole } from '@/hooks/useAuth';
 import { ROLE_LABELS } from '@/hooks/useAuth';
-import { supabase } from '@/lib/supabase';
+import { supabase, supabaseAdmin } from '@/lib/supabase';
 import PasswordInput from '@/components/ui/PasswordInput';
 
 interface AppUser {
@@ -92,7 +92,7 @@ export default function UsersPage() {
 
     try {
       if (editTarget) {
-        // ── Edit: update profile row only ──
+        // ── Edit: update profile row ──
         const initials = getInitials(form.name);
         const { error } = await supabase
           .from('profiles')
@@ -100,6 +100,15 @@ export default function UsersPage() {
           .eq('id', editTarget.id);
 
         if (error) { setFormError(error.message); return; }
+
+        // ── Update password if provided ──
+        if (form.password) {
+          const { error: pwError } = await supabaseAdmin.auth.admin.updateUserById(
+            editTarget.id,
+            { password: form.password },
+          );
+          if (pwError) { setFormError('Profile saved but password update failed: ' + pwError.message); return; }
+        }
 
         setUsers((prev) => prev.map((u) =>
           u.id === editTarget.id ? { ...u, name: form.name, email: form.email, role: form.role, status: form.status, initials } : u
@@ -198,7 +207,7 @@ export default function UsersPage() {
           { label: 'Total Users',    value: users.length,   icon: 'ri-team-line',        color: 'bg-indigo-50 text-indigo-600' },
           { label: 'Administrators', value: counts.admin,   icon: 'ri-shield-user-line', color: 'bg-violet-50 text-violet-600' },
           { label: 'Managers',       value: counts.manager, icon: 'ri-user-star-line',   color: 'bg-emerald-50 text-emerald-600' },
-          { label: 'Cashiers',       value: counts.cashier, icon: 'ri-user-line',        color: 'bg-amber-50 text-amber-600' },
+          { label: 'Attendants',      value: counts.cashier, icon: 'ri-user-line',        color: 'bg-amber-50 text-amber-600' },
         ].map((s) => (
           <div key={s.label} className="bg-white rounded-xl p-4 flex items-center gap-3 border border-slate-100">
             <div className={`w-10 h-10 flex items-center justify-center rounded-lg flex-shrink-0 ${s.color}`}>
@@ -318,7 +327,7 @@ export default function UsersPage() {
       {/* Add / Edit Modal */}
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md overflow-hidden">
+          <div className="bg-white rounded-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[92vh]">
             <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
               <div>
                 <h2 className="text-slate-800 font-bold text-base">{editTarget ? 'Edit User' : 'Add New User'}</h2>
@@ -329,7 +338,7 @@ export default function UsersPage() {
               </button>
             </div>
 
-            <div className="px-6 py-5 space-y-4">
+            <div className="px-6 py-5 space-y-4 overflow-y-auto flex-1">
               {formError && (
                 <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2.5">
                   <i className="ri-error-warning-line text-red-500 text-base flex-shrink-0 mt-0.5"></i>
@@ -374,7 +383,7 @@ export default function UsersPage() {
                   >
                     <option value="admin">Administrator</option>
                     <option value="manager">Manager</option>
-                    <option value="cashier">Cashier</option>
+                    <option value="cashier">Attendant</option>
                   </select>
                 </div>
                 <div>
@@ -390,10 +399,17 @@ export default function UsersPage() {
                 </div>
               </div>
 
-              {!editTarget && (
+              <div className="border-t border-slate-100 pt-4">
+                <p className="text-sm font-semibold text-slate-700 mb-3">
+                  {editTarget ? 'Change Password' : 'Password'}
+                  {!editTarget && <span className="text-red-400 ml-0.5">*</span>}
+                  {editTarget && <span className="text-slate-400 text-xs font-normal ml-2">Leave blank to keep current password</span>}
+                </p>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-1.5">Password <span className="text-red-400">*</span></label>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                      {editTarget ? 'New Password' : 'Password'} {!editTarget && <span className="text-red-400">*</span>}
+                    </label>
                     <PasswordInput
                       value={form.password}
                       onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))}
@@ -405,7 +421,9 @@ export default function UsersPage() {
                     {errors.password && <p className="text-red-500 text-xs mt-1">{errors.password}</p>}
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-1.5">Confirm Password <span className="text-red-400">*</span></label>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                      Confirm Password {!editTarget && <span className="text-red-400">*</span>}
+                    </label>
                     <PasswordInput
                       value={form.confirmPassword}
                       onChange={(e) => setForm((p) => ({ ...p, confirmPassword: e.target.value }))}
@@ -417,11 +435,11 @@ export default function UsersPage() {
                     {errors.confirmPassword && <p className="text-red-500 text-xs mt-1">{errors.confirmPassword}</p>}
                   </div>
                 </div>
-              )}
+              </div>
 
               <div className="bg-slate-50 border border-slate-100 rounded-lg p-3">
                 <p className="text-xs font-semibold text-slate-600 mb-1">
-                  {form.role === 'admin' ? 'Administrator' : form.role === 'manager' ? 'Manager' : 'Cashier'} Permissions
+                  {form.role === 'admin' ? 'Administrator' : form.role === 'manager' ? 'Manager' : 'Attendant'} Permissions
                 </p>
                 <p className="text-xs text-slate-400">
                   {form.role === 'admin'

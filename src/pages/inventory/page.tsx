@@ -200,6 +200,7 @@ export default function InventoryPage() {
                     <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">SKU</th>
                     <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">Category</th>
                     <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">Stock</th>
+                    <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">Expiry</th>
                     <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">Supplier</th>
                     <th className="text-right text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">Cost</th>
                     <th className="text-right text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">Price</th>
@@ -209,7 +210,7 @@ export default function InventoryPage() {
                 <tbody>
                   {filtered.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="px-5 py-14 text-center">
+                      <td colSpan={9} className="px-5 py-14 text-center">
                         <div className="flex flex-col items-center gap-2">
                           <i className="ri-archive-drawer-line text-3xl text-slate-300"></i>
                           <p className="text-slate-400 text-sm">No items found</p>
@@ -234,6 +235,11 @@ export default function InventoryPage() {
                           <span className="bg-slate-100 text-slate-600 text-xs font-semibold px-2.5 py-1 rounded-full">{item.category}</span>
                         </td>
                         <td className="px-4 py-3.5"><StockBar current={item.currentStock} reorder={item.reorderLevel} /></td>
+                        <td className="px-4 py-3.5">
+                          <span className="text-slate-500 text-xs font-mono">
+                            {item.expiryDate || 'No expiry'}
+                          </span>
+                        </td>
                         <td className="px-4 py-3.5"><span className="text-slate-500 text-xs truncate max-w-[140px] block">{item.supplier}</span></td>
                         <td className="px-4 py-3.5 text-right"><span className="text-slate-500 text-sm font-mono">₵{item.costPrice.toFixed(2)}</span></td>
                         <td className="px-4 py-3.5 text-right"><span className="text-slate-800 text-sm font-bold font-mono">₵{item.sellingPrice.toFixed(2)}</span></td>
