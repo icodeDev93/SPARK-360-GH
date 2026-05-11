@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Supplier, PurchaseOrder, seedSuppliers, seedPurchaseOrders } from '@/mocks/suppliers';
+import { Supplier, PurchaseOrder } from '@/mocks/suppliers';
 import { supabase } from '@/lib/supabase';
 
 const toDateValue = (value: string) => {
@@ -68,52 +68,27 @@ export function useSuppliers() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    (async () => {
+    const fetchAll = async () => {
       const [supRes, ordRes] = await Promise.all([
         supabase.from('suppliers').select('*').order('name'),
         supabase.from('purchases').select('*').order('purchase_date', { ascending: false }),
       ]);
-
       if (supRes.error) console.error(supRes.error);
       if (ordRes.error) console.error(ordRes.error);
-
-      const sups: Supplier[] = supRes.data && supRes.data.length > 0
-        ? supRes.data.map((r) => toSupplier(r as SupplierRow))
-        : [];
-
-      const ords: PurchaseOrder[] = ordRes.data && ordRes.data.length > 0
-        ? ordRes.data.map((r) => toPurchaseOrder(r as PurchaseRow))
-        : [];
-
-      if (sups.length === 0) {
-        const rows = seedSuppliers.map((s) => ({
-          name: s.name, contact_name: s.contact, phone: s.phone,
-          email: s.email, address: s.address, category: s.category, status: s.status,
-          joined_date: toDateValue(s.joinedDate), notes: s.notes,
-        }));
-        const { data: seeded, error: seedError } = await supabase.from('suppliers').insert(rows).select('*');
-        if (seedError) console.error(seedError);
-        setSuppliers(seeded ? seeded.map((r) => toSupplier(r as SupplierRow)) : seedSuppliers);
-      } else {
-        setSuppliers(sups);
-      }
-
-      if (ords.length === 0) {
-        const rows = seedPurchaseOrders.map((o) => ({
-          supplier_code: o.supplierId, supplier_name: o.supplierName,
-          purchase_date: toDateValue(o.date), expected_date: toDateValue(o.expectedDate),
-          item_count: o.items, subtotal: o.total, total_amount: o.total, status: o.status,
-          payment_status: o.paymentStatus, notes: o.notes,
-        }));
-        const { data: seeded, error: seedError } = await supabase.from('purchases').insert(rows).select('*');
-        if (seedError) console.error(seedError);
-        setOrders(seeded ? seeded.map((r) => toPurchaseOrder(r as PurchaseRow)) : seedPurchaseOrders);
-      } else {
-        setOrders(ords);
-      }
-
+      setSuppliers(supRes.data ? supRes.data.map((r) => toSupplier(r as SupplierRow)) : []);
+      setOrders(ordRes.data ? ordRes.data.map((r) => toPurchaseOrder(r as PurchaseRow)) : []);
       setLoading(false);
-    })();
+    };
+
+    fetchAll();
+
+    const channel = supabase
+      .channel('suppliers-purchases-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'suppliers' }, fetchAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'purchases' }, fetchAll)
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
   }, []);
 
   const addSupplier = async (data: Omit<Supplier, 'id' | 'totalOrders' | 'totalSpent'>) => {

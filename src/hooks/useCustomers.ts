@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import type { Customer, CustomerType, CustomerStatus } from '@/types/erp';
-import { customers as seedCustomers } from '@/mocks/customers';
 import { supabase } from '@/lib/supabase';
 
 type Row = {
@@ -32,23 +31,22 @@ export function useCustomers() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    (async () => {
+    const fetchCustomers = async () => {
       const { data, error } = await supabase
         .from('customers').select('*').order('full_name');
       if (error) { console.error(error); setLoading(false); return; }
-
-      if (!data || data.length === 0) {
-        const { data: seeded, error: seedError } = await supabase
-          .from('customers')
-          .insert(seedCustomers.map(toRow))
-          .select('*');
-        if (seedError) console.error(seedError);
-        setCustomers(seeded ? seeded.map(toCustomer) : seedCustomers);
-      } else {
-        setCustomers(data.map(toCustomer));
-      }
+      setCustomers(data ? data.map(toCustomer) : []);
       setLoading(false);
-    })();
+    };
+
+    fetchCustomers();
+
+    const channel = supabase
+      .channel('customers-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, fetchCustomers)
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
   }, []);
 
   const addCustomer = async (data: Omit<Customer, 'customerId' | 'totalPurchases' | 'outstandingBalance' | 'lastOrderDate'>) => {

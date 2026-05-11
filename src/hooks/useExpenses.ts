@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import type { ExpenseRecord, ExpenseCategory, PaymentMethod } from '@/types/erp';
-import { seedExpenses } from '@/mocks/expenses';
 import { totalByCategory, grandTotalGHS } from '@/services/expenseService';
 import { supabase } from '@/lib/supabase';
 
@@ -32,19 +31,22 @@ export function useExpenses() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    (async () => {
+    const fetchExpenses = async () => {
       const { data, error } = await supabase
         .from('expenses').select('*').order('expense_date', { ascending: false });
       if (error) { console.error(error); setLoading(false); return; }
-      if (!data || data.length === 0) {
-        const rows = seedExpenses.map(toRow);
-        const { data: seeded } = await supabase.from('expenses').insert(rows).select();
-        setExpenses(seeded ? seeded.map(toRecord) : seedExpenses);
-      } else {
-        setExpenses(data.map(toRecord));
-      }
+      setExpenses(data ? data.map(toRecord) : []);
       setLoading(false);
-    })();
+    };
+
+    fetchExpenses();
+
+    const channel = supabase
+      .channel('expenses-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'expenses' }, fetchExpenses)
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
   }, []);
 
   const addExpense = async (data: Omit<ExpenseRecord, 'expenseId'>) => {

@@ -73,31 +73,59 @@ export default function OverviewTab({ filter }: Props) {
           </div>
           {dailyRevenue.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-48 text-slate-300">
-              <i className="ri-bar-chart-2-line text-4xl mb-2"></i>
+              <i className="ri-line-chart-line text-4xl mb-2"></i>
               <p className="text-slate-400 text-sm">No sales data for this period</p>
             </div>
-          ) : (
-            <div className="flex items-end gap-2 h-52">
-              {dailyRevenue.map((d) => {
-                const h = Math.round((d.revenue / maxDaily) * 100);
-                return (
-                  <div key={d.date} className="flex-1 flex flex-col items-center gap-1.5">
-                    <div className="w-full flex justify-center">
-                      <div
-                        className="w-full max-w-[28px] bg-indigo-500 rounded-t-md transition-all duration-500 hover:bg-indigo-600 cursor-pointer relative group"
-                        style={{ height: `${Math.max(h, 4)}%` }}
-                      >
-                        <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-xs px-2 py-1 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                          ₵{d.revenue.toFixed(2)}
-                        </div>
-                      </div>
-                    </div>
-                    <span className="text-[10px] text-slate-400 font-medium truncate w-full text-center">{d.date.split(',')[0]}</span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+          ) : (() => {
+            const W = 600; const H = 180; const PAD = { top: 16, right: 16, bottom: 28, left: 8 };
+            const innerW = W - PAD.left - PAD.right;
+            const innerH = H - PAD.top - PAD.bottom;
+            const n = dailyRevenue.length;
+            const xStep = n > 1 ? innerW / (n - 1) : 0;
+            const toX = (i: number) => PAD.left + (n === 1 ? innerW / 2 : i * xStep);
+            const toY = (v: number) => PAD.top + innerH - (v / maxDaily) * innerH;
+            const points = dailyRevenue.map((d, i) => ({ x: toX(i), y: toY(d.revenue), ...d }));
+            const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+            const areaPath = `${linePath} L${points[points.length - 1].x.toFixed(1)},${(PAD.top + innerH).toFixed(1)} L${points[0].x.toFixed(1)},${(PAD.top + innerH).toFixed(1)} Z`;
+            const labelStep = n <= 7 ? 1 : n <= 14 ? 2 : Math.ceil(n / 7);
+            return (
+              <div className="relative w-full" style={{ height: H }}>
+                <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="w-full h-full overflow-visible">
+                  <defs>
+                    <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#6366f1" stopOpacity="0.18" />
+                      <stop offset="100%" stopColor="#6366f1" stopOpacity="0" />
+                    </linearGradient>
+                  </defs>
+                  {/* Gridlines */}
+                  {[0, 0.25, 0.5, 0.75, 1].map((t) => (
+                    <line key={t} x1={PAD.left} x2={W - PAD.right} y1={PAD.top + innerH * (1 - t)} y2={PAD.top + innerH * (1 - t)} stroke="#f1f5f9" strokeWidth="1" />
+                  ))}
+                  {/* Area fill */}
+                  <path d={areaPath} fill="url(#revGrad)" />
+                  {/* Trend line */}
+                  <path d={linePath} fill="none" stroke="#6366f1" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                  {/* Data points + tooltips */}
+                  {points.map((p) => (
+                    <g key={p.date} className="group cursor-pointer">
+                      <circle cx={p.x} cy={p.y} r="8" fill="transparent" />
+                      <circle cx={p.x} cy={p.y} r="3.5" fill="#6366f1" stroke="white" strokeWidth="2" className="transition-all group-hover:r-5" />
+                      <g className="opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                        <rect x={p.x - 36} y={p.y - 30} width="72" height="20" rx="4" fill="#1e293b" />
+                        <text x={p.x} y={p.y - 16} textAnchor="middle" fill="white" fontSize="9" fontFamily="monospace">₵{p.revenue.toFixed(2)}</text>
+                      </g>
+                    </g>
+                  ))}
+                  {/* X-axis labels */}
+                  {points.map((p, i) => i % labelStep === 0 && (
+                    <text key={p.date} x={p.x} y={H - 4} textAnchor="middle" fill="#94a3b8" fontSize="9" fontFamily="sans-serif">
+                      {p.date.slice(5)}
+                    </text>
+                  ))}
+                </svg>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Revenue vs Expenses donut */}
