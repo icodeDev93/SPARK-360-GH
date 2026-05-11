@@ -144,6 +144,12 @@ export function useSuppliers() {
     }
   };
 
+  const deleteOrder = async (id: string) => {
+    setOrders((prev) => prev.filter((o) => o.id !== id));
+    const { error } = await supabase.from('purchases').delete().eq('purchase_number', id);
+    if (error) console.error(error);
+  };
+
   const updateOrderStatus = async (id: string, status: PurchaseOrder['status'], paymentStatus: PurchaseOrder['paymentStatus']) => {
     setOrders((prev) => prev.map((o) => o.id === id ? { ...o, status, paymentStatus } : o));
     const { error } = await supabase.from('purchases')
@@ -153,5 +159,5 @@ export function useSuppliers() {
 
   const getSupplierOrders = (supplierId: string) => orders.filter((o) => o.supplierId === supplierId);
 
-  return { suppliers, orders, loading, addSupplier, updateSupplier, deleteSupplier, addOrder, updateOrderStatus, getSupplierOrders };
+  return { suppliers, orders, loading, addSupplier, updateSupplier, deleteSupplier, addOrder, deleteOrder, updateOrderStatus, getSupplierOrders };
 }
