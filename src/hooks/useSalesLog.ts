@@ -257,6 +257,17 @@ export function useSalesLog() {
     if (error) console.error(error);
   };
 
+  const deleteInvoice = async (invoiceNo: string) => {
+    setInvoices((prev) => prev.filter((inv) => inv.invoiceNo !== invoiceNo));
+    const { data: sale } = await supabase.from('sales').select('id').eq('receipt_number', invoiceNo).single();
+    if (sale) {
+      await supabase.from('sale_items').delete().eq('sale_id', sale.id);
+      await supabase.from('receipts').delete().eq('sale_id', sale.id);
+    }
+    const { error } = await supabase.from('sales').delete().eq('receipt_number', invoiceNo);
+    if (error) console.error(error);
+  };
+
   const totalRevenue = invoices
     .filter((inv) => inv.status === 'completed')
     .reduce((sum, inv) => sum + inv.netSales, 0);
@@ -268,5 +279,5 @@ export function useSalesLog() {
 
   const sales = invoices.map(toSaleRecord);
 
-  return { invoices, sales, loading, addInvoice, refund, totalRevenue, todayInvoices };
+  return { invoices, sales, loading, addInvoice, refund, deleteInvoice, totalRevenue, todayInvoices };
 }

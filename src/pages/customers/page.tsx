@@ -36,7 +36,7 @@ function getInitials(name: string) {
 const EMPTY_FORM = { fullName: '', phone: '', email: '', customerType: 'Retail' as CustomerType };
 
 export default function CustomersPage() {
-  const { customers, addCustomer: dbAddCustomer, updateCustomer } = useCustomers();
+  const { customers, addCustomer: dbAddCustomer, updateCustomer, deleteCustomer } = useCustomers();
   const { currentUser } = useAuth();
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
@@ -45,6 +45,7 @@ export default function CustomersPage() {
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
+  const [deleteTarget, setDeleteTarget] = useState<Customer | null>(null);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [editForm, setEditForm] = useState(EMPTY_FORM);
   const { invoices } = useSalesLog();
@@ -243,6 +244,13 @@ export default function CustomersPage() {
                         >
                           <i className="ri-edit-line text-sm"></i>
                         </button>
+                        <button
+                          onClick={() => setDeleteTarget(c)}
+                          className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition-all cursor-pointer"
+                          title="Delete"
+                        >
+                          <i className="ri-delete-bin-line text-sm"></i>
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -406,6 +414,43 @@ export default function CustomersPage() {
           </div>
         </div>
       )}
+      {/* Delete Customer Confirm */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm mx-4">
+            <div className="w-12 h-12 flex items-center justify-center bg-red-100 rounded-xl mb-4">
+              <i className="ri-delete-bin-line text-red-500 text-xl"></i>
+            </div>
+            <h3 className="text-slate-800 font-bold text-base mb-2">Delete Customer?</h3>
+            <p className="text-slate-500 text-sm mb-2 leading-relaxed">
+              <span className="font-bold text-slate-700">{deleteTarget.fullName}</span> will be permanently removed.
+            </p>
+            <p className="text-slate-400 text-xs mb-6">This action cannot be undone.</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeleteTarget(null)}
+                className="flex-1 py-2.5 rounded-lg border border-slate-200 text-slate-700 text-sm font-semibold hover:bg-slate-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  deleteCustomer(deleteTarget.customerId);
+                  if (currentUser) writeLog(currentUser, {
+                    category: 'customers', action: 'delete',
+                    description: `Deleted customer ${deleteTarget.fullName} (${deleteTarget.customerType})`,
+                  });
+                  setDeleteTarget(null);
+                }}
+                className="flex-1 py-2.5 rounded-lg bg-red-500 hover:bg-red-600 text-white text-sm font-bold cursor-pointer"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Edit Customer Modal */}
       {editingCustomer && (
         <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4">

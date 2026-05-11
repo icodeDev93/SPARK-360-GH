@@ -25,10 +25,11 @@ function fmt(n: number) {
 }
 
 export default function SalesHistoryPage() {
-  const { invoices, refund } = useSalesLog();
+  const { invoices, refund, deleteInvoice } = useSalesLog();
   const { currentUser } = useAuth();
   const [selectedInvoice, setSelectedInvoice] = useState<InvoiceRecord | null>(null);
   const [refundTarget, setRefundTarget] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<InvoiceRecord | null>(null);
   const [filterStatus, setFilterStatus] = useState<'all' | 'completed' | 'refunded'>('all');
   const [filterPayment, setFilterPayment] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -224,6 +225,13 @@ export default function SalesHistoryPage() {
                               <i className="ri-refund-2-line text-sm"></i>
                             </button>
                           )}
+                          <button
+                            onClick={() => setDeleteTarget(inv)}
+                            className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition-all cursor-pointer"
+                            title="Delete record"
+                          >
+                            <i className="ri-delete-bin-line text-sm"></i>
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -336,6 +344,44 @@ export default function SalesHistoryPage() {
                 className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-bold cursor-pointer transition-all"
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirm Modal */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm mx-4">
+            <div className="w-12 h-12 flex items-center justify-center bg-red-100 rounded-xl mb-4">
+              <i className="ri-delete-bin-line text-red-500 text-xl"></i>
+            </div>
+            <h3 className="text-slate-800 font-bold text-base mb-2">Delete Sale Record?</h3>
+            <p className="text-slate-500 text-sm mb-2 leading-relaxed">
+              Receipt <span className="font-bold text-indigo-600">{deleteTarget.receiptNo}</span> for{' '}
+              <span className="font-bold text-slate-700">{deleteTarget.customerName}</span> will be permanently removed.
+            </p>
+            <p className="text-slate-400 text-xs mb-6">This action cannot be undone.</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeleteTarget(null)}
+                className="flex-1 py-2.5 rounded-lg border border-slate-200 text-slate-700 text-sm font-semibold hover:bg-slate-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  deleteInvoice(deleteTarget.invoiceNo);
+                  if (currentUser) writeLog(currentUser, {
+                    category: 'sales', action: 'delete',
+                    description: `Deleted sale ${deleteTarget.receiptNo} for ${deleteTarget.customerName} — ₵${deleteTarget.netSales.toFixed(2)}`,
+                  });
+                  setDeleteTarget(null);
+                }}
+                className="flex-1 py-2.5 rounded-lg bg-red-500 hover:bg-red-600 text-white text-sm font-bold cursor-pointer"
+              >
+                Delete
               </button>
             </div>
           </div>

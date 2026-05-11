@@ -24,9 +24,10 @@ function fmt(n: number) {
 }
 
 export default function PurchasesPage() {
-  const { suppliers, orders, loading } = useSuppliers();
+  const { suppliers, orders, loading, deleteOrder } = useSuppliers();
   const [tab, setTab]                           = useState<Tab>('purchases');
-  const [showSupplierForm, setShowSupplierForm] = useState(false);
+  const [showSupplierForm, setShowSupplierForm]     = useState(false);
+  const [deleteOrderTarget, setDeleteOrderTarget]   = useState<{ id: string; supplierName: string } | null>(null);
   const [showPurchaseForm, setShowPurchaseForm] = useState(false);
   const [page, setPage]                         = useState(1);
 
@@ -128,6 +129,13 @@ export default function PurchasesPage() {
                             <button className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-all cursor-pointer">
                               <i className="ri-printer-line text-sm"></i>
                             </button>
+                            <button
+                              onClick={() => setDeleteOrderTarget({ id: p.id, supplierName: p.supplierName })}
+                              className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition-all cursor-pointer"
+                              title="Delete order"
+                            >
+                              <i className="ri-delete-bin-line text-sm"></i>
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -216,6 +224,40 @@ export default function PurchasesPage() {
             </div>
           )}
         </>
+      )}
+
+      {/* Delete Purchase Order Confirm */}
+      {deleteOrderTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm mx-4">
+            <div className="w-12 h-12 flex items-center justify-center bg-red-100 rounded-xl mb-4">
+              <i className="ri-delete-bin-line text-red-500 text-xl"></i>
+            </div>
+            <h3 className="text-slate-800 font-bold text-base mb-2">Delete Purchase Order?</h3>
+            <p className="text-slate-500 text-sm mb-2 leading-relaxed">
+              Order <span className="font-bold text-indigo-600">{deleteOrderTarget.id}</span> from{' '}
+              <span className="font-bold text-slate-700">{deleteOrderTarget.supplierName}</span> will be permanently removed.
+            </p>
+            <p className="text-slate-400 text-xs mb-6">This action cannot be undone.</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeleteOrderTarget(null)}
+                className="flex-1 py-2.5 rounded-lg border border-slate-200 text-slate-700 text-sm font-semibold hover:bg-slate-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  deleteOrder(deleteOrderTarget.id);
+                  setDeleteOrderTarget(null);
+                }}
+                className="flex-1 py-2.5 rounded-lg bg-red-500 hover:bg-red-600 text-white text-sm font-bold cursor-pointer"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Add Supplier Modal */}
