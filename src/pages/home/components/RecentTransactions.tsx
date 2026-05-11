@@ -28,7 +28,7 @@ export default function RecentTransactions({ invoices }: RecentTransactionsProps
         <table className="w-full">
           <thead>
             <tr className="border-b border-slate-100">
-              <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide pb-3">Invoice</th>
+              <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide pb-3">Receipt No.</th>
               <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide pb-3">Customer</th>
               <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide pb-3">Date</th>
               <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide pb-3">Method</th>
@@ -41,7 +41,7 @@ export default function RecentTransactions({ invoices }: RecentTransactionsProps
             {invoices.map((inv, i) => (
               <tr key={inv.invoiceNo} className={`border-b border-slate-50 hover:bg-slate-50 transition-all ${i % 2 === 0 ? '' : 'bg-slate-50/50'}`}>
                 <td className="py-3.5 pr-4">
-                  <span className="text-indigo-600 text-sm font-semibold font-mono">{inv.invoiceNo}</span>
+                  <span className="text-indigo-600 text-sm font-semibold font-mono">{inv.receiptNo}</span>
                 </td>
                 <td className="py-3.5 pr-4">
                   <div>

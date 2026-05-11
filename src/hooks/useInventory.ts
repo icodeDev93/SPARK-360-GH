@@ -5,21 +5,26 @@ import { enrichInventoryItem } from '@/services/inventoryService';
 import { supabase } from '@/lib/supabase';
 
 type Row = {
-  item_id: string; product_name: string; sku: string; category: string;
-  supplier: string; cost_price: number; selling_price: number;
-  current_stock: number; reorder_level: number; image: string;
+  id?: string; product_code: string; product_name: string; sku: string;
+  category_name: string | null; supplier_name: string | null;
+  cost_price: number; selling_price: number; current_stock: number;
+  reorder_level: number; expiry_date: string | null; image_url: string | null;
 };
 
 const toItem = (r: Row): InventoryItem => enrichInventoryItem({
-  itemId: r.item_id, productName: r.product_name, sku: r.sku, category: r.category,
-  supplier: r.supplier, costPrice: r.cost_price, sellingPrice: r.selling_price,
-  currentStock: r.current_stock, reorderLevel: r.reorder_level, image: r.image,
+  itemId: r.product_code, productName: r.product_name, sku: r.sku,
+  category: r.category_name ?? '', supplier: r.supplier_name ?? '',
+  costPrice: r.cost_price, sellingPrice: r.selling_price,
+  currentStock: r.current_stock, reorderLevel: r.reorder_level,
+  expiryDate: r.expiry_date ?? '', image: r.image_url ?? '',
 } as InventoryItem);
 
-const toRow = (i: InventoryItem): Row => ({
-  item_id: i.itemId, product_name: i.productName, sku: i.sku, category: i.category,
-  supplier: i.supplier, cost_price: i.costPrice, selling_price: i.sellingPrice,
-  current_stock: i.currentStock, reorder_level: i.reorderLevel, image: i.image,
+const toRow = (i: InventoryItem): Omit<Row, 'id' | 'product_code' | 'sku'> => ({
+  product_name: i.productName,
+  category_name: i.category, supplier_name: i.supplier,
+  cost_price: i.costPrice, selling_price: i.sellingPrice,
+  current_stock: i.currentStock, reorder_level: i.reorderLevel,
+  expiry_date: i.expiryDate || null, image_url: i.image,
 });
 
 export function useInventory() {
@@ -30,7 +35,7 @@ export function useInventory() {
   useEffect(() => {
     (async () => {
       const [itemsRes, catsRes] = await Promise.all([
-        supabase.from('inventory_items').select('*').order('product_name'),
+        supabase.from('inventory').select('*').order('product_name'),
         supabase.from('inventory_categories').select('name').order('name'),
       ]);
       if (itemsRes.error) console.error(itemsRes.error);
@@ -43,7 +48,7 @@ export function useInventory() {
 
       if (dbItems.length === 0) {
         const rows = seedItems.map(toRow);
-        await supabase.from('inventory_items').insert(rows);
+        await supabase.from('inventory').insert(rows);
         setItems(seedItems.map(enrichInventoryItem));
       } else {
         setItems(dbItems);
@@ -63,20 +68,27 @@ export function useInventory() {
 
   const saveItem = async (item: InventoryItem) => {
     const enriched = enrichInventoryItem(item);
+    const existing = items.find((i) => i.itemId === enriched.itemId);
     setItems((prev) => {
-      const exists = prev.find((i) => i.itemId === enriched.itemId);
-      return exists
+      return existing
         ? prev.map((i) => i.itemId === enriched.itemId ? enriched : i)
         : [...prev, enriched];
     });
-    const { error } = await supabase
-      .from('inventory_items').upsert(toRow(enriched));
+    const request = existing
+      ? supabase.from('inventory').update(toRow(enriched)).eq('product_code', enriched.itemId).select('*').single()
+      : supabase.from('inventory').insert(toRow(enriched)).select('*').single();
+
+    const { data, error } = await request;
     if (error) console.error(error);
+    if (data) {
+      const saved = toItem(data);
+      setItems((prev) => prev.map((i) => i.itemId === enriched.itemId ? saved : i));
+    }
   };
 
   const deleteItem = async (itemId: string) => {
     setItems((prev) => prev.filter((i) => i.itemId !== itemId));
-    const { error } = await supabase.from('inventory_items').delete().eq('item_id', itemId);
+    const { error } = await supabase.from('inventory').delete().eq('product_code', itemId);
     if (error) console.error(error);
   };
 
@@ -94,8 +106,8 @@ export function useInventory() {
     ));
     await supabase.from('inventory_categories')
       .update({ name: newName }).eq('name', original);
-    await supabase.from('inventory_items')
-      .update({ category: newName }).eq('category', original);
+    await supabase.from('inventory')
+      .update({ category_name: newName }).eq('category_name', original);
   };
 
   const deleteCategory = async (name: string) => {

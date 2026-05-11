@@ -6,6 +6,7 @@ const PRESETS: { key: PresetKey; label: string; icon: string }[] = [
   { key: '7d', label: 'Last 7 Days', icon: 'ri-calendar-line' },
   { key: '30d', label: 'Last 30 Days', icon: 'ri-calendar-2-line' },
   { key: '90d', label: 'Last 90 Days', icon: 'ri-calendar-check-line' },
+  { key: 'year', label: 'This Year', icon: 'ri-calendar-todo-line' },
   { key: 'custom', label: 'Custom Range', icon: 'ri-calendar-event-line' },
 ];
 
@@ -50,7 +51,7 @@ export default function DateRangePicker({ filter }: Props) {
         <div className="absolute right-0 top-12 w-72 bg-white border border-slate-200 rounded-2xl z-50 overflow-hidden" style={{ boxShadow: '0 8px 32px rgba(0,0,0,0.10)' }}>
           <div className="px-4 py-3 border-b border-slate-100">
             <p className="text-slate-700 font-bold text-sm">Date Range</p>
-            <p className="text-slate-400 text-xs mt-0.5">Filter all analytics by period</p>
+            <p className="text-slate-400 text-xs mt-0.5">Filter data by period</p>
           </div>
 
           {/* Preset Buttons */}

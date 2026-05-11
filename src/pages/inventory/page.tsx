@@ -1,8 +1,14 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import AppLayout from '@/components/feature/AppLayout';
+import Paginator from '@/components/ui/Paginator';
+
+const PAGE_SIZE = 20;
 import ItemDrawer from './components/ItemDrawer';
 import { useInventory } from '@/hooks/useInventory';
+import { useSuppliers } from '@/hooks/useSuppliers';
 import type { InventoryItem } from '@/types/erp';
+import { useAuth } from '@/hooks/useAuth';
+import { writeLog, diffFields } from '@/lib/activityLog';
 
 const CAT_COLORS = [
   'bg-indigo-100 text-indigo-600',
@@ -43,8 +49,12 @@ function StockBar({ current, reorder }: { current: number; reorder: number }) {
   );
 }
 
+const GHS = (v: unknown) => `₵${Number(v).toFixed(2)}`;
+
 export default function InventoryPage() {
   const { items, categories, saveItem, deleteItem, addCategory, renameCategory, deleteCategory } = useInventory();
+  const { suppliers } = useSuppliers();
+  const { currentUser } = useAuth();
   const [pageTab, setPageTab] = useState<'items' | 'categories'>('items');
 
   // ── Categories ──────────────────────────────────────────────────────────────
@@ -75,6 +85,9 @@ export default function InventoryPage() {
   const [categoryFilter, setCategoryFilter] = useState('All');
   const [stockFilter, setStockFilter]       = useState('All');
   const [deleteId, setDeleteId]             = useState<string | null>(null);
+  const [page, setPage]                     = useState(1);
+
+  useEffect(() => { setPage(1); }, [search, categoryFilter, stockFilter]);
 
   const filtered = items.filter((item) => {
     const q           = search.toLowerCase();
@@ -87,15 +100,44 @@ export default function InventoryPage() {
       : item.stockStatus === 'OK';
     return matchSearch && matchCat && matchStock;
   });
+  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  const handleSave = (item: InventoryItem) => {
-    saveItem(item);
+  const handleSave = async (item: InventoryItem) => {
+    const isEdit = !!editItem;
+    await saveItem(item);
+    if (currentUser) {
+      if (isEdit) {
+        const changes = diffFields(
+          editItem as unknown as Record<string, unknown>,
+          item as unknown as Record<string, unknown>,
+          { productName: 'Product Name', category: 'Category', supplier: 'Supplier', costPrice: 'Cost Price', sellingPrice: 'Selling Price', currentStock: 'Stock Qty', reorderLevel: 'Reorder Level' },
+          { costPrice: GHS, sellingPrice: GHS },
+        );
+        writeLog(currentUser, {
+          category: 'inventory', action: 'edit',
+          description: `Edited inventory item ${item.productName}`,
+          changes,
+        });
+      } else {
+        writeLog(currentUser, {
+          category: 'inventory', action: 'create',
+          description: `Added new inventory item ${item.productName} (${item.category}) — Cost: ₵${item.costPrice.toFixed(2)}, Price: ₵${item.sellingPrice.toFixed(2)}, Stock: ${item.currentStock}`,
+        });
+      }
+    }
     setDrawerOpen(false);
     setEditItem(null);
   };
 
   const handleDelete = (id: string) => {
+    const target = items.find((i) => i.itemId === id);
     deleteItem(id);
+    if (currentUser && target) {
+      writeLog(currentUser, {
+        category: 'inventory', action: 'delete',
+        description: `Removed inventory item ${target.productName} (${target.category})`,
+      });
+    }
     setDeleteId(null);
   };
 
@@ -103,6 +145,10 @@ export default function InventoryPage() {
   const outCount = items.filter((i) => i.stockStatus === 'OUT OF STOCK').length;
 
   const allFilterCategories = ['All', ...categories];
+  const supplierNames = suppliers
+    .map((supplier) => supplier.name)
+    .filter((name, index, names) => name && names.indexOf(name) === index)
+    .sort((a, b) => a.localeCompare(b));
 
   return (
     <AppLayout>
@@ -194,6 +240,7 @@ export default function InventoryPage() {
                     <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">SKU</th>
                     <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">Category</th>
                     <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">Stock</th>
+                    <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">Expiry</th>
                     <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">Supplier</th>
                     <th className="text-right text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">Cost</th>
                     <th className="text-right text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">Price</th>
@@ -203,7 +250,7 @@ export default function InventoryPage() {
                 <tbody>
                   {filtered.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="px-5 py-14 text-center">
+                      <td colSpan={9} className="px-5 py-14 text-center">
                         <div className="flex flex-col items-center gap-2">
                           <i className="ri-archive-drawer-line text-3xl text-slate-300"></i>
                           <p className="text-slate-400 text-sm">No items found</p>
@@ -211,7 +258,7 @@ export default function InventoryPage() {
                       </td>
                     </tr>
                   ) : (
-                    filtered.map((item, i) => (
+                    paginated.map((item, i) => (
                       <tr key={item.itemId} className={`border-b border-slate-50 hover:bg-slate-50 transition-all ${i % 2 === 1 ? 'bg-slate-50/40' : ''}`}>
                         <td className="px-5 py-3.5">
                           <div className="flex items-center gap-3">
@@ -228,6 +275,11 @@ export default function InventoryPage() {
                           <span className="bg-slate-100 text-slate-600 text-xs font-semibold px-2.5 py-1 rounded-full">{item.category}</span>
                         </td>
                         <td className="px-4 py-3.5"><StockBar current={item.currentStock} reorder={item.reorderLevel} /></td>
+                        <td className="px-4 py-3.5">
+                          <span className="text-slate-500 text-xs font-mono">
+                            {item.expiryDate || 'No expiry'}
+                          </span>
+                        </td>
                         <td className="px-4 py-3.5"><span className="text-slate-500 text-xs truncate max-w-[140px] block">{item.supplier}</span></td>
                         <td className="px-4 py-3.5 text-right"><span className="text-slate-500 text-sm font-mono">₵{item.costPrice.toFixed(2)}</span></td>
                         <td className="px-4 py-3.5 text-right"><span className="text-slate-800 text-sm font-bold font-mono">₵{item.sellingPrice.toFixed(2)}</span></td>
@@ -253,6 +305,13 @@ export default function InventoryPage() {
                 </tbody>
               </table>
             </div>
+            <Paginator
+              page={page}
+              totalItems={filtered.length}
+              pageSize={PAGE_SIZE}
+              onPrev={() => setPage((p) => p - 1)}
+              onNext={() => setPage((p) => p + 1)}
+            />
           </div>
         </>
       )}
@@ -460,6 +519,7 @@ export default function InventoryPage() {
         open={drawerOpen}
         item={editItem}
         categories={categories}
+        suppliers={supplierNames}
         onClose={() => { setDrawerOpen(false); setEditItem(null); }}
         onSave={handleSave}
       />

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { inventoryItems } from '@/mocks/inventory';
+import { useInventory } from '@/hooks/useInventory';
 
 const fmt  = (n: number) => `₵${n.toLocaleString('en-GH', { minimumFractionDigits: 2 })}`;
 const fmtK = (n: number) => n >= 1000 ? `₵${(n / 1000).toFixed(1)}k` : fmt(n);
@@ -22,7 +22,7 @@ export default function InventoryReport() {
   const [catFilter, setCatFilter]     = useState('All');
   const [stockFilter, setStockFilter] = useState<StockFilter>('All');
 
-  const items = inventoryItems;
+  const { items } = useInventory();
 
   // Aggregates
   const totalItems     = items.length;
@@ -53,7 +53,7 @@ export default function InventoryReport() {
   const filteredStockVal = filtered.reduce((s, i) => s + i.costPrice * i.currentStock, 0);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" id="analytics-print-area">
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

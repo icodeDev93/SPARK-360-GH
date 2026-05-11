@@ -32,16 +32,17 @@ export function useStockAlerts() {
   useEffect(() => {
     (async () => {
       const { data: items, error } = await supabase
-        .from('inventory_items')
-        .select('item_id, product_name, sku, category, current_stock, reorder_level, image');
+        .from('inventory')
+        .select('product_code, product_name, sku, category_name, current_stock, reorder_level, image_url');
 
       if (error) return;
 
       const alerts: StockAlertItem[] = (items ?? [])
         .filter((i) => i.current_stock <= i.reorder_level)
         .map((i) => ({
-          id: i.item_id, name: i.product_name, sku: i.sku, category: i.category,
-          stock: i.current_stock, reorder: i.reorder_level, image: i.image,
+          id: i.product_code, name: i.product_name, sku: i.sku ?? '',
+          category: i.category_name ?? '', stock: i.current_stock,
+          reorder: i.reorder_level, image: i.image_url ?? '',
           severity: getSeverity(i.current_stock, i.reorder_level),
         }))
         .sort((a, b) => {

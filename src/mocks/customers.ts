@@ -4,7 +4,6 @@ export const customers: Customer[] = [
   {
     customerId: 'C001',
     fullName: 'Kwame Asante',
-    companyName: 'Asante Mini Mart',
     customerType: 'Wholesale',
     phone: '+233 24 111 2233',
     email: 'kwame.asante@asanteminimart.com',
@@ -17,7 +16,6 @@ export const customers: Customer[] = [
   {
     customerId: 'C002',
     fullName: 'Akosua Mensah',
-    companyName: 'Mensah Superstore',
     customerType: 'Wholesale',
     phone: '+233 20 444 5566',
     email: 'akosua@mensahsuperstore.com',
@@ -30,7 +28,6 @@ export const customers: Customer[] = [
   {
     customerId: 'C003',
     fullName: 'Fatima Issah',
-    companyName: 'Fatima Provision Store',
     customerType: 'Retail',
     phone: '+233 55 777 8899',
     email: 'fatima.issah@gmail.com',
@@ -43,7 +40,6 @@ export const customers: Customer[] = [
   {
     customerId: 'C004',
     fullName: 'James Osei',
-    companyName: 'Osei Kiosk Junction',
     customerType: 'Retail',
     phone: '+233 27 222 3344',
     email: 'james.osei@gmail.com',
@@ -56,7 +52,6 @@ export const customers: Customer[] = [
   {
     customerId: 'C005',
     fullName: 'Ama Boateng',
-    companyName: 'Boateng & Sons Dist.',
     customerType: 'Wholesale',
     phone: '+233 24 555 6677',
     email: 'ama@boatengdist.com',
@@ -69,7 +64,6 @@ export const customers: Customer[] = [
   {
     customerId: 'C006',
     fullName: 'Kofi Darko',
-    companyName: 'Darko Quick Shop',
     customerType: 'Retail',
     phone: '+233 20 888 9900',
     email: 'kofi.darko@gmail.com',
@@ -82,7 +76,6 @@ export const customers: Customer[] = [
   {
     customerId: 'C007',
     fullName: 'Abena Owusu',
-    companyName: 'Owusu Family Store',
     customerType: 'Wholesale',
     phone: '+233 55 333 4455',
     email: 'abena.owusu@owusufamily.com',
@@ -95,7 +88,6 @@ export const customers: Customer[] = [
   {
     customerId: 'C008',
     fullName: 'Yaw Nkrumah',
-    companyName: 'Nkrumah Retail Hub',
     customerType: 'Retail',
     phone: '+233 27 666 7788',
     email: 'yaw.nkrumah@gmail.com',
@@ -108,9 +100,9 @@ export const customers: Customer[] = [
 ];
 
 export const customerHistory = [
-  { invoiceNo: 'INV041', date: '2026-04-26', items: 4, amountGHS: 1240.00, status: 'Paid', method: 'Bank Transfer' },
-  { invoiceNo: 'INV035', date: '2026-04-18', items: 2, amountGHS: 680.00, status: 'Paid', method: 'MoMo' },
-  { invoiceNo: 'INV028', date: '2026-04-10', items: 6, amountGHS: 2150.00, status: 'Paid', method: 'Cheque' },
-  { invoiceNo: 'INV019', date: '2026-03-28', items: 3, amountGHS: 980.00, status: 'Paid', method: 'Cash' },
-  { invoiceNo: 'INV012', date: '2026-03-15', items: 5, amountGHS: 3300.00, status: 'Paid', method: 'Bank Transfer' },
+  { receiptNo: 'RCP-000041', date: '2026-04-26', items: 4, amountGHS: 1240.00, status: 'Paid', method: 'Bank Transfer' },
+  { receiptNo: 'RCP-000035', date: '2026-04-18', items: 2, amountGHS: 680.00, status: 'Paid', method: 'MoMo' },
+  { receiptNo: 'RCP-000028', date: '2026-04-10', items: 6, amountGHS: 2150.00, status: 'Paid', method: 'Cheque' },
+  { receiptNo: 'RCP-000019', date: '2026-03-28', items: 3, amountGHS: 980.00, status: 'Paid', method: 'Cash' },
+  { receiptNo: 'RCP-000012', date: '2026-03-15', items: 5, amountGHS: 3300.00, status: 'Paid', method: 'Bank Transfer' },
 ];

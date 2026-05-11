@@ -11,7 +11,7 @@ function makeExpense(
   paidBy: PaymentMethod,
   notes: string = ''
 ): ExpenseRecord {
-  return { expenseId, date, category, description, amountGHS, paidBy, notes };
+  return { expenseId, date, category, description, amountGHS, paidBy, notes, proofUrl: null };
 }
 
 export const seedExpenses: ExpenseRecord[] = [

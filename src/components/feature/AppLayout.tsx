@@ -11,8 +11,8 @@ export default function AppLayout({ children }: AppLayoutProps) {
     <div className="min-h-screen bg-slate-50">
       <Sidebar />
       <Topbar />
-      <main className="ml-64 pt-16 min-h-screen">
-        <div className="p-6">
+      <main className="lg:ml-64 pt-16 min-h-screen">
+        <div className="p-4 lg:p-6">
           {children}
         </div>
       </main>

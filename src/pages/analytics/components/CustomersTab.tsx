@@ -2,7 +2,10 @@ import { useMemo } from 'react';
 import { useSalesLog } from '@/hooks/useSalesLog';
 import type { AnalyticsFilter } from '@/hooks/useAnalyticsFilter';
 
-interface Props { filter: AnalyticsFilter; }
+interface Props {
+  filter: AnalyticsFilter;
+  variant?: 'full' | 'top';
+}
 
 const CUSTOMER_MAP: Record<string, string> = {
   'RCP-001': 'Amara Diallo', 'RCP-002': 'Kwame Asante', 'RCP-003': 'Fatima Nkosi',
@@ -19,8 +22,9 @@ function getCustomerName(sale: { receiptNo: string; cashier: string }): string {
   return CUSTOMER_MAP[sale.receiptNo] || sale.cashier;
 }
 
-export default function CustomersTab({ filter }: Props) {
+export default function CustomersTab({ filter, variant = 'full' }: Props) {
   const { sales } = useSalesLog();
+  const isTopOnly = variant === 'top';
 
   const filteredSales = useMemo(
     () => sales.filter((s) => s.status === 'completed' && filter.isInRange(s.date)),
@@ -54,7 +58,7 @@ export default function CustomersTab({ filter }: Props) {
   return (
     <div className="space-y-6" id="analytics-print-area">
       {/* KPIs */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      {!isTopOnly && <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
           { label: 'Total Customers', value: String(totalCustomers), icon: 'ri-group-line', color: 'bg-indigo-50 text-indigo-600' },
           { label: 'Avg. Lifetime Value', value: `₵${avgLifetimeValue.toFixed(2)}`, icon: 'ri-coins-line', color: 'bg-emerald-50 text-emerald-600' },
@@ -71,11 +75,11 @@ export default function CustomersTab({ filter }: Props) {
             </div>
           </div>
         ))}
-      </div>
+      </div>}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className={`grid grid-cols-1 ${isTopOnly ? '' : 'lg:grid-cols-3'} gap-4`}>
         {/* Top Customers Table */}
-        <div className="lg:col-span-2 bg-white rounded-xl p-6 border border-slate-100">
+        <div className={`${isTopOnly ? '' : 'lg:col-span-2'} bg-white rounded-xl p-6 border border-slate-100`}>
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-slate-800 font-bold text-base">Top Customers</h3>
             <span className="text-slate-400 text-xs">{filter.label}</span>
@@ -123,7 +127,7 @@ export default function CustomersTab({ filter }: Props) {
         </div>
 
         {/* Customer Mix */}
-        <div className="bg-white rounded-xl p-6 border border-slate-100">
+        {!isTopOnly && <div className="bg-white rounded-xl p-6 border border-slate-100">
           <h3 className="text-slate-800 font-bold text-base mb-5">Customer Mix</h3>
           <div className="flex flex-col items-center justify-center py-2">
             <div className="relative w-32 h-32 mb-4">
@@ -182,7 +186,7 @@ export default function CustomersTab({ filter }: Props) {
               })}
             </div>
           </div>
-        </div>
+        </div>}
       </div>
     </div>
   );

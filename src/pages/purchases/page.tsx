@@ -1,5 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import AppLayout from '@/components/feature/AppLayout';
+import Paginator from '@/components/ui/Paginator';
+
+const PAGE_SIZE = 20;
 import { suppliers as initialSuppliers, purchases as initialPurchases } from '@/mocks/purchases';
 
 type Tab = 'purchases' | 'suppliers';
@@ -22,6 +25,11 @@ export default function PurchasesPage() {
   const [showPurchaseForm, setShowPurchaseForm] = useState(false);
   const [suppliers] = useState(initialSuppliers);
   const [purchases] = useState(initialPurchases);
+  const [page, setPage] = useState(1);
+
+  useEffect(() => { setPage(1); }, [tab]);
+
+  const paginated = purchases.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <AppLayout>
@@ -83,7 +91,7 @@ export default function PurchasesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {purchases.map((p, i) => (
+                  {paginated.map((p, i) => (
                     <tr key={p.id} className={`border-b border-slate-50 hover:bg-slate-50 transition-all ${i % 2 === 1 ? 'bg-slate-50/40' : ''}`}>
                       <td className="px-5 py-3.5"><span className="text-indigo-600 text-sm font-semibold font-mono">{p.id}</span></td>
                       <td className="px-5 py-3.5"><span className="text-slate-700 text-sm font-medium">{p.supplier}</span></td>
@@ -111,6 +119,13 @@ export default function PurchasesPage() {
                 </tbody>
               </table>
             </div>
+            <Paginator
+              page={page}
+              totalItems={purchases.length}
+              pageSize={PAGE_SIZE}
+              onPrev={() => setPage((p) => p - 1)}
+              onNext={() => setPage((p) => p + 1)}
+            />
           </div>
         </>
       )}

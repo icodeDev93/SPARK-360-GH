@@ -1,20 +1,26 @@
 import { useState } from 'react';
 import AppLayout from '@/components/feature/AppLayout';
 import { useSettings } from '@/hooks/useSettings';
+import { useAuth } from '@/hooks/useAuth';
 import StoreInfoSection from './components/StoreInfoSection';
 import TaxSection from './components/TaxSection';
 import ReceiptSection from './components/ReceiptSection';
+import RolePermissionsSection from './components/RolePermissionsSection';
 
-type Tab = 'store' | 'tax' | 'receipt';
+type Tab = 'store' | 'tax' | 'receipt' | 'permissions';
 
-const tabs: { key: Tab; label: string; icon: string; desc: string }[] = [
-  { key: 'store', label: 'Store Info', icon: 'ri-store-2-line', desc: 'Name, address, contact' },
-  { key: 'tax', label: 'Tax & Rates', icon: 'ri-percent-line', desc: 'Tax rates and labels' },
-  { key: 'receipt', label: 'Receipt', icon: 'ri-receipt-line', desc: 'Layout and content' },
+const BASE_TABS: { key: Tab; label: string; icon: string; desc: string }[] = [
+  { key: 'store',       label: 'Store Info',        icon: 'ri-store-2-line',          desc: 'Name, address, contact' },
+  { key: 'tax',         label: 'Tax & Rates',        icon: 'ri-percent-line',          desc: 'Tax rates and labels' },
+  { key: 'receipt',     label: 'Receipt',            icon: 'ri-receipt-line',          desc: 'Layout and content' },
+  { key: 'permissions', label: 'Role Permissions',   icon: 'ri-shield-keyhole-line',   desc: 'Control access by role' },
 ];
 
 export default function SettingsPage() {
   const { settings, updateSettings, resetSettings } = useSettings();
+  const { currentUser } = useAuth();
+  const isAdmin = currentUser?.role === 'admin';
+  const tabs = isAdmin ? BASE_TABS : BASE_TABS.filter((t) => t.key !== 'permissions');
   const [activeTab, setActiveTab] = useState<Tab>('store');
   const [saved, setSaved] = useState(false);
   const [showReset, setShowReset] = useState(false);
@@ -109,6 +115,9 @@ export default function SettingsPage() {
               )}
               {activeTab === 'receipt' && (
                 <ReceiptSection settings={settings} onChange={updateSettings} />
+              )}
+              {activeTab === 'permissions' && isAdmin && (
+                <RolePermissionsSection />
               )}
             </div>
           </div>

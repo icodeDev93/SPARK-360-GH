@@ -1,9 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
 import { useSalesLog } from '@/hooks/useSalesLog';
 import { useExpenses } from '@/hooks/useExpenses';
+import { useInventory } from '@/hooks/useInventory';
 import {
   exportSalesCSV,
   exportProductsCSV,
+  exportInventoryCSV,
   exportExpensesCSV,
   exportProfitCSV,
   printAnalyticsPDF,
@@ -23,6 +25,7 @@ export default function ExportMenu({ activeTab, filter }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const { sales } = useSalesLog();
   const { expenses } = useExpenses();
+  const { items } = useInventory();
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -35,6 +38,9 @@ export default function ExportMenu({ activeTab, filter }: Props) {
   const filteredSales = sales.filter((s) => filter.isInRange(s.date));
   const filteredExpenses = expenses.filter((e) => filter.isInRange(e.date));
   const rangeLabel = filter.label.toLowerCase().replace(/\s+/g, '-');
+  const exportCountLabel = activeTab === 'inventory' || activeTab === 'stock-report'
+    ? `${items.length} items`
+    : `${filteredSales.length} sales`;
 
   function flash() {
     setStatus('exporting');
@@ -46,12 +52,21 @@ export default function ExportMenu({ activeTab, filter }: Props) {
     flash();
     switch (activeTab) {
       case 'overview':
+      case 'sales':
         exportSalesCSV(filteredSales, rangeLabel);
         break;
       case 'products':
+      case 'top-products':
+      case 'product-report':
         exportProductsCSV(filteredSales, rangeLabel);
         break;
+      case 'inventory':
+      case 'stock-report':
+        exportInventoryCSV(items, rangeLabel);
+        break;
       case 'customers':
+      case 'top-customers':
+      case 'customer-report':
         exportSalesCSV(filteredSales, rangeLabel);
         break;
       case 'profit':
@@ -71,8 +86,11 @@ export default function ExportMenu({ activeTab, filter }: Props) {
   function handlePDF() {
     setOpen(false);
     flash();
-    const tabLabel = activeTab.charAt(0).toUpperCase() + activeTab.slice(1);
-    printAnalyticsPDF(tabLabel, filter.label);
+    const tabLabel = activeTab
+      .split('-')
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ');
+    printAnalyticsPDF(tabLabel, activeTab, filter.label, filteredSales, filteredExpenses, items);
   }
 
   const btnClass = status === 'done'
@@ -92,7 +110,7 @@ export default function ExportMenu({ activeTab, filter }: Props) {
           {status === 'done' && <i className="ri-check-line text-sm"></i>}
           {status === 'idle' && <i className="ri-download-2-line text-sm"></i>}
         </span>
-        {status === 'exporting' ? 'Exporting…' : status === 'done' ? 'Exported!' : 'Export'}
+        {status === 'exporting' ? 'Exporting...' : status === 'done' ? 'Exported!' : 'Export'}
         {status === 'idle' && (
           <span className="w-4 h-4 flex items-center justify-center text-slate-400">
             {open ? <i className="ri-arrow-up-s-line text-sm"></i> : <i className="ri-arrow-down-s-line text-sm"></i>}
@@ -104,7 +122,7 @@ export default function ExportMenu({ activeTab, filter }: Props) {
         <div className="absolute right-0 top-12 w-64 bg-white border border-slate-200 rounded-2xl z-50 overflow-hidden" style={{ boxShadow: '0 8px 32px rgba(0,0,0,0.10)' }}>
           <div className="px-4 py-3 border-b border-slate-100">
             <p className="text-slate-700 font-bold text-sm">Export Report</p>
-            <p className="text-slate-400 text-xs mt-0.5">{filter.label} · {filteredSales.length} sales</p>
+            <p className="text-slate-400 text-xs mt-0.5">{filter.label} - {exportCountLabel}</p>
           </div>
 
           <div className="p-2">
@@ -120,9 +138,17 @@ export default function ExportMenu({ activeTab, filter }: Props) {
               </span>
               <div>
                 <p className="font-semibold text-slate-800">
-                  {activeTab === 'profit' ? 'Profit Summary' : activeTab === 'products' ? 'Products Report' : 'Sales Report'}
+                  {activeTab === 'profit'
+                    ? 'Profit Summary'
+                    : activeTab === 'products' || activeTab === 'top-products' || activeTab === 'product-report'
+                    ? 'Products Report'
+                    : activeTab === 'inventory' || activeTab === 'stock-report'
+                    ? 'Stock Report'
+                    : activeTab === 'top-customers' || activeTab === 'customer-report'
+                    ? 'Customers Report'
+                    : 'Sales Report'}
                 </p>
-                <p className="text-slate-400 text-xs">Download as .csv</p>
+                <p className="text-slate-400 text-xs">Download as .csv ({exportCountLabel})</p>
               </div>
             </button>
 

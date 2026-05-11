@@ -3,15 +3,15 @@
 @tailwind utilities;
 
 html {
-  font-size: 20px;
+  font-size: 16px;
 }
 
 html, body, * {
-  font-family: 'Inter', sans-serif !important;
+  font-family: 'Manrope', sans-serif !important;
 }
 
 .font-mono {
-  font-family: 'Inter', sans-serif !important;
+  font-family: 'Manrope', sans-serif !important;
 }
 
 .scrollbar-hide {

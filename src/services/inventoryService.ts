@@ -56,10 +56,11 @@ export function getLowStockItems(items: InventoryItem[]): InventoryItem[] {
 }
 
 export function enrichInventoryItem(
-  item: Omit<InventoryItem, 'stockStatus' | 'marginPerUnit'>
+  item: Omit<InventoryItem, 'stockStatus' | 'marginPerUnit'> | Omit<InventoryItem, 'stockStatus' | 'marginPerUnit' | 'expiryDate'>
 ): InventoryItem {
   return {
     ...item,
+    expiryDate: 'expiryDate' in item ? item.expiryDate : '',
     stockStatus: getStockStatus(item.currentStock, item.reorderLevel),
     marginPerUnit: calcMarginPerUnit(item.sellingPrice, item.costPrice),
   };

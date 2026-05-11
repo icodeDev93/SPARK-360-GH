@@ -3,10 +3,12 @@ import { useSettings } from '@/hooks/useSettings';
 import type { PaymentMethod } from '@/types/erp';
 
 interface CartItem {
-  id: number;
+  id: string;
   name: string;
   price: number;
+  costPrice: number;
   qty: number;
+  stock: number;
   image: string;
 }
 
@@ -17,14 +19,11 @@ interface ReceiptModalProps {
   discountAmt: number;
   grandTotal: number;
   discount: number;
+  receiptNo: string;
   paymentMethod: PaymentMethod;
+  customerName?: string;
   onClose: () => void;
   onNewSale: () => void;
-}
-
-function generateReceiptNo() {
-  const ts = Date.now().toString().slice(-6);
-  return `RCP-${ts}`;
 }
 
 const paymentLabels: Record<string, string> = {
@@ -48,13 +47,14 @@ export default function ReceiptModal({
   discountAmt,
   grandTotal,
   discount,
+  receiptNo,
   paymentMethod,
+  customerName,
   onClose,
   onNewSale,
 }: ReceiptModalProps) {
   const { settings } = useSettings();
   const receiptRef = useRef<HTMLDivElement>(null);
-  const receiptNo = useRef(generateReceiptNo()).current;
   const now = new Date();
   const dateStr = now.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
   const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
@@ -147,6 +147,10 @@ export default function ReceiptModal({
       <span style="color:#64748b;">Receipt No.</span>
       <span style="font-weight:700;color:#1e293b;">${receiptNo}</span>
     </div>
+    ${customerName ? `<div style="display:flex;justify-content:space-between;margin-bottom:5px;font-size:11px;">
+      <span style="color:#64748b;">Customer</span>
+      <span style="color:#1e293b;font-weight:500;">${customerName}</span>
+    </div>` : ''}
     <div style="display:flex;justify-content:space-between;margin-bottom:5px;font-size:11px;">
       <span style="color:#64748b;">Date</span>
       <span style="color:#1e293b;">${dateStr}</span>
@@ -258,6 +262,12 @@ export default function ReceiptModal({
                 <span>Receipt No.</span>
                 <span className="font-bold text-slate-700">{receiptNo}</span>
               </div>
+              {customerName && (
+                <div className="flex justify-between text-xs text-slate-500 mb-1">
+                  <span>Customer</span>
+                  <span className="text-slate-700 font-medium">{customerName}</span>
+                </div>
+              )}
               <div className="flex justify-between text-xs text-slate-500 mb-1">
                 <span>Date</span>
                 <span className="text-slate-700">{dateStr}</span>

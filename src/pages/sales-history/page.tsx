@@ -1,7 +1,12 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import AppLayout from '@/components/feature/AppLayout';
 import { useSalesLog } from '@/hooks/useSalesLog';
+import { useAuth } from '@/hooks/useAuth';
 import type { InvoiceRecord } from '@/types/erp';
+import { writeLog } from '@/lib/activityLog';
+import Paginator from '@/components/ui/Paginator';
+
+const PAGE_SIZE = 20;
 
 const PAYMENT_ICONS: Record<string, string> = {
   Cash:            'ri-money-dollar-circle-line',
@@ -21,19 +26,30 @@ function fmt(n: number) {
 
 export default function SalesHistoryPage() {
   const { invoices, refund } = useSalesLog();
+  const { currentUser } = useAuth();
   const [selectedInvoice, setSelectedInvoice] = useState<InvoiceRecord | null>(null);
   const [refundTarget, setRefundTarget] = useState<string | null>(null);
   const [filterStatus, setFilterStatus] = useState<'all' | 'completed' | 'refunded'>('all');
   const [filterPayment, setFilterPayment] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [page, setPage] = useState(1);
+
+  useEffect(() => { setPage(1); }, [filterStatus, filterPayment, searchQuery]);
 
   const today = new Date().toISOString().split('T')[0];
+  const isAttendant = currentUser?.role === 'cashier';
 
-  const filtered = invoices.filter((inv) => {
+  // Attendants see only their own sales for today
+  const baseInvoices = isAttendant
+    ? invoices.filter((inv) => inv.date === today && inv.cashier === currentUser?.name)
+    : invoices;
+
+  const filtered = baseInvoices.filter((inv) => {
     const matchStatus  = filterStatus === 'all' || inv.status === filterStatus;
     const matchPayment = filterPayment === 'all' || inv.paymentMethod === filterPayment;
     const q = searchQuery.toLowerCase();
     const matchSearch  =
+      inv.receiptNo.toLowerCase().includes(q) ||
       inv.invoiceNo.toLowerCase().includes(q) ||
       inv.customerName.toLowerCase().includes(q) ||
       inv.cashier.toLowerCase().includes(q) ||
@@ -41,12 +57,14 @@ export default function SalesHistoryPage() {
     return matchStatus && matchPayment && matchSearch;
   });
 
-  const totalRevenue  = invoices.filter((i) => i.status === 'completed').reduce((s, i) => s + i.netSales, 0);
-  const todayCount    = invoices.filter((i) => i.date === today).length;
-  const refundedCount = invoices.filter((i) => i.status === 'refunded').length;
+  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  const totalRevenue  = baseInvoices.filter((i) => i.status === 'completed').reduce((s, i) => s + i.netSales, 0);
+  const todayCount    = baseInvoices.filter((i) => i.date === today).length;
+  const refundedCount = baseInvoices.filter((i) => i.status === 'refunded').length;
 
   const summaryCards = [
-    { label: 'Total Transactions', value: String(invoices.length),  icon: 'ri-receipt-line',        color: 'bg-indigo-50 text-indigo-600' },
+    { label: 'Total Transactions', value: String(baseInvoices.length), icon: 'ri-receipt-line',       color: 'bg-indigo-50 text-indigo-600' },
     { label: 'Total Revenue',      value: fmt(totalRevenue),         icon: 'ri-funds-line',           color: 'bg-emerald-50 text-emerald-600' },
     { label: "Today's Sales",      value: String(todayCount),        icon: 'ri-calendar-check-line',  color: 'bg-amber-50 text-amber-600' },
     { label: 'Refunded',           value: String(refundedCount),     icon: 'ri-refund-2-line',        color: 'bg-red-50 text-red-500' },
@@ -57,8 +75,11 @@ export default function SalesHistoryPage() {
       {/* Header */}
       <div className="mb-6">
         <h2 className="text-slate-800 font-bold text-xl">Sales History</h2>
-        <p className="text-slate-400 text-sm mt-0.5">All completed POS transactions</p>
+        <p className="text-slate-400 text-sm mt-0.5">
+          {isAttendant ? 'Your sales transactions for today' : 'All completed POS transactions'}
+        </p>
       </div>
+
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
@@ -81,7 +102,7 @@ export default function SalesHistoryPage() {
           <i className="ri-search-line text-slate-400 text-sm"></i>
           <input
             type="text"
-            placeholder="Search invoice, cashier, item..."
+            placeholder="Search receipt, cashier, item..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="bg-transparent text-sm text-slate-600 placeholder-slate-400 outline-none flex-1"
@@ -121,7 +142,7 @@ export default function SalesHistoryPage() {
           <table className="w-full">
             <thead className="bg-slate-50 border-b border-slate-100">
               <tr>
-                {['Invoice No.', 'Date', 'Customer', 'Items', 'Cashier', 'Payment', 'Net Sales', 'Margin', 'Status', 'Actions'].map((h) => (
+                {['Receipt No.', 'Date', 'Customer', 'Items', 'Cashier', 'Payment', 'Net Sales', 'Margin', 'Status', 'Actions'].map((h) => (
                   <th key={h} className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide px-5 py-3.5 whitespace-nowrap">
                     {h}
                   </th>
@@ -134,18 +155,18 @@ export default function SalesHistoryPage() {
                   <td colSpan={10} className="px-5 py-12 text-center">
                     <div className="flex flex-col items-center gap-2">
                       <i className="ri-receipt-line text-3xl text-slate-300"></i>
-                      <p className="text-slate-400 text-sm font-medium">No invoices found</p>
+                      <p className="text-slate-400 text-sm font-medium">No receipts found</p>
                       <p className="text-slate-300 text-xs">Adjust your filters or complete a sale</p>
                     </div>
                   </td>
                 </tr>
               ) : (
-                filtered.map((inv, i) => {
+                paginated.map((inv, i) => {
                   const totalQty = inv.items.reduce((s, item) => s + item.netQty, 0);
                   return (
-                    <tr key={inv.invoiceNo} className={`border-b border-slate-50 hover:bg-slate-50 transition-all ${i % 2 !== 0 ? 'bg-slate-50/40' : ''}`}>
+                    <tr key={inv.receiptNo} className={`border-b border-slate-50 hover:bg-slate-50 transition-all ${i % 2 !== 0 ? 'bg-slate-50/40' : ''}`}>
                       <td className="px-5 py-3.5">
-                        <span className="text-indigo-600 font-bold text-sm font-mono">{inv.invoiceNo}</span>
+                        <span className="text-indigo-600 font-bold text-sm font-mono">{inv.receiptNo}</span>
                       </td>
                       <td className="px-5 py-3.5 whitespace-nowrap">
                         <p className="text-slate-700 text-sm font-semibold">{formatDate(inv.date)}</p>
@@ -212,16 +233,23 @@ export default function SalesHistoryPage() {
             </tbody>
           </table>
         </div>
+        <Paginator
+          page={page}
+          totalItems={filtered.length}
+          pageSize={PAGE_SIZE}
+          onPrev={() => setPage((p) => p - 1)}
+          onNext={() => setPage((p) => p + 1)}
+        />
       </div>
 
-      {/* Invoice Detail Modal */}
+      {/* Receipt Detail Modal */}
       {selectedInvoice && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl w-full max-w-lg overflow-hidden">
             <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
               <div>
-                <h2 className="text-slate-800 font-bold text-base">Invoice Details</h2>
-                <p className="text-indigo-600 text-xs font-bold font-mono mt-0.5">{selectedInvoice.invoiceNo}</p>
+                <h2 className="text-slate-800 font-bold text-base">Receipt Details</h2>
+                <p className="text-indigo-600 text-xs font-bold font-mono mt-0.5">{selectedInvoice.receiptNo}</p>
               </div>
               <button
                 onClick={() => setSelectedInvoice(null)}
@@ -323,7 +351,7 @@ export default function SalesHistoryPage() {
             </div>
             <h3 className="text-slate-800 font-bold text-base mb-2">Mark as Refunded?</h3>
             <p className="text-slate-500 text-sm mb-2 leading-relaxed">
-              Invoice <span className="font-bold text-indigo-600">{refundTarget}</span> will be marked as refunded.
+              Receipt <span className="font-bold text-indigo-600">{invoices.find((inv) => inv.invoiceNo === refundTarget)?.receiptNo ?? refundTarget}</span> will be marked as refunded.
             </p>
             <p className="text-slate-400 text-xs mb-6">This action cannot be undone.</p>
             <div className="flex gap-3">
@@ -334,7 +362,15 @@ export default function SalesHistoryPage() {
                 Cancel
               </button>
               <button
-                onClick={() => { refund(refundTarget); setRefundTarget(null); }}
+                onClick={() => {
+                  const inv = invoices.find((i) => i.invoiceNo === refundTarget);
+                  refund(refundTarget);
+                  if (currentUser && inv) writeLog(currentUser, {
+                    category: 'sales', action: 'refund',
+                    description: `Refunded sale ${inv.receiptNo} for ${inv.customerName} — ₵${inv.netSales.toFixed(2)} (${inv.paymentMethod})`,
+                  });
+                  setRefundTarget(null);
+                }}
                 className="flex-1 py-2.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold cursor-pointer"
               >
                 Confirm Refund

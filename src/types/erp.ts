@@ -11,6 +11,7 @@ export interface InventoryItem {
   sellingPrice: number;   // GHS
   currentStock: number;
   reorderLevel: number;
+  expiryDate: string;
   stockStatus: StockStatus;
   marginPerUnit: number;  // sellingPrice - costPrice
   sku: string;
@@ -36,6 +37,7 @@ export interface SaleLineItem {
 
 export interface InvoiceRecord {
   invoiceNo: string;
+  receiptNo: string;
   date: string;
   customerId: string;
   customerName: string;
@@ -69,6 +71,7 @@ export interface ExpenseRecord {
   amountGHS: number;
   paidBy: PaymentMethod;
   notes: string;
+  proofUrl: string | null;
 }
 
 // ─── CRM ──────────────────────────────────────────────────────────────────────
@@ -79,7 +82,6 @@ export type CustomerStatus = 'Active' | 'Inactive' | 'Blocked';
 export interface Customer {
   customerId: string;
   fullName: string;
-  companyName: string;
   customerType: CustomerType;
   phone: string;
   email: string;
@@ -88,6 +90,7 @@ export interface Customer {
   statusFlag: CustomerStatus;
   avatar: string;
   lastOrderDate: string;
+  notes?: string;
 }
 
 // ─── Suppliers ────────────────────────────────────────────────────────────────
@@ -151,7 +154,6 @@ export interface MonthlyPerformance {
 export interface TopCustomer {
   customerId: string;
   fullName: string;
-  companyName: string;
   customerType: CustomerType;
   totalPurchases: number;
   avatar: string;

@@ -70,10 +70,9 @@ export function getTop5CustomersByPurchase(customers: Customer[]): TopCustomer[]
   return [...customers]
     .sort((a, b) => b.totalPurchases - a.totalPurchases)
     .slice(0, 5)
-    .map(({ customerId, fullName, companyName, customerType, totalPurchases, avatar }) => ({
+    .map(({ customerId, fullName, customerType, totalPurchases, avatar }) => ({
       customerId,
       fullName,
-      companyName,
       customerType,
       totalPurchases,
       avatar,
