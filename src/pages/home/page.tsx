@@ -6,7 +6,7 @@ import RecentTransactions from './components/RecentTransactions';
 import { useSalesLog } from '@/hooks/useSalesLog';
 import { useExpenses } from '@/hooks/useExpenses';
 import { useAuth } from '@/hooks/useAuth';
-import { inventoryItems } from '@/mocks/inventory';
+import { useInventory } from '@/hooks/useInventory';
 import { calcKpiSummary, calcMonthlyPerformance } from '@/services/dashboardService';
 
 const CURRENT_YEAR = new Date().getFullYear();
@@ -27,6 +27,7 @@ export default function DashboardPage() {
   const { invoices } = useSalesLog();
   const { expenses } = useExpenses();
   const { currentUser } = useAuth();
+  const { items: inventoryItems } = useInventory();
 
   const isAttendant = currentUser?.role === 'cashier';
 
@@ -39,9 +40,7 @@ export default function DashboardPage() {
   const kpi = calcKpiSummary(inventoryItems, scopedInvoices, scopedExpenses);
   const monthlyData = calcMonthlyPerformance(scopedInvoices, scopedExpenses, CURRENT_YEAR);
   const recentInvoices = scopedInvoices.slice(0, 6);
-  const recentItems = [...inventoryItems]
-    .sort((a, b) => Number(b.itemId.replace('P', '')) - Number(a.itemId.replace('P', '')))
-    .slice(0, 4);
+  const recentItems = inventoryItems.slice(0, 4);
 
   return (
     <AppLayout>
