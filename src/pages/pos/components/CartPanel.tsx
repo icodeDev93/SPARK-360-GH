@@ -7,6 +7,7 @@ import { calcLineItem, generateReceiptNo } from '@/services/salesService';
 import type { PaymentMethod } from '@/types/erp';
 import ReceiptModal from './ReceiptModal';
 import CustomerSelectModal from './CustomerSelectModal';
+import { writeLog } from '@/lib/activityLog';
 
 interface CartItem {
   id: string;
@@ -80,6 +81,10 @@ export default function CartPanel({ items, onUpdateQty, onRemove, onClear }: Car
       items:        saleItems,
       paymentMethod,
       cashier:      currentUser.name,
+    });
+    writeLog(currentUser, {
+      category: 'sales', action: 'complete',
+      description: `Completed sale ${nextReceiptNo} for ${customerName} — ₵${grandTotal.toFixed(2)} via ${paymentMethod} (${saleItems.length} item${saleItems.length !== 1 ? 's' : ''})`,
     });
     setShowReceipt(true);
   };

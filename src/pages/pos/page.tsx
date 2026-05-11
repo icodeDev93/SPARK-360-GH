@@ -41,9 +41,9 @@ export default function POSPage() {
   const cartCount = cartItems.reduce((sum, i) => sum + i.qty, 0);
 
   return (
-    <div className="min-h-screen bg-slate-50 overflow-x-hidden">
+    <div className="h-screen overflow-hidden bg-slate-50">
       <Sidebar />
-      <div className="lg:ml-64 flex flex-col min-w-0">
+      <div className="lg:ml-64 flex flex-col h-full min-w-0">
         <Topbar />
         <div className="pt-16 flex flex-1 h-screen overflow-hidden min-w-0">
           {/* Product Browser */}

@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import AppLayout from '@/components/feature/AppLayout';
-import type { UserRole } from '@/hooks/useAuth';
-import { ROLE_LABELS } from '@/hooks/useAuth';
+import type { UserRole, PermissionOverrides } from '@/hooks/useAuth';
+import { ROLE_LABELS, ALL_PERMISSIONS, useAuth } from '@/hooks/useAuth';
 import { supabase, supabaseAdmin } from '@/lib/supabase';
 import PasswordInput from '@/components/ui/PasswordInput';
+import { writeLog, diffFields } from '@/lib/activityLog';
 
 interface AppUser {
   id: string;
@@ -13,6 +14,7 @@ interface AppUser {
   initials: string;
   avatarColor: string;
   status: 'Active' | 'Inactive';
+  permissionOverrides: PermissionOverrides;
 }
 
 const AVATAR_COLORS = [
@@ -25,24 +27,34 @@ function getInitials(name: string) {
 }
 
 function mapRow(r: Record<string, unknown>): AppUser {
+  const raw = r.permission_overrides as PermissionOverrides | null | undefined;
   return {
-    id:          r.id as string,
-    name:        r.name as string,
-    email:       r.email as string,
-    role:        r.role as UserRole,
-    initials:    r.initials as string,
-    avatarColor: r.avatar_color as string,
-    status:      (r.status as 'Active' | 'Inactive') ?? 'Active',
+    id:                  r.id as string,
+    name:                r.name as string,
+    email:               r.email as string,
+    role:                r.role as UserRole,
+    initials:            r.initials as string,
+    avatarColor:         r.avatar_color as string,
+    status:              (r.status as 'Active' | 'Inactive') ?? 'Active',
+    permissionOverrides: { granted: raw?.granted ?? [], revoked: raw?.revoked ?? [] },
   };
 }
+
+const EMPTY_OVERRIDES: PermissionOverrides = { granted: [], revoked: [] };
 
 const EMPTY_FORM = {
   name: '', email: '', role: 'cashier' as UserRole,
   status: 'Active' as 'Active' | 'Inactive',
   password: '', confirmPassword: '',
+  overrides: EMPTY_OVERRIDES,
 };
 
+function hasCustomOverrides(o: PermissionOverrides) {
+  return o.granted.length > 0 || o.revoked.length > 0;
+}
+
 export default function UsersPage() {
+  const { rolePermissions, currentUser } = useAuth();
   const [users, setUsers]           = useState<AppUser[]>([]);
   const [loading, setLoading]       = useState(true);
   const [saving, setSaving]         = useState(false);
@@ -64,8 +76,54 @@ export default function UsersPage() {
   }, []);
 
   const openAdd  = () => { setEditTarget(null); setForm(EMPTY_FORM); setErrors({}); setFormError(''); setShowForm(true); };
-  const openEdit = (u: AppUser) => { setEditTarget(u); setForm({ name: u.name, email: u.email, role: u.role, status: u.status, password: '', confirmPassword: '' }); setErrors({}); setFormError(''); setShowForm(true); };
+  const openEdit = (u: AppUser) => {
+    setEditTarget(u);
+    setForm({
+      name: u.name, email: u.email, role: u.role, status: u.status,
+      password: '', confirmPassword: '',
+      overrides: { granted: [...u.permissionOverrides.granted], revoked: [...u.permissionOverrides.revoked] },
+    });
+    setErrors({}); setFormError(''); setShowForm(true);
+  };
   const closeForm = () => { setShowForm(false); setEditTarget(null); setSaving(false); };
+
+  // When role changes in form, clear overrides so they start fresh for the new role
+  function handleRoleChange(newRole: UserRole) {
+    setForm((p) => ({ ...p, role: newRole, overrides: EMPTY_OVERRIDES }));
+  }
+
+  // Toggle a permission override for the user being edited
+  function togglePermission(key: string) {
+    const rolePerms = form.role === 'admin'
+      ? (ALL_PERMISSIONS.map((p) => p.key) as string[])
+      : (rolePermissions[form.role as 'manager' | 'cashier'] ?? []);
+    const roleHas = rolePerms.includes(key);
+
+    setForm((prev) => {
+      const { granted, revoked } = prev.overrides;
+      if (roleHas) {
+        // Role provides this — toggle revoke
+        return revoked.includes(key)
+          ? { ...prev, overrides: { granted, revoked: revoked.filter((p) => p !== key) } }
+          : { ...prev, overrides: { granted, revoked: [...revoked, key] } };
+      } else {
+        // Role doesn't provide this — toggle custom grant
+        return granted.includes(key)
+          ? { ...prev, overrides: { granted: granted.filter((p) => p !== key), revoked } }
+          : { ...prev, overrides: { granted: [...granted, key], revoked } };
+      }
+    });
+  }
+
+  function getPermState(key: string): 'role' | 'custom' | 'revoked' | 'none' {
+    if (form.role === 'admin') return 'role';
+    const rolePerms = rolePermissions[form.role as 'manager' | 'cashier'] ?? [];
+    const { granted, revoked } = form.overrides;
+    if (revoked.includes(key)) return 'revoked';
+    if (granted.includes(key)) return 'custom';
+    if (rolePerms.includes(key)) return 'role';
+    return 'none';
+  }
 
   const validate = () => {
     const e: Record<string, string> = {};
@@ -92,36 +150,54 @@ export default function UsersPage() {
 
     try {
       if (editTarget) {
-        // ── Edit: update profile row ──
         const initials = getInitials(form.name);
+        const overridesToSave = form.role === 'admin' ? EMPTY_OVERRIDES : form.overrides;
+
         const { error } = await supabase
           .from('profiles')
-          .update({ name: form.name, email: form.email, role: form.role, status: form.status, initials })
+          .update({
+            name: form.name, email: form.email, role: form.role,
+            status: form.status, initials,
+            permission_overrides: overridesToSave,
+          })
           .eq('id', editTarget.id);
 
         if (error) { setFormError(error.message); return; }
 
-        // ── Update password if provided ──
         if (form.password) {
           const { error: pwError } = await supabaseAdmin.auth.admin.updateUserById(
-            editTarget.id,
-            { password: form.password },
+            editTarget.id, { password: form.password },
           );
           if (pwError) { setFormError('Profile saved but password update failed: ' + pwError.message); return; }
         }
 
+        if (currentUser) {
+          const changes = diffFields(
+            { name: editTarget.name, role: editTarget.role, status: editTarget.status },
+            { name: form.name,       role: form.role,       status: form.status },
+            { name: 'Name', role: 'Role', status: 'Status' },
+          );
+          const overrideChanged =
+            JSON.stringify(editTarget.permissionOverrides) !== JSON.stringify(overridesToSave);
+          if (overrideChanged) changes.push({ field: 'Permission Overrides', old: 'previous', new: 'updated' });
+          if (form.password)   changes.push({ field: 'Password', old: '••••••••', new: '(changed)' });
+          writeLog(currentUser, {
+            category: 'users', action: 'edit',
+            description: `Edited user ${form.name} (${ROLE_LABELS[form.role].label})`,
+            changes,
+          });
+        }
+
         setUsers((prev) => prev.map((u) =>
-          u.id === editTarget.id ? { ...u, name: form.name, email: form.email, role: form.role, status: form.status, initials } : u
+          u.id === editTarget.id
+            ? { ...u, name: form.name, email: form.email, role: form.role, status: form.status, initials, permissionOverrides: overridesToSave }
+            : u
         ));
       } else {
-        // ── Create: Supabase Auth sign-up → insert profile ──
-
-        // Save current admin session so we can restore it after signUp takes over.
-        const { data: { session: adminSession } } = await supabase.auth.getSession();
-
-        const { data: authData, error: authError } = await supabase.auth.signUp({
+        const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
           email: form.email.toLowerCase().trim(),
           password: form.password,
+          email_confirm: true,
         });
 
         if (authError || !authData.user) {
@@ -133,13 +209,10 @@ export default function UsersPage() {
         const avatarColor = AVATAR_COLORS[users.length % AVATAR_COLORS.length];
 
         const { error: profileError } = await supabase.from('profiles').insert({
-          id:           authData.user.id,
-          name:         form.name,
-          email:        form.email.toLowerCase().trim(),
-          role:         form.role,
-          status:       form.status,
-          initials,
-          avatar_color: avatarColor,
+          id: authData.user.id, name: form.name,
+          email: form.email.toLowerCase().trim(),
+          role: form.role, status: form.status, initials, avatar_color: avatarColor,
+          permission_overrides: EMPTY_OVERRIDES,
         });
 
         if (profileError) {
@@ -147,16 +220,19 @@ export default function UsersPage() {
           return;
         }
 
-        // Restore admin session (signUp signs in as the new user when email confirmation is off).
-        if (adminSession) {
-          await supabase.auth.setSession({
-            access_token:  adminSession.access_token,
-            refresh_token: adminSession.refresh_token,
+        const newUser: AppUser = {
+          id: authData.user.id, name: form.name,
+          email: form.email.toLowerCase().trim(),
+          role: form.role, status: form.status, initials, avatarColor,
+          permissionOverrides: EMPTY_OVERRIDES,
+        };
+        setUsers((prev) => [...prev, newUser]);
+        if (currentUser) {
+          writeLog(currentUser, {
+            category: 'users', action: 'create',
+            description: `Created new user ${form.name} (${ROLE_LABELS[form.role].label}) — ${form.email.toLowerCase().trim()}`,
           });
         }
-
-        const newUser: AppUser = { id: authData.user.id, name: form.name, email: form.email.toLowerCase().trim(), role: form.role, status: form.status, initials, avatarColor };
-        setUsers((prev) => [...prev, newUser]);
       }
 
       closeForm();
@@ -166,8 +242,17 @@ export default function UsersPage() {
   };
 
   const handleDelete = async (id: string) => {
+    const target = users.find((u) => u.id === id);
     const { error } = await supabase.from('profiles').delete().eq('id', id);
-    if (!error) setUsers((prev) => prev.filter((u) => u.id !== id));
+    if (!error) {
+      setUsers((prev) => prev.filter((u) => u.id !== id));
+      if (currentUser && target) {
+        writeLog(currentUser, {
+          category: 'users', action: 'delete',
+          description: `Removed user ${target.name} (${ROLE_LABELS[target.role].label})`,
+        });
+      }
+    }
     setDeleteTarget(null);
   };
 
@@ -207,7 +292,7 @@ export default function UsersPage() {
           { label: 'Total Users',    value: users.length,   icon: 'ri-team-line',        color: 'bg-indigo-50 text-indigo-600' },
           { label: 'Administrators', value: counts.admin,   icon: 'ri-shield-user-line', color: 'bg-violet-50 text-violet-600' },
           { label: 'Managers',       value: counts.manager, icon: 'ri-user-star-line',   color: 'bg-emerald-50 text-emerald-600' },
-          { label: 'Attendants',      value: counts.cashier, icon: 'ri-user-line',        color: 'bg-amber-50 text-amber-600' },
+          { label: 'Attendants',     value: counts.cashier, icon: 'ri-user-line',        color: 'bg-amber-50 text-amber-600' },
         ].map((s) => (
           <div key={s.label} className="bg-white rounded-xl p-4 flex items-center gap-3 border border-slate-100">
             <div className={`w-10 h-10 flex items-center justify-center rounded-lg flex-shrink-0 ${s.color}`}>
@@ -281,6 +366,7 @@ export default function UsersPage() {
               ) : (
                 filtered.map((u, i) => {
                   const role = ROLE_LABELS[u.role];
+                  const customised = u.role !== 'admin' && hasCustomOverrides(u.permissionOverrides);
                   return (
                     <tr key={u.id} className={`border-b border-slate-50 hover:bg-slate-50 transition-all ${i % 2 === 1 ? 'bg-slate-50/30' : ''}`}>
                       <td className="px-5 py-3.5">
@@ -293,9 +379,17 @@ export default function UsersPage() {
                       </td>
                       <td className="px-5 py-3.5"><span className="text-slate-500 text-sm">{u.email}</span></td>
                       <td className="px-5 py-3.5">
-                        <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full ${role.bg} ${role.color}`}>
-                          {role.label}
-                        </span>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full ${role.bg} ${role.color}`}>
+                            {role.label}
+                          </span>
+                          {customised && (
+                            <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-violet-100 text-violet-600">
+                              <i className="ri-equalizer-line text-xs"></i>
+                              Custom
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-5 py-3.5">
                         <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full ${
@@ -327,7 +421,7 @@ export default function UsersPage() {
       {/* Add / Edit Modal */}
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[92vh]">
+          <div className="bg-white rounded-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[92vh]">
             <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
               <div>
                 <h2 className="text-slate-800 font-bold text-base">{editTarget ? 'Edit User' : 'Add New User'}</h2>
@@ -378,7 +472,7 @@ export default function UsersPage() {
                   <label className="block text-sm font-semibold text-slate-700 mb-1.5">Role</label>
                   <select
                     value={form.role}
-                    onChange={(e) => setForm((p) => ({ ...p, role: e.target.value as UserRole }))}
+                    onChange={(e) => handleRoleChange(e.target.value as UserRole)}
                     className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 bg-white cursor-pointer"
                   >
                     <option value="admin">Administrator</option>
@@ -399,6 +493,73 @@ export default function UsersPage() {
                 </div>
               </div>
 
+              {/* Access Permissions */}
+              <div className="border-t border-slate-100 pt-4">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-sm font-semibold text-slate-700">Access Permissions</p>
+                  {form.role !== 'admin' && hasCustomOverrides(form.overrides) && (
+                    <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-violet-100 text-violet-600">
+                      <i className="ri-equalizer-line text-xs"></i>
+                      Customised
+                    </span>
+                  )}
+                </div>
+
+                {form.role === 'admin' ? (
+                  <div className="flex items-start gap-2 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2.5 text-xs text-indigo-700">
+                    <i className="ri-shield-check-fill text-sm mt-0.5"></i>
+                    <span>Administrator has full access to all features and cannot be restricted.</span>
+                  </div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-2 gap-2">
+                      {ALL_PERMISSIONS.map((perm) => {
+                        const state = getPermState(perm.key);
+                        const checked = state === 'role' || state === 'custom';
+                        return (
+                          <label
+                            key={perm.key}
+                            onClick={() => togglePermission(perm.key)}
+                            className={`flex items-center gap-2.5 p-2.5 rounded-lg border cursor-pointer transition-all select-none ${
+                              state === 'role'    ? 'bg-indigo-50 border-indigo-100' :
+                              state === 'custom'  ? 'bg-emerald-50 border-emerald-100' :
+                              state === 'revoked' ? 'bg-red-50 border-red-100' :
+                              'bg-white border-slate-100 hover:border-slate-200'
+                            }`}
+                          >
+                            <div className={`w-4 h-4 flex-shrink-0 rounded flex items-center justify-center border-2 transition-all ${
+                              state === 'role'    ? 'bg-indigo-600 border-indigo-600' :
+                              state === 'custom'  ? 'bg-emerald-600 border-emerald-600' :
+                              state === 'revoked' ? 'bg-white border-red-300' :
+                              'bg-white border-slate-300'
+                            }`}>
+                              {checked && <i className="ri-check-line text-white" style={{ fontSize: '10px' }}></i>}
+                              {state === 'revoked' && <i className="ri-close-line text-red-400" style={{ fontSize: '10px' }}></i>}
+                            </div>
+                            <span className={`text-xs font-semibold flex-1 ${
+                              state === 'role'    ? 'text-indigo-700' :
+                              state === 'custom'  ? 'text-emerald-700' :
+                              state === 'revoked' ? 'text-red-500' :
+                              'text-slate-500'
+                            }`}>
+                              {perm.label}
+                            </span>
+                            {state === 'custom'  && <span className="text-xs font-bold text-emerald-500">+</span>}
+                            {state === 'revoked' && <span className="text-xs font-bold text-red-400">Off</span>}
+                          </label>
+                        );
+                      })}
+                    </div>
+                    <div className="flex items-center gap-4 mt-3 text-xs text-slate-400">
+                      <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-indigo-600 inline-block"></span>From role</span>
+                      <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-emerald-600 inline-block"></span>Custom grant</span>
+                      <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm border-2 border-red-300 inline-block"></span>Blocked</span>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Password */}
               <div className="border-t border-slate-100 pt-4">
                 <p className="text-sm font-semibold text-slate-700 mb-3">
                   {editTarget ? 'Change Password' : 'Password'}
@@ -435,19 +596,6 @@ export default function UsersPage() {
                     {errors.confirmPassword && <p className="text-red-500 text-xs mt-1">{errors.confirmPassword}</p>}
                   </div>
                 </div>
-              </div>
-
-              <div className="bg-slate-50 border border-slate-100 rounded-lg p-3">
-                <p className="text-xs font-semibold text-slate-600 mb-1">
-                  {form.role === 'admin' ? 'Administrator' : form.role === 'manager' ? 'Manager' : 'Attendant'} Permissions
-                </p>
-                <p className="text-xs text-slate-400">
-                  {form.role === 'admin'
-                    ? 'Full access: Dashboard, POS, Sales, Customers, Purchases, Inventory, Expenses, Reports, Settings'
-                    : form.role === 'manager'
-                    ? 'Access: Dashboard, POS, Sales, Customers, Purchases, Inventory, Expenses, Reports'
-                    : 'Limited access: POS, Customers, Sales History only'}
-                </p>
               </div>
             </div>
 

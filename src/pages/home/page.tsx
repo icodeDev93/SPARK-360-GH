@@ -5,10 +5,12 @@ import StockAlerts from './components/StockAlerts';
 import RecentTransactions from './components/RecentTransactions';
 import { useSalesLog } from '@/hooks/useSalesLog';
 import { useExpenses } from '@/hooks/useExpenses';
+import { useAuth } from '@/hooks/useAuth';
 import { inventoryItems } from '@/mocks/inventory';
 import { calcKpiSummary, calcMonthlyPerformance } from '@/services/dashboardService';
 
 const CURRENT_YEAR = new Date().getFullYear();
+const TODAY = new Date().toISOString().split('T')[0];
 
 const KPI_CONFIG = [
   { key: 'totalRevenue',   label: 'Total Revenue',   icon: 'ri-shopping-bag-3-line',        color: 'indigo' },
@@ -24,10 +26,19 @@ function fmt(val: number) {
 export default function DashboardPage() {
   const { invoices } = useSalesLog();
   const { expenses } = useExpenses();
+  const { currentUser } = useAuth();
 
-  const kpi = calcKpiSummary(inventoryItems, invoices, expenses);
-  const monthlyData = calcMonthlyPerformance(invoices, expenses, CURRENT_YEAR);
-  const recentInvoices = invoices.slice(0, 6);
+  const isAttendant = currentUser?.role === 'cashier';
+
+  // Attendants see only their own sales for today; DB data is untouched
+  const scopedInvoices = isAttendant
+    ? invoices.filter((inv) => inv.date === TODAY && inv.cashier === currentUser?.name)
+    : invoices;
+  const scopedExpenses = isAttendant ? [] : expenses;
+
+  const kpi = calcKpiSummary(inventoryItems, scopedInvoices, scopedExpenses);
+  const monthlyData = calcMonthlyPerformance(scopedInvoices, scopedExpenses, CURRENT_YEAR);
+  const recentInvoices = scopedInvoices.slice(0, 6);
   const recentItems = [...inventoryItems]
     .sort((a, b) => Number(b.itemId.replace('P', '')) - Number(a.itemId.replace('P', '')))
     .slice(0, 4);

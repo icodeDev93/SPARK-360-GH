@@ -1,9 +1,14 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import AppLayout from '@/components/feature/AppLayout';
+import Paginator from '@/components/ui/Paginator';
+
+const PAGE_SIZE = 20;
 import ItemDrawer from './components/ItemDrawer';
 import { useInventory } from '@/hooks/useInventory';
 import { useSuppliers } from '@/hooks/useSuppliers';
 import type { InventoryItem } from '@/types/erp';
+import { useAuth } from '@/hooks/useAuth';
+import { writeLog, diffFields } from '@/lib/activityLog';
 
 const CAT_COLORS = [
   'bg-indigo-100 text-indigo-600',
@@ -44,9 +49,12 @@ function StockBar({ current, reorder }: { current: number; reorder: number }) {
   );
 }
 
+const GHS = (v: unknown) => `₵${Number(v).toFixed(2)}`;
+
 export default function InventoryPage() {
   const { items, categories, saveItem, deleteItem, addCategory, renameCategory, deleteCategory } = useInventory();
   const { suppliers } = useSuppliers();
+  const { currentUser } = useAuth();
   const [pageTab, setPageTab] = useState<'items' | 'categories'>('items');
 
   // ── Categories ──────────────────────────────────────────────────────────────
@@ -77,6 +85,9 @@ export default function InventoryPage() {
   const [categoryFilter, setCategoryFilter] = useState('All');
   const [stockFilter, setStockFilter]       = useState('All');
   const [deleteId, setDeleteId]             = useState<string | null>(null);
+  const [page, setPage]                     = useState(1);
+
+  useEffect(() => { setPage(1); }, [search, categoryFilter, stockFilter]);
 
   const filtered = items.filter((item) => {
     const q           = search.toLowerCase();
@@ -89,15 +100,44 @@ export default function InventoryPage() {
       : item.stockStatus === 'OK';
     return matchSearch && matchCat && matchStock;
   });
+  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const handleSave = async (item: InventoryItem) => {
+    const isEdit = !!editItem;
     await saveItem(item);
+    if (currentUser) {
+      if (isEdit) {
+        const changes = diffFields(
+          editItem as unknown as Record<string, unknown>,
+          item as unknown as Record<string, unknown>,
+          { productName: 'Product Name', category: 'Category', supplier: 'Supplier', costPrice: 'Cost Price', sellingPrice: 'Selling Price', currentStock: 'Stock Qty', reorderLevel: 'Reorder Level' },
+          { costPrice: GHS, sellingPrice: GHS },
+        );
+        writeLog(currentUser, {
+          category: 'inventory', action: 'edit',
+          description: `Edited inventory item ${item.productName}`,
+          changes,
+        });
+      } else {
+        writeLog(currentUser, {
+          category: 'inventory', action: 'create',
+          description: `Added new inventory item ${item.productName} (${item.category}) — Cost: ₵${item.costPrice.toFixed(2)}, Price: ₵${item.sellingPrice.toFixed(2)}, Stock: ${item.currentStock}`,
+        });
+      }
+    }
     setDrawerOpen(false);
     setEditItem(null);
   };
 
   const handleDelete = (id: string) => {
+    const target = items.find((i) => i.itemId === id);
     deleteItem(id);
+    if (currentUser && target) {
+      writeLog(currentUser, {
+        category: 'inventory', action: 'delete',
+        description: `Removed inventory item ${target.productName} (${target.category})`,
+      });
+    }
     setDeleteId(null);
   };
 
@@ -218,7 +258,7 @@ export default function InventoryPage() {
                       </td>
                     </tr>
                   ) : (
-                    filtered.map((item, i) => (
+                    paginated.map((item, i) => (
                       <tr key={item.itemId} className={`border-b border-slate-50 hover:bg-slate-50 transition-all ${i % 2 === 1 ? 'bg-slate-50/40' : ''}`}>
                         <td className="px-5 py-3.5">
                           <div className="flex items-center gap-3">
@@ -265,6 +305,13 @@ export default function InventoryPage() {
                 </tbody>
               </table>
             </div>
+            <Paginator
+              page={page}
+              totalItems={filtered.length}
+              pageSize={PAGE_SIZE}
+              onPrev={() => setPage((p) => p - 1)}
+              onNext={() => setPage((p) => p + 1)}
+            />
           </div>
         </>
       )}

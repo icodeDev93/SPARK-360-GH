@@ -12,6 +12,7 @@ import SuppliersPage from '@/pages/suppliers/page';
 import UsersPage from '@/pages/users/page';
 import NotFound from '@/pages/NotFound';
 import LoginPage from '@/pages/login/page';
+import LogsPage from '@/pages/logs/page';
 import ProtectedRoute from '@/components/feature/ProtectedRoute';
 
 const routes: RouteObject[] = [
@@ -28,6 +29,7 @@ const routes: RouteObject[] = [
   { path: '/analytics',     element: <ProtectedRoute permission="reports"><AnalyticsPage /></ProtectedRoute> },
   { path: '/settings',      element: <ProtectedRoute permission="settings"><SettingsPage /></ProtectedRoute> },
   { path: '/users',         element: <ProtectedRoute permission="users"><UsersPage /></ProtectedRoute> },
+  { path: '/logs',          element: <ProtectedRoute adminOnly><LogsPage /></ProtectedRoute> },
   { path: '*', element: <NotFound /> },
 ];
 

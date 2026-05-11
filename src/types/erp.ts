@@ -71,6 +71,7 @@ export interface ExpenseRecord {
   amountGHS: number;
   paidBy: PaymentMethod;
   notes: string;
+  proofUrl: string | null;
 }
 
 // ─── CRM ──────────────────────────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { useAuth, ROLE_PERMISSIONS } from '@/hooks/useAuth';
+import { useAuth } from '@/hooks/useAuth';
 import { useSidebar } from '@/contexts/SidebarContext';
 
 const ALL_NAV_ITEMS = [
@@ -18,13 +18,17 @@ const BOTTOM_ITEMS = [
   { path: '/settings', label: 'Settings',        icon: 'ri-settings-3-line',    permission: 'settings' },
 ];
 
-export default function Sidebar() {
-  const { currentUser } = useAuth();
-  const { isOpen, close } = useSidebar();
-  const permissions = currentUser ? ROLE_PERMISSIONS[currentUser.role] : [];
+const ADMIN_ONLY_ITEMS = [
+  { path: '/logs', label: 'Activity Log', icon: 'ri-file-list-3-line' },
+];
 
-  const visibleNav = ALL_NAV_ITEMS.filter((item) => permissions.includes(item.permission));
-  const visibleBottom = BOTTOM_ITEMS.filter((item) => permissions.includes(item.permission));
+export default function Sidebar() {
+  const { hasPermission, currentUser } = useAuth();
+  const { isOpen, close } = useSidebar();
+  const isAdmin = currentUser?.role === 'admin';
+
+  const visibleNav    = ALL_NAV_ITEMS.filter((item) => hasPermission(item.permission));
+  const visibleBottom = BOTTOM_ITEMS.filter((item) => hasPermission(item.permission));
 
   return (
     <>
@@ -87,11 +91,11 @@ export default function Sidebar() {
             ))}
           </ul>
 
-          {visibleBottom.length > 0 && (
+          {(visibleBottom.length > 0 || isAdmin) && (
             <div className="mt-6 pt-4 border-t border-slate-700/50">
               <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest px-3 mb-3">System</p>
               <ul className="space-y-0.5">
-                {visibleBottom.map((item) => (
+                {[...visibleBottom, ...(isAdmin ? ADMIN_ONLY_ITEMS : [])].map((item) => (
                   <li key={item.path}>
                     <NavLink
                       to={item.path}

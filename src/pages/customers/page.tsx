@@ -1,10 +1,15 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import AppLayout from '@/components/feature/AppLayout';
+import Paginator from '@/components/ui/Paginator';
+
+const PAGE_SIZE = 20;
 import { customerHistory } from '@/mocks/customers';
 import { useSalesLog } from '@/hooks/useSalesLog';
 import { useCustomers } from '@/hooks/useCustomers';
 import { getCustomerInvoices, searchCustomers } from '@/services/crmService';
 import type { Customer, CustomerType } from '@/types/erp';
+import { useAuth } from '@/hooks/useAuth';
+import { writeLog, diffFields } from '@/lib/activityLog';
 
 const AVATAR_COLORS = [
   'bg-indigo-500', 'bg-violet-500', 'bg-emerald-500', 'bg-amber-500',
@@ -32,7 +37,11 @@ const EMPTY_FORM = { fullName: '', phone: '', email: '', customerType: 'Retail' 
 
 export default function CustomersPage() {
   const { customers, addCustomer: dbAddCustomer, updateCustomer } = useCustomers();
+  const { currentUser } = useAuth();
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+
+  useEffect(() => { setPage(1); }, [search]);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -63,6 +72,7 @@ export default function CustomersPage() {
   }, [invoices]);
 
   const filtered = searchCustomers(customers, search);
+  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const totalRevenue  = Object.entries(totalSpentByCustomer)
     .filter(([name]) => name !== 'Walk-in Customer')
@@ -80,6 +90,10 @@ export default function CustomersPage() {
       statusFlag:   'Active',
       avatar:       getInitials(form.fullName),
     });
+    if (currentUser) writeLog(currentUser, {
+      category: 'customers', action: 'create',
+      description: `Added new customer ${form.fullName.trim()} (${form.customerType})`,
+    });
     setShowAddForm(false);
     setForm(EMPTY_FORM);
   };
@@ -91,12 +105,22 @@ export default function CustomersPage() {
 
   const saveEdit = () => {
     if (!editingCustomer || !editForm.fullName.trim() || !editForm.phone.trim()) return;
+    const changes = diffFields(
+      { fullName: editingCustomer.fullName, phone: editingCustomer.phone, email: editingCustomer.email, customerType: editingCustomer.customerType },
+      { fullName: editForm.fullName.trim(), phone: editForm.phone.trim(), email: editForm.email.trim(), customerType: editForm.customerType },
+      { fullName: 'Full Name', phone: 'Phone', email: 'Email', customerType: 'Customer Type' },
+    );
     updateCustomer(editingCustomer.customerId, {
       fullName:     editForm.fullName.trim(),
       phone:        editForm.phone.trim(),
       email:        editForm.email.trim(),
       customerType: editForm.customerType,
       avatar:       getInitials(editForm.fullName.trim()),
+    });
+    if (currentUser) writeLog(currentUser, {
+      category: 'customers', action: 'edit',
+      description: `Edited customer ${editForm.fullName.trim()}`,
+      changes,
     });
     setEditingCustomer(null);
     setEditForm(EMPTY_FORM);
@@ -169,7 +193,7 @@ export default function CustomersPage() {
                   </td>
                 </tr>
               ) : (
-                filtered.map((c, i) => (
+                paginated.map((c, i) => (
                   <tr key={c.customerId} className={`border-b border-slate-50 hover:bg-slate-50 transition-all ${i % 2 === 1 ? 'bg-slate-50/40' : ''}`}>
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-3">
@@ -227,6 +251,13 @@ export default function CustomersPage() {
             </tbody>
           </table>
         </div>
+        <Paginator
+          page={page}
+          totalItems={filtered.length}
+          pageSize={PAGE_SIZE}
+          onPrev={() => setPage((p) => p - 1)}
+          onNext={() => setPage((p) => p + 1)}
+        />
       </div>
 
       {/* Purchase History Modal */}

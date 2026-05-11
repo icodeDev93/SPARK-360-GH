@@ -1,9 +1,14 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import AppLayout from '@/components/feature/AppLayout';
+import Paginator from '@/components/ui/Paginator';
+
+const PAGE_SIZE = 20;
 import { useExpenses } from '@/hooks/useExpenses';
 import { EXPENSE_CATEGORIES } from '@/mocks/expenses';
 import ExpenseForm from './components/ExpenseForm';
 import type { ExpenseRecord, PaymentMethod } from '@/types/erp';
+import { useAuth } from '@/hooks/useAuth';
+import { writeLog, diffFields } from '@/lib/activityLog';
 
 const CATEGORY_COLORS: Record<string, string> = {
   Rent:        'bg-emerald-100 text-emerald-700',
@@ -51,17 +56,22 @@ function formatDate(iso: string) {
 
 export default function ExpensesPage() {
   const { expenses, addExpense, updateExpense, deleteExpense, totalByCategory, grandTotalGHS } = useExpenses();
+  const { currentUser } = useAuth();
   const [showForm, setShowForm]           = useState(false);
   const [editTarget, setEditTarget]       = useState<ExpenseRecord | null>(null);
   const [deleteTarget, setDeleteTarget]   = useState<string | null>(null);
   const [filterCat, setFilterCat]         = useState('All');
   const [search, setSearch]               = useState('');
+  const [page, setPage]                   = useState(1);
+
+  useEffect(() => { setPage(1); }, [filterCat, search]);
 
   const filtered = expenses.filter((e) => {
     const matchCat    = filterCat === 'All' || e.category === filterCat;
     const matchSearch = e.description.toLowerCase().includes(search.toLowerCase());
     return matchCat && matchSearch;
   });
+  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const sortedCats  = Object.entries(totalByCategory).sort((a, b) => b[1] - a[1]);
   const topCats     = sortedCats.slice(0, 3);
@@ -72,9 +82,24 @@ export default function ExpensesPage() {
 
   const handleSave = (data: Omit<ExpenseRecord, 'expenseId'>) => {
     if (editTarget) {
+      const changes = diffFields(
+        editTarget as unknown as Record<string, unknown>,
+        data as unknown as Record<string, unknown>,
+        { description: 'Description', category: 'Category', amountGHS: 'Amount', paidBy: 'Paid By', date: 'Date', notes: 'Notes' },
+        { amountGHS: (v) => `₵${Number(v).toFixed(2)}` },
+      );
       updateExpense(editTarget.expenseId, data);
+      if (currentUser) writeLog(currentUser, {
+        category: 'expenses', action: 'edit',
+        description: `Edited expense "${data.description}" (${data.category})`,
+        changes,
+      });
     } else {
       addExpense(data);
+      if (currentUser) writeLog(currentUser, {
+        category: 'expenses', action: 'create',
+        description: `Added expense "${data.description}" — ${data.category}, ₵${data.amountGHS.toFixed(2)} via ${data.paidBy}`,
+      });
     }
     setEditTarget(null);
   };
@@ -217,7 +242,7 @@ export default function ExpensesPage() {
                   </td>
                 </tr>
               ) : (
-                filtered.map((e, i) => (
+                paginated.map((e, i) => (
                   <tr key={e.expenseId} className={`border-b border-slate-50 hover:bg-slate-50 transition-all ${i % 2 === 1 ? 'bg-slate-50/30' : ''}`}>
                     <td className="px-5 py-3.5">
                       <p className="text-slate-800 text-sm font-semibold">{e.description}</p>
@@ -245,6 +270,17 @@ export default function ExpensesPage() {
                     </td>
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-1">
+                        {e.proofUrl && (
+                          <a
+                            href={e.proofUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-emerald-50 text-slate-400 hover:text-emerald-600 transition-all cursor-pointer"
+                            title="View proof"
+                          >
+                            <i className="ri-attachment-2 text-sm"></i>
+                          </a>
+                        )}
                         <button
                           onClick={() => handleEdit(e)}
                           className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-indigo-50 text-slate-400 hover:text-indigo-600 transition-all cursor-pointer"
@@ -278,6 +314,13 @@ export default function ExpensesPage() {
             )}
           </table>
         </div>
+        <Paginator
+          page={page}
+          totalItems={filtered.length}
+          pageSize={PAGE_SIZE}
+          onPrev={() => setPage((p) => p - 1)}
+          onNext={() => setPage((p) => p + 1)}
+        />
       </div>
 
       {/* Expense Form Modal */}
@@ -302,7 +345,15 @@ export default function ExpensesPage() {
             </p>
             <div className="flex gap-3">
               <button onClick={() => setDeleteTarget(null)} className="flex-1 py-2.5 rounded-lg border border-slate-200 text-slate-700 text-sm font-semibold hover:bg-slate-50 cursor-pointer whitespace-nowrap">Cancel</button>
-              <button onClick={() => { deleteExpense(deleteTarget); setDeleteTarget(null); }} className="flex-1 py-2.5 rounded-lg bg-red-500 hover:bg-red-600 text-white text-sm font-bold cursor-pointer whitespace-nowrap">Delete</button>
+              <button onClick={() => {
+                const target = expenses.find((e) => e.expenseId === deleteTarget);
+                deleteExpense(deleteTarget);
+                if (currentUser && target) writeLog(currentUser, {
+                  category: 'expenses', action: 'delete',
+                  description: `Deleted expense "${target.description}" — ${target.category}, ₵${target.amountGHS.toFixed(2)}`,
+                });
+                setDeleteTarget(null);
+              }} className="flex-1 py-2.5 rounded-lg bg-red-500 hover:bg-red-600 text-white text-sm font-bold cursor-pointer whitespace-nowrap">Delete</button>
             </div>
           </div>
         </div>

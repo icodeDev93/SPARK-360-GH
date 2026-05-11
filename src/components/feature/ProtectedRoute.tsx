@@ -23,9 +23,11 @@ function defaultPathForRole(role: UserRole) {
 export default function ProtectedRoute({
   children,
   permission,
+  adminOnly,
 }: {
   children: ReactNode;
   permission?: string;
+  adminOnly?: boolean;
 }) {
   const { currentUser, isAuthenticated, sessionLoading, hasPermission } = useAuth();
   const location = useLocation();
@@ -45,6 +47,10 @@ export default function ProtectedRoute({
 
   if (!isAuthenticated) {
     return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  if (adminOnly && currentUser?.role !== 'admin') {
+    return <Navigate to={defaultPathForRole(currentUser!.role)} replace />;
   }
 
   if (permission && currentUser && !hasPermission(permission)) {

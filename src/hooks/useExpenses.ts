@@ -9,6 +9,7 @@ export type { ExpenseRecord };
 type Row = {
   id: string; created_by: string; expense_date: string; category: string;
   description: string; amount: number; paid_by: string; notes: string | null;
+  proof_url: string | null;
 };
 
 const toRecord = (r: Row): ExpenseRecord => ({
@@ -16,12 +17,14 @@ const toRecord = (r: Row): ExpenseRecord => ({
   category: r.category as ExpenseCategory,
   description: r.description, amountGHS: r.amount,
   paidBy: r.paid_by as PaymentMethod, notes: r.notes ?? '',
+  proofUrl: r.proof_url ?? null,
 });
 
 const toRow = (e: ExpenseRecord): Omit<Row, 'id' | 'created_by'> => ({
   expense_date: e.date, category: e.category,
   description: e.description, amount: e.amountGHS,
   paid_by: e.paidBy, notes: e.notes,
+  proof_url: e.proofUrl ?? null,
 });
 
 export function useExpenses() {
@@ -64,6 +67,7 @@ export function useExpenses() {
     const { error } = await supabase.from('expenses').update({
       expense_date: data.date, category: data.category, description: data.description,
       amount: data.amountGHS, paid_by: data.paidBy, notes: data.notes,
+      proof_url: data.proofUrl ?? null,
     }).eq('id', expenseId);
     if (error) console.error(error);
   };
