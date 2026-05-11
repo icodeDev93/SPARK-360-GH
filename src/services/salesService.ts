@@ -76,7 +76,7 @@ export function buildInvoice(
   return {
     invoiceNo,
     receiptNo,
-    date: now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+    date: now.toISOString().split('T')[0],
     customerId,
     customerName,
     items,

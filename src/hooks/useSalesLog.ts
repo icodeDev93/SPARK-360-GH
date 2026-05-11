@@ -202,29 +202,26 @@ export function useSalesLog() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    (async () => {
+    const fetchSales = async () => {
       const { data, error } = await supabase
         .from('sales')
         .select('*, sale_items(*), receipts(receipt_number)')
         .order('sale_date', { ascending: false });
       if (error) { console.error(error); setLoading(false); return; }
-
-      if (!data || data.length === 0) {
-        // Seed invoices then items
-        for (const inv of SEED_INVOICES) {
-          const { data: sale, error: saleError } = await insertSale(inv);
-          if (saleError || !sale) { console.error(saleError); continue; }
-          if (inv.items.length > 0) {
-            await supabase.from('sale_items').insert(saleItemRows(sale.id, inv.items));
-          }
-          await supabase.from('receipts').insert(receiptRow(sale.id, inv));
-        }
-        setInvoices(SEED_INVOICES);
-      } else {
-        setInvoices(data.map(toInvoice));
-      }
+      setInvoices(data ? data.map(toInvoice) : []);
       setLoading(false);
-    })();
+    };
+
+    fetchSales();
+
+    const channel = supabase
+      .channel('sales-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sales' }, fetchSales)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sale_items' }, fetchSales)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'receipts' }, fetchSales)
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
   }, []);
 
   const addInvoice = (

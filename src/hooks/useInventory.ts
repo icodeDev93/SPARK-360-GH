@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import type { InventoryItem } from '@/types/erp';
-import { inventoryItems as seedItems, inventoryCategories as seedCats } from '@/mocks/inventory';
 import { enrichInventoryItem } from '@/services/inventoryService';
 import { supabase } from '@/lib/supabase';
 
@@ -33,37 +32,27 @@ export function useInventory() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    (async () => {
+    const fetchInventory = async () => {
       const [itemsRes, catsRes] = await Promise.all([
         supabase.from('inventory').select('*').order('product_name'),
         supabase.from('inventory_categories').select('name').order('name'),
       ]);
       if (itemsRes.error) console.error(itemsRes.error);
       if (catsRes.error) console.error(catsRes.error);
-
-      const dbItems: InventoryItem[] = itemsRes.data && itemsRes.data.length > 0
-        ? itemsRes.data.map(toItem) : [];
-      const dbCats: string[] = catsRes.data && catsRes.data.length > 0
-        ? catsRes.data.map((r: { name: string }) => r.name) : [];
-
-      if (dbItems.length === 0) {
-        const rows = seedItems.map(toRow);
-        await supabase.from('inventory').insert(rows);
-        setItems(seedItems.map(enrichInventoryItem));
-      } else {
-        setItems(dbItems);
-      }
-
-      if (dbCats.length === 0) {
-        const cats = seedCats.filter((c) => c !== 'All');
-        await supabase.from('inventory_categories').insert(cats.map((name) => ({ name })));
-        setCategories(cats);
-      } else {
-        setCategories(dbCats);
-      }
-
+      setItems(itemsRes.data ? itemsRes.data.map(toItem) : []);
+      setCategories(catsRes.data ? catsRes.data.map((r: { name: string }) => r.name) : []);
       setLoading(false);
-    })();
+    };
+
+    fetchInventory();
+
+    const channel = supabase
+      .channel('inventory-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory' }, fetchInventory)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory_categories' }, fetchInventory)
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
   }, []);
 
   const saveItem = async (item: InventoryItem) => {

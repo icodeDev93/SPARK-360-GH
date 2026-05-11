@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, createElement, type ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, createElement, type ReactNode } from 'react';
 import { supabase } from '@/lib/supabase';
 import { writeLog } from '@/lib/activityLog';
 
@@ -203,6 +203,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut();
     setCurrentUser(null);
   };
+
+  // 30-minute inactivity auto-logout
+  const logoutRef = useRef(logout);
+  useEffect(() => { logoutRef.current = logout; });
+
+  useEffect(() => {
+    if (!currentUser) return;
+    const TIMEOUT = 30 * 60 * 1000;
+    let timer: ReturnType<typeof setTimeout>;
+    const reset = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => logoutRef.current(), TIMEOUT);
+    };
+    const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'click'] as const;
+    events.forEach((e) => window.addEventListener(e, reset, { passive: true }));
+    reset();
+    return () => {
+      clearTimeout(timer);
+      events.forEach((e) => window.removeEventListener(e, reset));
+    };
+  }, [currentUser]);
 
   const updateAvatar = async (avatarUrl: string): Promise<{ success: boolean; error?: string }> => {
     const { data, error } = await supabase.rpc('update_own_profile_avatar', {
