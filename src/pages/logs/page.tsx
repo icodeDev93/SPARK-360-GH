@@ -40,19 +40,31 @@ const ACTION_META: Record<LogAction, { label: string; color: string; bg: string 
 const ALL_CATEGORIES: LogCategory[] = ['sales', 'inventory', 'expenses', 'customers', 'purchases', 'users', 'settings', 'auth'];
 const ALL_ACTIONS: LogAction[] = ['create', 'edit', 'delete', 'login', 'logout', 'refund', 'complete'];
 
-function timeAgo(iso: string) {
-  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-  if (diff < 60)  return `${diff}s ago`;
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  return `${Math.floor(diff / 86400)}d ago`;
-}
-
 function fullTime(iso: string) {
   return new Date(iso).toLocaleString('en-GH', {
     day: 'numeric', month: 'short', year: 'numeric',
     hour: '2-digit', minute: '2-digit',
   });
+}
+
+function exportToCsv(rows: LogRow[], dateFrom: string, dateTo: string) {
+  const headers = ['Timestamp', 'User', 'Role', 'Category', 'Action', 'Description'];
+  const lines = rows.map((log) => [
+    fullTime(log.created_at),
+    log.user_name,
+    ROLE_LABELS[log.user_role as keyof typeof ROLE_LABELS]?.label ?? log.user_role,
+    CATEGORY_META[log.category]?.label ?? log.category,
+    ACTION_META[log.action]?.label ?? log.action,
+    `"${log.description.replace(/"/g, '""')}"`,
+  ].join(','));
+  const csv = [headers.join(','), ...lines].join('\n');
+  const suffix = dateFrom && dateTo ? `${dateFrom}-to-${dateTo}` : dateFrom ? `from-${dateFrom}` : dateTo ? `to-${dateTo}` : 'all';
+  const filename = `activity-log-${suffix}.csv`;
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
 }
 
 function getInitials(name: string) {
@@ -121,9 +133,19 @@ export default function LogsPage() {
           <h2 className="text-slate-800 font-bold text-xl">Activity Log</h2>
           <p className="text-slate-400 text-sm mt-0.5">Full audit trail of all user actions</p>
         </div>
-        <div className="flex items-center gap-2 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2">
-          <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span>
-          <span className="text-indigo-700 text-xs font-semibold">Live</span>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => exportToCsv(filtered, dateFrom, dateTo)}
+            disabled={filtered.length === 0}
+            className="flex items-center gap-2 bg-white border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 hover:text-indigo-700 px-4 py-2 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap"
+          >
+            <i className="ri-download-2-line text-base"></i>
+            Export CSV
+          </button>
+          <div className="flex items-center gap-2 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2">
+            <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span>
+            <span className="text-indigo-700 text-xs font-semibold">Live</span>
+          </div>
         </div>
       </div>
 
@@ -295,11 +317,11 @@ export default function LogsPage() {
 
                     {/* Timestamp */}
                     <div className="flex-shrink-0 text-right">
-                      <p className="text-slate-400 text-xs" title={fullTime(log.created_at)}>
-                        {timeAgo(log.created_at)}
+                      <p className="text-slate-500 text-xs font-medium whitespace-nowrap">
+                        {new Date(log.created_at).toLocaleDateString('en-GH', { day: 'numeric', month: 'short', year: 'numeric' })}
                       </p>
-                      <p className="text-slate-300 text-xs mt-0.5 hidden sm:block">
-                        {new Date(log.created_at).toLocaleDateString('en-GH', { day: 'numeric', month: 'short' })}
+                      <p className="text-slate-400 text-xs mt-0.5 whitespace-nowrap">
+                        {new Date(log.created_at).toLocaleTimeString('en-GH', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                       </p>
                     </div>
                   </div>
