@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase';
 type Row = {
   id: string; full_name: string;
   customer_type: string; phone: string | null; email: string | null;
-  outstanding_balance: number; status: string; avatar_url: string | null;
+  outstanding_balance: number | null; status: string; avatar_url: string | null;
   notes: string | null;
   created_at?: string;
 };
@@ -13,7 +13,7 @@ type Row = {
 const toCustomer = (r: Row): Customer => ({
   customerId: r.id, fullName: r.full_name,
   customerType: r.customer_type as CustomerType, phone: r.phone ?? '', email: r.email ?? '',
-  totalPurchases: 0, outstandingBalance: r.outstanding_balance,
+  totalPurchases: 0, outstandingBalance: r.outstanding_balance ?? 0,
   statusFlag: r.status as CustomerStatus, avatar: r.avatar_url ?? '',
   lastOrderDate: r.created_at?.split('T')[0] ?? '',
   notes: r.notes ?? undefined,
@@ -83,5 +83,30 @@ export function useCustomers() {
     if (error) console.error(error);
   };
 
-  return { customers, loading, addCustomer, updateCustomer, deleteCustomer };
+  const recordPayment = async (
+    customerId: string,
+    amount: number,
+    paymentMethod: string,
+    saleId?: string,
+    notes = ''
+  ) => {
+    const customer = customers.find((c) => c.customerId === customerId);
+    if (!customer) return;
+    const newBalance = Math.max(0, customer.outstandingBalance - amount);
+    setCustomers((prev) => prev.map((c) =>
+      c.customerId === customerId ? { ...c, outstandingBalance: newBalance } : c
+    ));
+    await supabase.from('credit_payments').insert({
+      customer_id: customerId,
+      sale_id: saleId ?? null,
+      amount,
+      payment_method: paymentMethod,
+      notes,
+    }).then(({ error: e }) => { if (e) console.error(e); });
+    const { error } = await supabase.from('customers')
+      .update({ outstanding_balance: newBalance }).eq('id', customerId);
+    if (error) console.error(error);
+  };
+
+  return { customers, loading, addCustomer, updateCustomer, deleteCustomer, recordPayment };
 }

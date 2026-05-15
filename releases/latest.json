@@ -1,0 +1,11 @@
+{
+  "version": "0.2.0",
+  "notes": "Credit/invoice system, real-time analytics, input sanitization, inventory DB trigger",
+  "pub_date": "2026-05-15T00:00:00Z",
+  "platforms": {
+    "windows-x86_64": {
+      "signature": "",
+      "url": "https://github.com/icodeDev93/SPARK-360-GH/releases/download/v0.2.0/SPARK.360_0.2.0_x64-setup.exe"
+    }
+  }
+}

@@ -2,6 +2,7 @@ import { useState, useRef } from 'react';
 import type { ExpenseRecord, PaymentMethod } from '@/types/erp';
 import { EXPENSE_CATEGORIES, PAYMENT_METHODS } from '@/mocks/expenses';
 import { supabase } from '@/lib/supabase';
+import { sanitizeText, sanitizeMultiline } from '@/lib/sanitize';
 
 interface Props {
   initial?: ExpenseRecord;
@@ -70,7 +71,12 @@ export default function ExpenseForm({ initial, onSave, onClose }: Props) {
           proofUrl = data.publicUrl;
         }
       }
-      onSave({ ...form, proofUrl });
+      onSave({
+        ...form,
+        description: sanitizeText(form.description),
+        notes: sanitizeMultiline(form.notes),
+        proofUrl,
+      });
       onClose();
     } finally {
       setUploading(false);
@@ -112,6 +118,7 @@ export default function ExpenseForm({ initial, onSave, onClose }: Props) {
               value={form.description}
               onChange={(e) => set('description', e.target.value)}
               placeholder="e.g. Store Rent - May 2026"
+              maxLength={200}
               className={`w-full border rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none transition-all ${errors.description ? 'border-red-400 focus:border-red-400' : 'border-slate-200 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100'}`}
             />
             {errors.description && <p className="text-red-500 text-xs mt-1">{errors.description}</p>}
@@ -188,6 +195,7 @@ export default function ExpenseForm({ initial, onSave, onClose }: Props) {
               onChange={(e) => set('notes', e.target.value)}
               placeholder="Optional notes or remarks..."
               rows={2}
+              maxLength={500}
               className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 resize-none transition-all"
             />
           </div>

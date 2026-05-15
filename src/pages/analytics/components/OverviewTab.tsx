@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useSalesLog } from '@/hooks/useSalesLog';
 import { useExpenses } from '@/hooks/useExpenses';
+import { useCustomers } from '@/hooks/useCustomers';
 import type { AnalyticsFilter } from '@/hooks/useAnalyticsFilter';
 
 interface Props { filter: AnalyticsFilter; }
@@ -12,6 +13,7 @@ function parseDate(dateStr: string): Date {
 export default function OverviewTab({ filter }: Props) {
   const { sales } = useSalesLog();
   const { expenses } = useExpenses();
+  const { customers } = useCustomers();
 
   const completedSales = useMemo(
     () => sales.filter((s) => s.status === 'completed' && filter.isInRange(s.date)),
@@ -37,17 +39,19 @@ export default function OverviewTab({ filter }: Props) {
   const totalExpenses = filteredExpenses.reduce((s, e) => s + e.amountGHS, 0);
   const netProfit = totalRevenue - totalExpenses;
   const profitMargin = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
+  const customerReceivables = customers.reduce((s, c) => s + c.outstandingBalance, 0);
   const maxDaily = Math.max(...dailyRevenue.map((d) => d.revenue), 1);
 
   return (
     <div className="space-y-6" id="analytics-print-area">
       {/* KPIs */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         {[
-          { label: 'Total Revenue', value: `₵${totalRevenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, icon: 'ri-funds-line', color: 'bg-indigo-50 text-indigo-600', trend: '+8.1%', up: true },
-          { label: 'Total Expenses', value: `₵${totalExpenses.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, icon: 'ri-wallet-3-line', color: 'bg-rose-50 text-rose-600', trend: '+4.2%', up: false },
-          { label: 'Net Profit', value: `₵${netProfit.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, icon: 'ri-coins-line', color: 'bg-emerald-50 text-emerald-600', trend: netProfit >= 0 ? '+12.5%' : '-3.2%', up: netProfit >= 0 },
-          { label: 'Profit Margin', value: `${profitMargin.toFixed(1)}%`, icon: 'ri-percent-line', color: 'bg-amber-50 text-amber-600', trend: '+1.2%', up: true },
+          { label: 'Total Revenue',       value: `₵${totalRevenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}`,          icon: 'ri-funds-line',      color: 'bg-indigo-50 text-indigo-600',   trend: null },
+          { label: 'Total Expenses',      value: `₵${totalExpenses.toLocaleString('en-US', { minimumFractionDigits: 2 })}`,         icon: 'ri-wallet-3-line',   color: 'bg-rose-50 text-rose-600',       trend: null },
+          { label: 'Net Profit',          value: `₵${netProfit.toLocaleString('en-US', { minimumFractionDigits: 2 })}`,             icon: 'ri-coins-line',      color: netProfit >= 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600', trend: null },
+          { label: 'Profit Margin',       value: `${profitMargin.toFixed(1)}%`,                                                      icon: 'ri-percent-line',    color: 'bg-amber-50 text-amber-600',     trend: null },
+          { label: 'Customer Receivables',value: `₵${customerReceivables.toLocaleString('en-US', { minimumFractionDigits: 2 })}`,   icon: 'ri-hand-coin-line',  color: 'bg-violet-50 text-violet-600',   trend: null },
         ].map((kpi) => (
           <div key={kpi.label} className="bg-white rounded-xl p-5 border border-slate-100 flex items-start gap-4">
             <div className={`w-11 h-11 flex items-center justify-center rounded-xl flex-shrink-0 ${kpi.color}`}>
@@ -56,9 +60,6 @@ export default function OverviewTab({ filter }: Props) {
             <div className="flex-1 min-w-0">
               <p className="text-slate-500 text-xs font-semibold uppercase tracking-wide">{kpi.label}</p>
               <p className="text-slate-900 text-xl font-bold mt-1 font-mono">{kpi.value}</p>
-              <p className={`text-xs font-semibold mt-1 ${kpi.up ? 'text-emerald-600' : 'text-rose-500'}`}>
-                {kpi.trend} <span className="text-slate-400 font-normal">vs last period</span>
-              </p>
             </div>
           </div>
         ))}
@@ -148,8 +149,8 @@ export default function OverviewTab({ filter }: Props) {
             </div>
             <div className="w-full space-y-3">
               {[
-                { label: 'Revenue', color: 'bg-indigo-500', value: `₵${totalRevenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}` },
-                { label: 'Expenses', color: 'bg-rose-500', value: `₵${totalExpenses.toLocaleString('en-US', { minimumFractionDigits: 2 })}` },
+                { label: 'Revenue',  color: 'bg-indigo-500', value: `₵${totalRevenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}` },
+                { label: 'Expenses', color: 'bg-rose-500',   value: `₵${totalExpenses.toLocaleString('en-US', { minimumFractionDigits: 2 })}` },
               ].map((item) => (
                 <div key={item.label} className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -166,6 +167,15 @@ export default function OverviewTab({ filter }: Props) {
                 </div>
                 <span className={`text-sm font-bold font-mono ${netProfit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
                   ₵{netProfit.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="w-3 h-3 rounded-full bg-violet-500"></span>
+                  <span className="text-slate-600 text-sm">Receivables</span>
+                </div>
+                <span className="text-violet-700 text-sm font-bold font-mono">
+                  ₵{customerReceivables.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                 </span>
               </div>
             </div>

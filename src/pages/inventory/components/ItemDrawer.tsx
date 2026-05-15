@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { InventoryItem } from '@/types/erp';
 import { supabase } from '@/lib/supabase';
+import { sanitizeText } from '@/lib/sanitize';
 
 interface ItemDrawerProps {
   open:       boolean;
@@ -127,7 +128,7 @@ export default function ItemDrawer({ open, item, categories, suppliers, onClose,
     try {
       setSaving(true);
       const image = await uploadImage();
-      await onSave({ ...itemToSave, image } as InventoryItem);
+      await onSave({ ...itemToSave, productName: sanitizeText(itemToSave.productName), image } as InventoryItem);
     } catch (error) {
       console.error(error);
       setImageError('Image upload failed. Please try again.');
@@ -177,6 +178,7 @@ export default function ItemDrawer({ open, item, categories, suppliers, onClose,
               onChange={(e) => set('productName', e.target.value)}
               className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 transition-all"
               placeholder="e.g. Pringles Original (165g)"
+              maxLength={150}
             />
           </div>
 

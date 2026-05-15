@@ -21,6 +21,9 @@ export function calcKpiSummary(
   const grossMargin = totalRevenue - totalCost;
   const totalExpenses = grandTotalGHS(expenses);
   const netProfit = grossMargin - totalExpenses;
+  const creditOutstanding = invoices
+    .filter((inv) => inv.status === 'credit')
+    .reduce((sum, inv) => sum + inv.netSales, 0);
 
   return {
     totalStockValue: calcTotalStockValue(inventory),
@@ -28,6 +31,7 @@ export function calcKpiSummary(
     totalExpenses,
     netProfit,
     grossMargin,
+    creditOutstanding,
   };
 }
 

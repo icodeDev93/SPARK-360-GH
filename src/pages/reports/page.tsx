@@ -1,7 +1,10 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import AppLayout from '@/components/feature/AppLayout';
-import { reportSummary, salesByCategory, topProducts } from '@/mocks/reports';
+import { salesByCategory, topProducts } from '@/mocks/reports';
 import { useAnalyticsFilter } from '@/hooks/useAnalyticsFilter';
+import { useSalesLog } from '@/hooks/useSalesLog';
+import { useExpenses } from '@/hooks/useExpenses';
+import { useCustomers } from '@/hooks/useCustomers';
 import DateRangePicker from '@/pages/analytics/components/DateRangePicker';
 import ExportMenu from '@/pages/analytics/components/ExportMenu';
 import SalesReport from './components/SalesReport';
@@ -14,6 +17,7 @@ const colorMap: Record<string, { bg: string; icon: string }> = {
   indigo:  { bg: 'bg-indigo-50',  icon: 'text-indigo-600' },
   violet:  { bg: 'bg-violet-50',  icon: 'text-violet-600' },
   amber:   { bg: 'bg-amber-50',   icon: 'text-amber-600' },
+  rose:    { bg: 'bg-rose-50',    icon: 'text-rose-600' },
 };
 
 const categoryColors = ['bg-indigo-500', 'bg-violet-500', 'bg-emerald-500', 'bg-amber-500', 'bg-rose-500'];
@@ -27,6 +31,22 @@ const TAB_CONFIG = [
 export default function ReportsPage() {
   const [tab, setTab] = useState<ReportTab>('overview');
   const filter = useAnalyticsFilter();
+  const { sales } = useSalesLog();
+  const { expenses } = useExpenses();
+  const { customers } = useCustomers();
+
+  const filteredSales = useMemo(
+    () => sales.filter((s) => s.status === 'completed' && filter.isInRange(s.date)),
+    [sales, filter]
+  );
+  const filteredExpenses = useMemo(
+    () => expenses.filter((e) => filter.isInRange(e.date)),
+    [expenses, filter]
+  );
+  const totalRevenue = filteredSales.reduce((sum, s) => sum + s.grandTotal, 0);
+  const totalExpenses = filteredExpenses.reduce((sum, e) => sum + e.amountGHS, 0);
+  const netProfit = totalRevenue - totalExpenses;
+  const customerReceivables = customers.reduce((sum, c) => sum + c.outstandingBalance, 0);
 
   return (
     <AppLayout>
@@ -77,7 +97,12 @@ export default function ReportsPage() {
       {tab === 'overview' && (
         <div id="analytics-print-area">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-            {reportSummary.map((s) => {
+            {[
+              { label: 'Total Revenue',         value: `₵${totalRevenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}`,         icon: 'ri-funds-line',        color: 'emerald', note: 'Collected sales' },
+              { label: 'Total Expenses',         value: `₵${totalExpenses.toLocaleString('en-US', { minimumFractionDigits: 2 })}`,        icon: 'ri-wallet-3-line',     color: 'amber',   note: 'Expenses in period' },
+              { label: 'Net Profit',             value: `₵${netProfit.toLocaleString('en-US', { minimumFractionDigits: 2 })}`,            icon: 'ri-coins-line',        color: netProfit >= 0 ? 'emerald' : 'rose', note: netProfit >= 0 ? 'Revenue minus expenses' : 'Running at a loss' },
+              { label: 'Customer Receivables',   value: `₵${customerReceivables.toLocaleString('en-US', { minimumFractionDigits: 2 })}`,  icon: 'ri-hand-coin-line',    color: 'violet',  note: 'Outstanding credit balances' },
+            ].map((s) => {
               const c = colorMap[s.color] || colorMap.indigo;
               return (
                 <div key={s.label} className="bg-white rounded-xl p-5 flex items-start gap-4 border border-slate-100">
@@ -87,7 +112,7 @@ export default function ReportsPage() {
                   <div>
                     <p className="text-slate-500 text-xs font-semibold uppercase tracking-wide">{s.label}</p>
                     <p className="text-slate-900 text-2xl font-bold mt-1 font-mono">{s.value}</p>
-                    <p className="text-slate-400 text-xs mt-0.5">{s.period}</p>
+                    <p className="text-slate-400 text-xs mt-0.5">{s.note}</p>
                   </div>
                 </div>
               );

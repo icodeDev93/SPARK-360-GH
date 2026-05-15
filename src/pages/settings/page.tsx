@@ -6,21 +6,23 @@ import StoreInfoSection from './components/StoreInfoSection';
 import TaxSection from './components/TaxSection';
 import ReceiptSection from './components/ReceiptSection';
 import RolePermissionsSection from './components/RolePermissionsSection';
+import CreditSection from './components/CreditSection';
 
-type Tab = 'store' | 'tax' | 'receipt' | 'permissions';
+type Tab = 'store' | 'tax' | 'receipt' | 'permissions' | 'credit';
 
-const BASE_TABS: { key: Tab; label: string; icon: string; desc: string }[] = [
+const BASE_TABS: { key: Tab; label: string; icon: string; desc: string; adminOnly?: boolean }[] = [
   { key: 'store',       label: 'Store Info',        icon: 'ri-store-2-line',          desc: 'Name, address, contact' },
   { key: 'tax',         label: 'Tax & Rates',        icon: 'ri-percent-line',          desc: 'Tax rates and labels' },
   { key: 'receipt',     label: 'Receipt',            icon: 'ri-receipt-line',          desc: 'Layout and content' },
-  { key: 'permissions', label: 'Role Permissions',   icon: 'ri-shield-keyhole-line',   desc: 'Control access by role' },
+  { key: 'credit',      label: 'Credit & Invoices',  icon: 'ri-hand-coin-line',        desc: 'Payment terms & due days', adminOnly: true },
+  { key: 'permissions', label: 'Role Permissions',   icon: 'ri-shield-keyhole-line',   desc: 'Control access by role', adminOnly: true },
 ];
 
 export default function SettingsPage() {
   const { settings, updateSettings, resetSettings } = useSettings();
   const { currentUser } = useAuth();
   const isAdmin = currentUser?.role === 'admin';
-  const tabs = isAdmin ? BASE_TABS : BASE_TABS.filter((t) => t.key !== 'permissions');
+  const tabs = isAdmin ? BASE_TABS : BASE_TABS.filter((t) => !t.adminOnly);
   const [activeTab, setActiveTab] = useState<Tab>('store');
   const [saved, setSaved] = useState(false);
   const [showReset, setShowReset] = useState(false);
@@ -115,6 +117,9 @@ export default function SettingsPage() {
               )}
               {activeTab === 'receipt' && (
                 <ReceiptSection settings={settings} onChange={updateSettings} />
+              )}
+              {activeTab === 'credit' && isAdmin && (
+                <CreditSection settings={settings} onChange={updateSettings} />
               )}
               {activeTab === 'permissions' && isAdmin && (
                 <RolePermissionsSection />

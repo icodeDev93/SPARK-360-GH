@@ -10,6 +10,10 @@ import { getCustomerInvoices, searchCustomers } from '@/services/crmService';
 import type { Customer, CustomerType } from '@/types/erp';
 import { useAuth } from '@/hooks/useAuth';
 import { writeLog, diffFields } from '@/lib/activityLog';
+import { sanitizeText, sanitizeEmail, sanitizeMultiline, isValidEmail } from '@/lib/sanitize';
+
+const CASH_METHODS = ['Cash', 'MoMo', 'Cheque', 'Bank Transfer'] as const;
+type CashMethod = typeof CASH_METHODS[number];
 
 const AVATAR_COLORS = [
   'bg-indigo-500', 'bg-violet-500', 'bg-emerald-500', 'bg-amber-500',
@@ -36,7 +40,7 @@ function getInitials(name: string) {
 const EMPTY_FORM = { fullName: '', phone: '', email: '', customerType: 'Retail' as CustomerType };
 
 export default function CustomersPage() {
-  const { customers, addCustomer: dbAddCustomer, updateCustomer, deleteCustomer } = useCustomers();
+  const { customers, addCustomer: dbAddCustomer, updateCustomer, deleteCustomer, recordPayment } = useCustomers();
   const { currentUser } = useAuth();
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
@@ -48,6 +52,11 @@ export default function CustomersPage() {
   const [deleteTarget, setDeleteTarget] = useState<Customer | null>(null);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [editForm, setEditForm] = useState(EMPTY_FORM);
+  const [payingCustomer, setPayingCustomer] = useState<Customer | null>(null);
+  const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<CashMethod>('Cash');
+  const [paymentNotes, setPaymentNotes] = useState('');
+  const [paymentSaving, setPaymentSaving] = useState(false);
   const { invoices } = useSalesLog();
 
   const today = new Date().toISOString().split('T')[0];
@@ -55,8 +64,9 @@ export default function CustomersPage() {
   const invoiceCountByCustomer = useMemo(() => {
     const map: Record<string, number> = {};
     invoices.forEach((inv) => {
-      if (inv.status === 'completed') {
-        map[inv.customerName] = (map[inv.customerName] ?? 0) + 1;
+      if (inv.status === 'completed' && inv.customerName !== 'Walk-in Customer') {
+        const key = inv.customerId && inv.customerId !== 'walk-in' ? inv.customerId : inv.customerName;
+        map[key] = (map[key] ?? 0) + 1;
       }
     });
     return map;
@@ -65,8 +75,9 @@ export default function CustomersPage() {
   const totalSpentByCustomer = useMemo(() => {
     const map: Record<string, number> = {};
     invoices.forEach((inv) => {
-      if (inv.status === 'completed') {
-        map[inv.customerName] = (map[inv.customerName] ?? 0) + inv.netSales;
+      if (inv.status === 'completed' && inv.customerName !== 'Walk-in Customer') {
+        const key = inv.customerId && inv.customerId !== 'walk-in' ? inv.customerId : inv.customerName;
+        map[key] = (map[key] ?? 0) + inv.netSales;
       }
     });
     return map;
@@ -75,21 +86,20 @@ export default function CustomersPage() {
   const filtered = searchCustomers(customers, search);
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  const totalRevenue  = Object.entries(totalSpentByCustomer)
-    .filter(([name]) => name !== 'Walk-in Customer')
-    .reduce((s, [, v]) => s + v, 0);
+  const totalRevenue = Object.values(totalSpentByCustomer).reduce((s, v) => s + v, 0);
   const avgSpent      = customers.length ? totalRevenue / customers.length : 0;
   const activeToday   = customers.filter((c) => c.lastOrderDate === today).length;
 
   const addCustomer = () => {
     if (!form.fullName.trim() || !form.phone.trim()) return;
+    if (form.email.trim() && !isValidEmail(form.email.trim())) return;
     dbAddCustomer({
-      fullName:     form.fullName.trim(),
-      phone:        form.phone.trim(),
-      email:        form.email.trim(),
+      fullName:     sanitizeText(form.fullName),
+      phone:        sanitizeText(form.phone),
+      email:        sanitizeEmail(form.email),
       customerType: form.customerType,
       statusFlag:   'Active',
-      avatar:       getInitials(form.fullName),
+      avatar:       getInitials(form.fullName.trim()),
     });
     if (currentUser) writeLog(currentUser, {
       category: 'customers', action: 'create',
@@ -106,17 +116,21 @@ export default function CustomersPage() {
 
   const saveEdit = () => {
     if (!editingCustomer || !editForm.fullName.trim() || !editForm.phone.trim()) return;
+    if (editForm.email.trim() && !isValidEmail(editForm.email.trim())) return;
+    const cleanName  = sanitizeText(editForm.fullName);
+    const cleanPhone = sanitizeText(editForm.phone);
+    const cleanEmail = sanitizeEmail(editForm.email);
     const changes = diffFields(
       { fullName: editingCustomer.fullName, phone: editingCustomer.phone, email: editingCustomer.email, customerType: editingCustomer.customerType },
-      { fullName: editForm.fullName.trim(), phone: editForm.phone.trim(), email: editForm.email.trim(), customerType: editForm.customerType },
+      { fullName: cleanName, phone: cleanPhone, email: cleanEmail, customerType: editForm.customerType },
       { fullName: 'Full Name', phone: 'Phone', email: 'Email', customerType: 'Customer Type' },
     );
     updateCustomer(editingCustomer.customerId, {
-      fullName:     editForm.fullName.trim(),
-      phone:        editForm.phone.trim(),
-      email:        editForm.email.trim(),
+      fullName:     cleanName,
+      phone:        cleanPhone,
+      email:        cleanEmail,
       customerType: editForm.customerType,
-      avatar:       getInitials(editForm.fullName.trim()),
+      avatar:       getInitials(cleanName),
     });
     if (currentUser) writeLog(currentUser, {
       category: 'customers', action: 'edit',
@@ -176,7 +190,7 @@ export default function CustomersPage() {
           <table className="w-full">
             <thead className="bg-slate-50 border-b border-slate-100">
               <tr>
-                {['Customer', 'Phone', 'Email', 'Type', 'Purchases', 'Total Spent', 'Last Visit', 'Actions'].map((h) => (
+                {['Customer', 'Phone', 'Type', 'Purchases', 'Total Spent', 'Outstanding', 'Last Visit', 'Actions'].map((h) => (
                   <th key={h} className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide px-5 py-3.5 whitespace-nowrap">
                     {h}
                   </th>
@@ -210,23 +224,29 @@ export default function CustomersPage() {
                       <span className="text-slate-500 text-sm">{c.phone}</span>
                     </td>
                     <td className="px-5 py-3.5">
-                      <span className="text-slate-500 text-sm">{c.email}</span>
-                    </td>
-                    <td className="px-5 py-3.5">
                       <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${TYPE_BADGE[c.customerType]}`}>
                         {c.customerType}
                       </span>
                     </td>
                     <td className="px-5 py-3.5">
                       <span className="text-slate-700 text-sm font-semibold">
-                        {invoiceCountByCustomer[c.fullName] ?? 0}
+                        {invoiceCountByCustomer[c.customerId] ?? invoiceCountByCustomer[c.fullName] ?? 0}
                       </span>
                     </td>
                     <td className="px-5 py-3.5">
-                      <span className="text-slate-800 text-sm font-bold font-mono">{fmt(totalSpentByCustomer[c.fullName] ?? 0)}</span>
+                      <span className="text-slate-800 text-sm font-bold font-mono">{fmt(totalSpentByCustomer[c.customerId] ?? totalSpentByCustomer[c.fullName] ?? 0)}</span>
                     </td>
                     <td className="px-5 py-3.5">
-                      <span className="text-slate-500 text-sm">{formatDate(c.lastOrderDate)}</span>
+                      {c.outstandingBalance > 0 ? (
+                        <span className="text-amber-700 text-sm font-bold font-mono bg-amber-50 px-2 py-0.5 rounded-full">
+                          {fmt(c.outstandingBalance)}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400 text-xs">—</span>
+                      )}
+                    </td>
+                    <td className="px-5 py-3.5">
+                      <span className="text-slate-500 text-sm">{c.lastOrderDate ? formatDate(c.lastOrderDate) : '—'}</span>
                     </td>
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-1">
@@ -237,6 +257,15 @@ export default function CustomersPage() {
                         >
                           <i className="ri-history-line text-sm"></i>
                         </button>
+                        {c.outstandingBalance > 0 && (
+                          <button
+                            onClick={() => { setPayingCustomer(c); setPaymentAmount(''); setPaymentMethod('Cash'); setPaymentNotes(''); }}
+                            className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-emerald-50 text-slate-400 hover:text-emerald-600 transition-all cursor-pointer"
+                            title="Record payment"
+                          >
+                            <i className="ri-money-dollar-circle-line text-sm"></i>
+                          </button>
+                        )}
                         <button
                           onClick={() => openEdit(c)}
                           className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-all cursor-pointer"
@@ -271,7 +300,6 @@ export default function CustomersPage() {
       {/* Purchase History Modal */}
       {selectedCustomer && (() => {
         const custInvoices = getCustomerInvoices(selectedCustomer.customerId, invoices);
-        const history = custInvoices.length > 0 ? custInvoices : customerHistory.map((h) => ({ ...h, _mock: true }));
         return (
           <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-xl w-full max-w-2xl shadow-xl max-h-[80vh] flex flex-col">
@@ -294,11 +322,11 @@ export default function CustomersPage() {
                 {/* Summary */}
                 <div className="grid grid-cols-3 gap-4 mb-5">
                   <div className="bg-indigo-50 rounded-lg p-3 text-center">
-                    <p className="text-indigo-700 font-bold text-lg">{invoiceCountByCustomer[selectedCustomer.fullName] ?? 0}</p>
+                    <p className="text-indigo-700 font-bold text-lg">{invoiceCountByCustomer[selectedCustomer.customerId] ?? invoiceCountByCustomer[selectedCustomer.fullName] ?? 0}</p>
                     <p className="text-indigo-500 text-xs">Total Orders</p>
                   </div>
                   <div className="bg-emerald-50 rounded-lg p-3 text-center">
-                    <p className="text-emerald-700 font-bold text-lg">{fmt(totalSpentByCustomer[selectedCustomer.fullName] ?? 0)}</p>
+                    <p className="text-emerald-700 font-bold text-lg">{fmt(totalSpentByCustomer[selectedCustomer.customerId] ?? totalSpentByCustomer[selectedCustomer.fullName] ?? 0)}</p>
                     <p className="text-emerald-500 text-xs">Total Spent</p>
                   </div>
                   <div className="bg-amber-50 rounded-lg p-3 text-center">
@@ -445,6 +473,95 @@ export default function CustomersPage() {
                 className="flex-1 py-2.5 rounded-lg bg-red-500 hover:bg-red-600 text-white text-sm font-bold cursor-pointer"
               >
                 Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Record Payment Modal */}
+      {payingCustomer && (
+        <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl w-full max-w-md shadow-xl">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
+              <div>
+                <h2 className="text-slate-800 font-bold text-lg">Record Payment</h2>
+                <p className="text-slate-400 text-xs mt-0.5">{payingCustomer.fullName} — Outstanding: {fmt(payingCustomer.outstandingBalance)}</p>
+              </div>
+              <button onClick={() => setPayingCustomer(null)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 cursor-pointer">
+                <i className="ri-close-line text-lg"></i>
+              </button>
+            </div>
+            <div className="px-6 py-5 space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Amount (₵)</label>
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  max={payingCustomer.outstandingBalance}
+                  value={paymentAmount}
+                  onChange={(e) => setPaymentAmount(e.target.value)}
+                  placeholder={`Max: ${fmt(payingCustomer.outstandingBalance)}`}
+                  className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 font-mono"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Payment Method</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {CASH_METHODS.map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setPaymentMethod(m)}
+                      className={`py-2 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                        paymentMethod === m
+                          ? 'bg-indigo-600 border-indigo-600 text-white'
+                          : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-300'
+                      }`}
+                    >
+                      {m}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Notes (optional)</label>
+                <input
+                  type="text"
+                  value={paymentNotes}
+                  onChange={(e) => setPaymentNotes(e.target.value)}
+                  placeholder="e.g. Partial payment for invoice INV005"
+                  maxLength={300}
+                  className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400"
+                />
+              </div>
+            </div>
+            <div className="flex gap-3 px-6 py-4 border-t border-slate-100">
+              <button
+                onClick={() => setPayingCustomer(null)}
+                className="flex-1 py-2.5 border border-slate-200 rounded-lg text-sm font-semibold text-slate-600 hover:bg-slate-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  const amt = parseFloat(paymentAmount);
+                  if (!amt || amt <= 0) return;
+                  setPaymentSaving(true);
+                  await recordPayment(payingCustomer.customerId, amt, paymentMethod, undefined, sanitizeMultiline(paymentNotes));
+                  if (currentUser) writeLog(currentUser, {
+                    category: 'customers', action: 'edit',
+                    description: `Recorded ${fmt(amt)} payment from ${payingCustomer.fullName} via ${paymentMethod}`,
+                  });
+                  setPaymentSaving(false);
+                  setPayingCustomer(null);
+                }}
+                disabled={!paymentAmount || parseFloat(paymentAmount) <= 0 || paymentSaving}
+                className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 text-white rounded-lg text-sm font-semibold cursor-pointer"
+              >
+                {paymentSaving ? 'Saving…' : 'Confirm Payment'}
               </button>
             </div>
           </div>

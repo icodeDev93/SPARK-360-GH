@@ -1,4 +1,5 @@
 import { StoreSettings } from '@/hooks/useSettings';
+import { sanitizeText } from '@/lib/sanitize';
 
 interface Props {
   settings: StoreSettings;
@@ -58,7 +59,9 @@ export default function TaxSection({ settings, onChange }: Props) {
               type="text"
               value={settings.taxLabel}
               onChange={(e) => onChange({ taxLabel: e.target.value })}
+              onBlur={(e) => onChange({ taxLabel: sanitizeText(e.target.value) })}
               placeholder="e.g. VAT, GST, Sales Tax"
+              maxLength={50}
               className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all"
             />
             <p className="text-xs text-slate-400 mt-1">This label appears on receipts and invoices</p>

@@ -19,6 +19,7 @@
     "@stripe/react-stripe-js": "4.0.2",
     "@supabase/supabase-js": "^2.57.4",
     "@tauri-apps/api": "^2.11.0",
+    "@tauri-apps/plugin-updater": "^2.10.1",
     "firebase": "12.0.0",
     "i18next": "^25.3.2",
     "i18next-browser-languagedetector": "^8.2.0",

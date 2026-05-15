@@ -7,6 +7,7 @@ export interface StoreSettings {
   taxLabel: string; taxEnabled: boolean; receiptFooter: string; receiptShowLogo: boolean;
   receiptShowTax: boolean; receiptShowBarcode: boolean;
   receiptTheme: 'minimal' | 'classic' | 'modern'; timezone: string;
+  invoiceDueDays: number;
 }
 
 const DEFAULT_SETTINGS: StoreSettings = {
@@ -16,6 +17,7 @@ const DEFAULT_SETTINGS: StoreSettings = {
   receiptFooter: 'Thank you for shopping with us! Returns accepted within 7 days with receipt.',
   receiptShowLogo: true, receiptShowTax: true, receiptShowBarcode: true,
   receiptTheme: 'minimal', timezone: 'Africa/Accra',
+  invoiceDueDays: 30,
 };
 
 type Row = {
@@ -23,7 +25,7 @@ type Row = {
   store_email: string; store_logo: string; currency: string; currency_symbol: string;
   tax_rate: number; tax_label: string; tax_enabled: boolean; receipt_footer: string;
   receipt_show_logo: boolean; receipt_show_tax: boolean; receipt_show_barcode: boolean;
-  receipt_theme: string; timezone: string;
+  receipt_theme: string; timezone: string; invoice_due_days: number | null;
 };
 
 const toSettings = (r: Row): StoreSettings => ({
@@ -35,6 +37,7 @@ const toSettings = (r: Row): StoreSettings => ({
   receiptShowBarcode: r.receipt_show_barcode,
   receiptTheme: r.receipt_theme as StoreSettings['receiptTheme'],
   timezone: r.timezone,
+  invoiceDueDays: r.invoice_due_days ?? 30,
 });
 
 export function useSettings() {
@@ -64,7 +67,7 @@ export function useSettings() {
       tax_enabled: next.taxEnabled, receipt_footer: next.receiptFooter,
       receipt_show_logo: next.receiptShowLogo, receipt_show_tax: next.receiptShowTax,
       receipt_show_barcode: next.receiptShowBarcode, receipt_theme: next.receiptTheme,
-      timezone: next.timezone,
+      timezone: next.timezone, invoice_due_days: next.invoiceDueDays,
     };
     const { error } = await supabase.from('store_settings').upsert({ settings_key: 'default', ...row }, { onConflict: 'settings_key' });
     if (error) console.error(error);
@@ -78,7 +81,7 @@ export function useSettings() {
       store_logo: '', currency: 'GHS', currency_symbol: '₵', tax_rate: 10, tax_label: 'VAT',
       tax_enabled: true, receipt_footer: DEFAULT_SETTINGS.receiptFooter,
       receipt_show_logo: true, receipt_show_tax: true, receipt_show_barcode: true,
-      receipt_theme: 'minimal', timezone: 'Africa/Accra',
+      receipt_theme: 'minimal', timezone: 'Africa/Accra', invoice_due_days: 30,
     }, { onConflict: 'settings_key' });
   };
 

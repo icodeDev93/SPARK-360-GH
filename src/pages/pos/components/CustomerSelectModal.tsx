@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import type { Customer, CustomerType } from '@/types/erp';
+import type { Customer, CustomerType, PaymentMethod } from '@/types/erp';
+import { sanitizeText, sanitizeEmail, isValidEmail } from '@/lib/sanitize';
 
 type Step = 'select' | 'phone' | 'found' | 'not_found' | 'add_form';
 
@@ -10,9 +11,11 @@ interface Props {
   ) => Promise<Customer>;
   onComplete: (customerId: string | null, customerName: string) => void;
   onCancel: () => void;
+  paymentMethod?: PaymentMethod;
 }
 
-export default function CustomerSelectModal({ customers, addCustomer, onComplete, onCancel }: Props) {
+export default function CustomerSelectModal({ customers, addCustomer, onComplete, onCancel, paymentMethod }: Props) {
+  const isCreditSale = paymentMethod === 'Credit';
   const [step, setStep] = useState<Step>('select');
   const [phone, setPhone] = useState('');
   const [foundCustomer, setFoundCustomer] = useState<Customer | null>(null);
@@ -47,15 +50,17 @@ export default function CustomerSelectModal({ customers, addCustomer, onComplete
     setFormError('');
     if (!form.fullName.trim()) { setFormError('Full name is required.'); return; }
     if (!form.phone.trim()) { setFormError('Phone number is required.'); return; }
+    if (form.email.trim() && !isValidEmail(form.email.trim())) { setFormError('Invalid email address.'); return; }
     setSaving(true);
     try {
+      const cleanName = sanitizeText(form.fullName);
       const saved = await addCustomer({
-        fullName: form.fullName.trim(),
-        phone: form.phone.trim(),
-        email: form.email.trim(),
+        fullName: cleanName,
+        phone: sanitizeText(form.phone),
+        email: sanitizeEmail(form.email),
         customerType: form.customerType,
         statusFlag: 'Active',
-        avatar: getInitials(form.fullName.trim()),
+        avatar: getInitials(cleanName),
         notes: form.address.trim() || undefined,
       });
       onComplete(saved.customerId, saved.fullName);
@@ -115,19 +120,26 @@ export default function CustomerSelectModal({ customers, addCustomer, onComplete
           {/* ── Step: select ── */}
           {step === 'select' && (
             <div className="space-y-3">
-              <button
-                onClick={() => onComplete(null, 'Walk-in Customer')}
-                className="w-full flex items-center gap-4 p-4 rounded-xl border-2 border-slate-200 hover:border-indigo-400 hover:bg-indigo-50 text-left transition-all cursor-pointer group"
-              >
-                <div className="w-11 h-11 flex-shrink-0 flex items-center justify-center rounded-xl bg-slate-100 group-hover:bg-indigo-100">
-                  <i className="ri-walk-line text-xl text-slate-500 group-hover:text-indigo-600"></i>
+              {isCreditSale ? (
+                <div className="flex items-center gap-3 p-3 bg-violet-50 border border-violet-200 rounded-xl">
+                  <i className="ri-hand-coin-line text-violet-500 text-lg flex-shrink-0"></i>
+                  <p className="text-violet-700 text-xs font-medium">Credit sales require a registered customer profile.</p>
                 </div>
-                <div>
-                  <p className="text-slate-800 font-semibold text-sm">Walk-in Customer</p>
-                  <p className="text-slate-400 text-xs mt-0.5">Complete sale without a customer profile</p>
-                </div>
-                <i className="ri-arrow-right-s-line text-slate-300 group-hover:text-indigo-400 ml-auto text-xl"></i>
-              </button>
+              ) : (
+                <button
+                  onClick={() => onComplete(null, 'Walk-in Customer')}
+                  className="w-full flex items-center gap-4 p-4 rounded-xl border-2 border-slate-200 hover:border-indigo-400 hover:bg-indigo-50 text-left transition-all cursor-pointer group"
+                >
+                  <div className="w-11 h-11 flex-shrink-0 flex items-center justify-center rounded-xl bg-slate-100 group-hover:bg-indigo-100">
+                    <i className="ri-walk-line text-xl text-slate-500 group-hover:text-indigo-600"></i>
+                  </div>
+                  <div>
+                    <p className="text-slate-800 font-semibold text-sm">Walk-in Customer</p>
+                    <p className="text-slate-400 text-xs mt-0.5">Complete sale without a customer profile</p>
+                  </div>
+                  <i className="ri-arrow-right-s-line text-slate-300 group-hover:text-indigo-400 ml-auto text-xl"></i>
+                </button>
+              )}
 
               <button
                 onClick={() => setStep('phone')}

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useSalesLog } from '@/hooks/useSalesLog';
-import { inventoryItems } from '@/mocks/inventory';
+import { useInventory } from '@/hooks/useInventory';
 import type { AnalyticsFilter } from '@/hooks/useAnalyticsFilter';
 
 interface Props {
@@ -17,30 +17,43 @@ const CATEGORY_COLORS: Record<string, string> = {
 };
 
 export default function ProductsTab({ filter, variant = 'full' }: Props) {
-  const { sales } = useSalesLog();
+  const { invoices } = useSalesLog();
+  const { items: inventoryItems } = useInventory();
   const [sortBy, setSortBy] = useState<'revenue' | 'profit' | 'qty'>('revenue');
   const isTopOnly = variant === 'top';
 
-  const completedSales = useMemo(
-    () => sales.filter((s) => s.status === 'completed' && filter.isInRange(s.date)),
-    [sales, filter]
+  const categoryMap = useMemo(() => {
+    const map = new Map<string, { category: string; image: string }>();
+    inventoryItems.forEach((i) => map.set(i.itemId, { category: i.category, image: i.image || '' }));
+    return map;
+  }, [inventoryItems]);
+
+  const completedInvoices = useMemo(
+    () => invoices.filter((inv) => inv.status === 'completed' && filter.isInRange(inv.date)),
+    [invoices, filter]
   );
 
   const productStats = useMemo(() => {
-    const map = new Map<number, { name: string; category: string; qty: number; revenue: number; cost: number; profit: number; image: string }>();
-    completedSales.forEach((sale) => {
-      sale.items.forEach((item) => {
-        const inv = inventoryItems.find((i) => Number(i.itemId.replace(/\D/g, '')) === item.id);
-        const cost = inv ? inv.costPrice * item.qty : 0;
-        const revenue = item.price * item.qty;
-        const existing = map.get(item.id);
+    const map = new Map<string, { name: string; category: string; qty: number; revenue: number; cost: number; profit: number; image: string }>();
+    completedInvoices.forEach((inv) => {
+      inv.items.forEach((item) => {
+        const meta = categoryMap.get(item.productId);
+        const existing = map.get(item.productId);
         if (existing) {
-          existing.qty += item.qty;
-          existing.revenue += revenue;
-          existing.cost += cost;
-          existing.profit += revenue - cost;
+          existing.qty += item.netQty;
+          existing.revenue += item.netSales;
+          existing.cost += item.totalCost;
+          existing.profit += item.grossMargin;
         } else {
-          map.set(item.id, { name: item.name, category: inv?.category || 'Other', qty: item.qty, revenue, cost, profit: revenue - cost, image: inv?.image || '' });
+          map.set(item.productId, {
+            name: item.productName,
+            category: meta?.category || 'Other',
+            qty: item.netQty,
+            revenue: item.netSales,
+            cost: item.totalCost,
+            profit: item.grossMargin,
+            image: meta?.image || '',
+          });
         }
       });
     });
@@ -49,7 +62,7 @@ export default function ProductsTab({ filter, variant = 'full' }: Props) {
       if (sortBy === 'profit') return b.profit - a.profit;
       return b.qty - a.qty;
     });
-  }, [completedSales, sortBy]);
+  }, [completedInvoices, categoryMap, sortBy]);
 
   const categoryStats = useMemo(() => {
     const map: Record<string, { revenue: number; profit: number; qty: number }> = {};

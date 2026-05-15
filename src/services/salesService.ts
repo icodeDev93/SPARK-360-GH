@@ -69,7 +69,8 @@ export function buildInvoice(
   customerName: string,
   items: SaleLineItem[],
   paymentMethod: PaymentMethod,
-  cashier: string
+  cashier: string,
+  status: InvoiceRecord['status'] = 'completed'
 ): InvoiceRecord {
   const totals = calcInvoiceTotals(items);
   const now = new Date();
@@ -82,7 +83,7 @@ export function buildInvoice(
     items,
     ...totals,
     paymentMethod,
-    status: 'completed',
+    status,
     cashier,
   };
 }

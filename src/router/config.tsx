@@ -9,6 +9,7 @@ import SettingsPage from '@/pages/settings/page';
 import ExpensesPage from '@/pages/expenses/page';
 import SalesHistoryPage from '@/pages/sales-history/page';
 import SuppliersPage from '@/pages/suppliers/page';
+import CreditPage from '@/pages/credit/page';
 import UsersPage from '@/pages/users/page';
 import NotFound from '@/pages/NotFound';
 import LoginPage from '@/pages/login/page';
@@ -24,6 +25,7 @@ const routes: RouteObject[] = [
   { path: '/purchases',     element: <ProtectedRoute permission="purchases"><PurchasesPage /></ProtectedRoute> },
   { path: '/suppliers',     element: <ProtectedRoute permission="purchases"><SuppliersPage /></ProtectedRoute> },
   { path: '/customers',     element: <ProtectedRoute permission="customers"><CustomersPage /></ProtectedRoute> },
+  { path: '/credit',        element: <ProtectedRoute permission="customers"><CreditPage /></ProtectedRoute> },
   { path: '/expenses',      element: <ProtectedRoute permission="expenses"><ExpensesPage /></ProtectedRoute> },
   { path: '/reports',       element: <ProtectedRoute permission="reports"><Navigate to="/analytics" replace /></ProtectedRoute> },
   { path: '/analytics',     element: <ProtectedRoute permission="reports"><AnalyticsPage /></ProtectedRoute> },

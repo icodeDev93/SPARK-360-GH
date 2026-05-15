@@ -1,4 +1,5 @@
 import { StoreSettings } from '@/hooks/useSettings';
+import { sanitizeMultiline } from '@/lib/sanitize';
 
 interface Props {
   settings: StoreSettings;
@@ -122,6 +123,7 @@ export default function ReceiptSection({ settings, onChange }: Props) {
         <textarea
           value={settings.receiptFooter}
           onChange={(e) => onChange({ receiptFooter: e.target.value })}
+          onBlur={(e) => onChange({ receiptFooter: sanitizeMultiline(e.target.value) })}
           placeholder="e.g. Thank you for shopping with us! Returns accepted within 7 days."
           rows={3}
           maxLength={500}
