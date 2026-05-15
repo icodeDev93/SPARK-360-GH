@@ -57,13 +57,22 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      {/* Stock Value banner */}
-      <div className="bg-indigo-600 text-white rounded-xl px-6 py-3 mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <i className="ri-archive-stack-line text-lg"></i>
-          <span className="text-sm font-semibold">Total Stock Value</span>
+      {/* Stock Value + Credit Outstanding banners */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
+        <div className="bg-indigo-600 text-white rounded-xl px-6 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <i className="ri-archive-stack-line text-lg"></i>
+            <span className="text-sm font-semibold">Total Stock Value</span>
+          </div>
+          <span className="text-xl font-bold font-mono">{fmt(kpi.totalStockValue)}</span>
         </div>
-        <span className="text-xl font-bold font-mono">{fmt(kpi.totalStockValue)}</span>
+        <div className={`${kpi.creditOutstanding > 0 ? 'bg-amber-500' : 'bg-slate-400'} text-white rounded-xl px-6 py-3 flex items-center justify-between`}>
+          <div className="flex items-center gap-2">
+            <i className="ri-hand-coin-line text-lg"></i>
+            <span className="text-sm font-semibold">Credit Outstanding</span>
+          </div>
+          <span className="text-xl font-bold font-mono">{fmt(kpi.creditOutstanding)}</span>
+        </div>
       </div>
 
       {/* Chart + Stock Alerts */}

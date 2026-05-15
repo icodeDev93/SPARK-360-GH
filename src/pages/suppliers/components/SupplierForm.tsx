@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Supplier } from '@/mocks/suppliers';
+import { sanitizeText, sanitizeEmail, sanitizeMultiline, isValidEmail } from '@/lib/sanitize';
 
 interface Props {
   initial?: Supplier;
@@ -28,13 +29,22 @@ export default function SupplierForm({ initial, onSave, onClose }: Props) {
     if (!form.name.trim()) e.name = 'Company name is required';
     if (!form.contact.trim()) e.contact = 'Contact person is required';
     if (!form.phone.trim()) e.phone = 'Phone number is required';
+    if (form.email.trim() && !isValidEmail(form.email.trim())) e.email = 'Invalid email address';
     setErrors(e);
     return Object.keys(e).length === 0;
   };
 
   const handleSubmit = () => {
     if (!validate()) return;
-    onSave(form);
+    onSave({
+      ...form,
+      name:    sanitizeText(form.name),
+      contact: sanitizeText(form.contact),
+      phone:   sanitizeText(form.phone),
+      email:   sanitizeEmail(form.email),
+      address: sanitizeText(form.address),
+      notes:   sanitizeMultiline(form.notes),
+    });
     onClose();
   };
 
@@ -63,6 +73,7 @@ export default function SupplierForm({ initial, onSave, onClose }: Props) {
               value={form.name}
               onChange={(e) => set('name', e.target.value)}
               placeholder="e.g. TechWorld Distributors"
+              maxLength={150}
               className={`w-full border rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none transition-all ${errors.name ? 'border-red-400' : 'border-slate-200 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100'}`}
             />
             {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name}</p>}
@@ -75,6 +86,7 @@ export default function SupplierForm({ initial, onSave, onClose }: Props) {
                 value={form.contact}
                 onChange={(e) => set('contact', e.target.value)}
                 placeholder="Full name"
+                maxLength={100}
                 className={`w-full border rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none transition-all ${errors.contact ? 'border-red-400' : 'border-slate-200 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100'}`}
               />
               {errors.contact && <p className="text-red-500 text-xs mt-1">{errors.contact}</p>}
@@ -98,6 +110,7 @@ export default function SupplierForm({ initial, onSave, onClose }: Props) {
                 value={form.phone}
                 onChange={(e) => set('phone', e.target.value)}
                 placeholder="+233 XX XXX XXXX"
+                maxLength={30}
                 className={`w-full border rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none transition-all ${errors.phone ? 'border-red-400' : 'border-slate-200 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100'}`}
               />
               {errors.phone && <p className="text-red-500 text-xs mt-1">{errors.phone}</p>}
@@ -109,8 +122,10 @@ export default function SupplierForm({ initial, onSave, onClose }: Props) {
                 value={form.email}
                 onChange={(e) => set('email', e.target.value)}
                 placeholder="email@company.com"
-                className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all"
+                maxLength={200}
+                className={`w-full border rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:ring-2 focus:ring-indigo-100 transition-all ${errors.email ? 'border-red-400 focus:border-red-400' : 'border-slate-200 focus:border-indigo-400'}`}
               />
+              {errors.email && <p className="text-red-500 text-xs mt-1">{errors.email}</p>}
             </div>
           </div>
 
@@ -121,6 +136,7 @@ export default function SupplierForm({ initial, onSave, onClose }: Props) {
                 value={form.address}
                 onChange={(e) => set('address', e.target.value)}
                 placeholder="City, Country"
+                maxLength={200}
                 className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all"
               />
             </div>

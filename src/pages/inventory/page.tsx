@@ -441,6 +441,7 @@ export default function InventoryPage() {
               onChange={(e) => setCatModal({ ...catModal, value: e.target.value })}
               onKeyDown={(e) => e.key === 'Enter' && handleSaveCategory()}
               placeholder="e.g. Dairy Products"
+              maxLength={60}
               className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 transition-all mb-5"
             />
             <div className="flex gap-3">

@@ -1,4 +1,5 @@
 import { StoreSettings } from '@/hooks/useSettings';
+import { sanitizeText, sanitizeEmail, sanitizeMultiline } from '@/lib/sanitize';
 
 interface Props {
   settings: StoreSettings;
@@ -45,7 +46,9 @@ export default function StoreInfoSection({ settings, onChange }: Props) {
             type="text"
             value={settings.storeName}
             onChange={(e) => onChange({ storeName: e.target.value })}
+            onBlur={(e) => onChange({ storeName: sanitizeText(e.target.value) })}
             placeholder="e.g. SPark360 Store"
+            maxLength={100}
             className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all"
           />
         </div>
@@ -56,7 +59,9 @@ export default function StoreInfoSection({ settings, onChange }: Props) {
             type="email"
             value={settings.storeEmail}
             onChange={(e) => onChange({ storeEmail: e.target.value })}
+            onBlur={(e) => onChange({ storeEmail: sanitizeEmail(e.target.value) })}
             placeholder="store@example.com"
+            maxLength={200}
             className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all"
           />
         </div>
@@ -67,7 +72,9 @@ export default function StoreInfoSection({ settings, onChange }: Props) {
             type="tel"
             value={settings.storePhone}
             onChange={(e) => onChange({ storePhone: e.target.value })}
+            onBlur={(e) => onChange({ storePhone: sanitizeText(e.target.value) })}
             placeholder="+1 (555) 000-0000"
+            maxLength={30}
             className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all"
           />
         </div>
@@ -92,6 +99,7 @@ export default function StoreInfoSection({ settings, onChange }: Props) {
           <textarea
             value={settings.storeAddress}
             onChange={(e) => onChange({ storeAddress: e.target.value })}
+            onBlur={(e) => onChange({ storeAddress: sanitizeMultiline(e.target.value) })}
             placeholder="Full store address..."
             rows={2}
             maxLength={500}

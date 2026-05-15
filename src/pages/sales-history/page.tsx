@@ -2,9 +2,12 @@ import { useState, useEffect } from 'react';
 import AppLayout from '@/components/feature/AppLayout';
 import { useSalesLog } from '@/hooks/useSalesLog';
 import { useAuth } from '@/hooks/useAuth';
-import type { InvoiceRecord } from '@/types/erp';
+import type { InvoiceRecord, PaymentMethod } from '@/types/erp';
 import { writeLog } from '@/lib/activityLog';
 import Paginator from '@/components/ui/Paginator';
+
+type StatusFilter = 'all' | 'completed' | 'credit' | 'refunded';
+const CASH_METHODS: Exclude<PaymentMethod, 'Credit'>[] = ['Cash', 'MoMo', 'Cheque', 'Bank Transfer'];
 
 const PAGE_SIZE = 20;
 
@@ -13,6 +16,7 @@ const PAYMENT_ICONS: Record<string, string> = {
   MoMo:            'ri-smartphone-line',
   Cheque:          'ri-draft-line',
   'Bank Transfer': 'ri-bank-line',
+  Credit:          'ri-hand-coin-line',
 };
 
 function formatDate(iso: string) {
@@ -25,12 +29,16 @@ function fmt(n: number) {
 }
 
 export default function SalesHistoryPage() {
-  const { invoices, refund, deleteInvoice } = useSalesLog();
+  const { invoices, refund, deleteInvoice, markCreditAsPaid, processReturn } = useSalesLog();
   const { currentUser } = useAuth();
   const [selectedInvoice, setSelectedInvoice] = useState<InvoiceRecord | null>(null);
   const [refundTarget, setRefundTarget] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<InvoiceRecord | null>(null);
-  const [filterStatus, setFilterStatus] = useState<'all' | 'completed' | 'refunded'>('all');
+  const [markPaidTarget, setMarkPaidTarget] = useState<InvoiceRecord | null>(null);
+  const [markPaidMethod, setMarkPaidMethod] = useState<Exclude<PaymentMethod, 'Credit'>>('Cash');
+  const [returnInvoice, setReturnInvoice] = useState<InvoiceRecord | null>(null);
+  const [returnQtys, setReturnQtys] = useState<Record<string, number>>({});
+  const [filterStatus, setFilterStatus] = useState<StatusFilter>('all');
   const [filterPayment, setFilterPayment] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [page, setPage] = useState(1);
@@ -60,15 +68,16 @@ export default function SalesHistoryPage() {
 
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  const totalRevenue  = baseInvoices.filter((i) => i.status === 'completed').reduce((s, i) => s + i.netSales, 0);
-  const todayCount    = baseInvoices.filter((i) => i.date === today).length;
-  const refundedCount = baseInvoices.filter((i) => i.status === 'refunded').length;
+  const totalRevenue    = baseInvoices.filter((i) => i.status === 'completed').reduce((s, i) => s + i.netSales, 0);
+  const todayCount      = baseInvoices.filter((i) => i.date === today).length;
+  const refundedCount   = baseInvoices.filter((i) => i.status === 'refunded').length;
+  const creditOutstanding = baseInvoices.filter((i) => i.status === 'credit').reduce((s, i) => s + i.netSales, 0);
 
   const summaryCards = [
     { label: 'Total Transactions', value: String(baseInvoices.length), icon: 'ri-receipt-line',       color: 'bg-indigo-50 text-indigo-600' },
-    { label: 'Total Revenue',      value: fmt(totalRevenue),         icon: 'ri-funds-line',           color: 'bg-emerald-50 text-emerald-600' },
-    { label: "Today's Sales",      value: String(todayCount),        icon: 'ri-calendar-check-line',  color: 'bg-amber-50 text-amber-600' },
-    { label: 'Refunded',           value: String(refundedCount),     icon: 'ri-refund-2-line',        color: 'bg-red-50 text-red-500' },
+    { label: 'Total Revenue',      value: fmt(totalRevenue),           icon: 'ri-funds-line',          color: 'bg-emerald-50 text-emerald-600' },
+    { label: 'Credit Outstanding', value: fmt(creditOutstanding),      icon: 'ri-hand-coin-line',      color: 'bg-amber-50 text-amber-600' },
+    { label: 'Refunded',           value: String(refundedCount),       icon: 'ri-refund-2-line',       color: 'bg-red-50 text-red-500' },
   ];
 
   return (
@@ -110,7 +119,7 @@ export default function SalesHistoryPage() {
           />
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          {(['all', 'completed', 'refunded'] as const).map((s) => (
+          {(['all', 'completed', 'credit', 'refunded'] as StatusFilter[]).map((s) => (
             <button
               key={s}
               onClick={() => setFilterStatus(s)}
@@ -120,7 +129,7 @@ export default function SalesHistoryPage() {
                   : 'bg-white border border-slate-200 text-slate-600 hover:border-indigo-300'
               }`}
             >
-              {s === 'all' ? 'All Status' : s.charAt(0).toUpperCase() + s.slice(1)}
+              {s === 'all' ? 'All Status' : s === 'credit' ? 'Credit' : s.charAt(0).toUpperCase() + s.slice(1)}
             </button>
           ))}
           <select
@@ -133,6 +142,7 @@ export default function SalesHistoryPage() {
             <option value="MoMo">MoMo</option>
             <option value="Cheque">Cheque</option>
             <option value="Bank Transfer">Bank Transfer</option>
+            <option value="Credit">Credit</option>
           </select>
         </div>
       </div>
@@ -201,10 +211,16 @@ export default function SalesHistoryPage() {
                         <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full ${
                           inv.status === 'completed'
                             ? 'bg-emerald-100 text-emerald-700'
+                            : inv.status === 'credit'
+                            ? 'bg-violet-100 text-violet-700'
                             : 'bg-red-100 text-red-600'
                         }`}>
-                          <i className={`${inv.status === 'completed' ? 'ri-checkbox-circle-line' : 'ri-refund-2-line'} text-xs`}></i>
-                          {inv.status.charAt(0).toUpperCase() + inv.status.slice(1)}
+                          <i className={`${
+                            inv.status === 'completed' ? 'ri-checkbox-circle-line'
+                            : inv.status === 'credit' ? 'ri-hand-coin-line'
+                            : 'ri-refund-2-line'
+                          } text-xs`}></i>
+                          {inv.status === 'credit' ? 'Credit' : inv.status.charAt(0).toUpperCase() + inv.status.slice(1)}
                         </span>
                       </td>
                       <td className="px-5 py-3.5">
@@ -216,6 +232,24 @@ export default function SalesHistoryPage() {
                           >
                             <i className="ri-eye-line text-sm"></i>
                           </button>
+                          {(inv.status === 'completed' || inv.status === 'credit') && (
+                            <button
+                              onClick={() => { setReturnInvoice(inv); setReturnQtys({}); }}
+                              className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-amber-50 text-slate-400 hover:text-amber-600 transition-all cursor-pointer"
+                              title="Return items"
+                            >
+                              <i className="ri-arrow-go-back-line text-sm"></i>
+                            </button>
+                          )}
+                          {inv.status === 'credit' && (
+                            <button
+                              onClick={() => { setMarkPaidTarget(inv); setMarkPaidMethod('Cash'); }}
+                              className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-emerald-50 text-slate-400 hover:text-emerald-600 transition-all cursor-pointer"
+                              title="Mark as paid"
+                            >
+                              <i className="ri-checkbox-circle-line text-sm"></i>
+                            </button>
+                          )}
                           {inv.status === 'completed' && (
                             <button
                               onClick={() => setRefundTarget(inv.invoiceNo)}
@@ -330,10 +364,16 @@ export default function SalesHistoryPage() {
                 <span className={`inline-flex items-center gap-1.5 text-sm font-semibold px-4 py-1.5 rounded-full ${
                   selectedInvoice.status === 'completed'
                     ? 'bg-emerald-100 text-emerald-700'
+                    : selectedInvoice.status === 'credit'
+                    ? 'bg-violet-100 text-violet-700'
                     : 'bg-red-100 text-red-600'
                 }`}>
-                  <i className={`${selectedInvoice.status === 'completed' ? 'ri-checkbox-circle-fill' : 'ri-refund-2-line'} text-sm`}></i>
-                  {selectedInvoice.status.charAt(0).toUpperCase() + selectedInvoice.status.slice(1)}
+                  <i className={`${
+                    selectedInvoice.status === 'completed' ? 'ri-checkbox-circle-fill'
+                    : selectedInvoice.status === 'credit' ? 'ri-hand-coin-line'
+                    : 'ri-refund-2-line'
+                  } text-sm`}></i>
+                  {selectedInvoice.status === 'credit' ? 'Credit (Unpaid)' : selectedInvoice.status.charAt(0).toUpperCase() + selectedInvoice.status.slice(1)}
                 </span>
               </div>
             </div>
@@ -383,6 +423,140 @@ export default function SalesHistoryPage() {
               >
                 Delete
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mark as Paid Modal */}
+      {markPaidTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm mx-4">
+            <div className="w-12 h-12 flex items-center justify-center bg-emerald-100 rounded-xl mb-4">
+              <i className="ri-checkbox-circle-line text-emerald-600 text-xl"></i>
+            </div>
+            <h3 className="text-slate-800 font-bold text-base mb-1">Mark Credit as Paid</h3>
+            <p className="text-slate-500 text-sm mb-4">
+              Receipt <span className="font-bold text-indigo-600">{markPaidTarget.receiptNo}</span> — <span className="font-bold text-slate-700">{fmt(markPaidTarget.netSales)}</span>
+            </p>
+            <div className="mb-4">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Payment Received Via</p>
+              <div className="grid grid-cols-2 gap-2">
+                {CASH_METHODS.map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => setMarkPaidMethod(m)}
+                    className={`py-2 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                      markPaidMethod === m
+                        ? 'bg-indigo-600 border-indigo-600 text-white'
+                        : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-300'
+                    }`}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setMarkPaidTarget(null)}
+                className="flex-1 py-2.5 rounded-lg border border-slate-200 text-slate-700 text-sm font-semibold hover:bg-slate-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  await markCreditAsPaid(markPaidTarget.invoiceNo, markPaidMethod);
+                  if (currentUser) writeLog(currentUser, {
+                    category: 'sales', action: 'edit',
+                    description: `Marked credit sale ${markPaidTarget.receiptNo} as paid — ₵${markPaidTarget.netSales.toFixed(2)} via ${markPaidMethod}`,
+                  });
+                  setMarkPaidTarget(null);
+                }}
+                className="flex-1 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold cursor-pointer"
+              >
+                Confirm Paid
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Return Items Modal */}
+      {returnInvoice && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-xl">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
+              <div>
+                <h2 className="text-slate-800 font-bold text-base">Return Items</h2>
+                <p className="text-indigo-600 text-xs font-bold font-mono mt-0.5">{returnInvoice.receiptNo} — {returnInvoice.customerName}</p>
+              </div>
+              <button onClick={() => setReturnInvoice(null)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 cursor-pointer">
+                <i className="ri-close-line text-lg"></i>
+              </button>
+            </div>
+            <div className="px-6 py-4 max-h-[50vh] overflow-y-auto space-y-3">
+              {returnInvoice.items.map((item) => {
+                const maxReturn = item.qty - item.returnsQty;
+                return (
+                  <div key={item.productId} className="flex items-center justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-slate-800 text-sm font-semibold truncate">{item.productName}</p>
+                      <p className="text-slate-400 text-xs">
+                        Sold: {item.qty} · Returned: {item.returnsQty} · Available: {maxReturn}
+                      </p>
+                    </div>
+                    {maxReturn > 0 ? (
+                      <input
+                        type="number"
+                        min={0}
+                        max={maxReturn}
+                        value={returnQtys[item.productId] ?? 0}
+                        onChange={(e) => setReturnQtys((prev) => ({
+                          ...prev,
+                          [item.productId]: Math.min(maxReturn, Math.max(0, Number(e.target.value))),
+                        }))}
+                        className="w-20 border border-slate-200 rounded-lg px-2 py-1.5 text-sm text-center font-mono outline-none focus:border-indigo-400"
+                      />
+                    ) : (
+                      <span className="text-slate-400 text-xs">Fully returned</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="px-6 py-4 border-t border-slate-100">
+              <p className="text-slate-400 text-xs mb-3">
+                Returned items will be added back to inventory.
+                {returnInvoice.status === 'credit' && ' Customer\'s outstanding balance will be reduced.'}
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setReturnInvoice(null)}
+                  className="flex-1 py-2.5 rounded-lg border border-slate-200 text-slate-700 text-sm font-semibold hover:bg-slate-50 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={async () => {
+                    const returns = Object.entries(returnQtys)
+                      .filter(([, qty]) => qty > 0)
+                      .map(([productId, returnQty]) => ({ productId, returnQty }));
+                    if (returns.length === 0) { setReturnInvoice(null); return; }
+                    await processReturn(returnInvoice.invoiceNo, returns);
+                    if (currentUser) writeLog(currentUser, {
+                      category: 'sales', action: 'refund',
+                      description: `Processed return on ${returnInvoice.receiptNo} for ${returnInvoice.customerName} — ${returns.length} item(s) returned`,
+                    });
+                    setReturnInvoice(null);
+                    setReturnQtys({});
+                  }}
+                  disabled={Object.values(returnQtys).every((q) => q <= 0)}
+                  className="flex-1 py-2.5 rounded-lg bg-amber-500 hover:bg-amber-600 disabled:bg-slate-200 disabled:text-slate-400 text-white text-sm font-bold cursor-pointer"
+                >
+                  Confirm Returns
+                </button>
+              </div>
             </div>
           </div>
         </div>

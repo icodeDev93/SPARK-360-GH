@@ -20,7 +20,7 @@ export interface InventoryItem {
 
 // ─── Sales ────────────────────────────────────────────────────────────────────
 
-export type PaymentMethod = 'Cash' | 'MoMo' | 'Cheque' | 'Bank Transfer';
+export type PaymentMethod = 'Cash' | 'MoMo' | 'Cheque' | 'Bank Transfer' | 'Credit';
 
 export interface SaleLineItem {
   productId: string;
@@ -46,7 +46,7 @@ export interface InvoiceRecord {
   totalCost: number;         // sum of item totalCost
   grossMargin: number;       // netSales - totalCost
   paymentMethod: PaymentMethod;
-  status: 'completed' | 'refunded';
+  status: 'completed' | 'refunded' | 'credit';
   cashier: string;
 }
 
@@ -142,6 +142,17 @@ export interface KpiSummary {
   totalExpenses: number;
   netProfit: number;
   grossMargin: number;
+  creditOutstanding: number;
+}
+
+export interface CreditPayment {
+  id: string;
+  customerId: string;
+  saleId?: string;
+  amount: number;
+  paymentMethod: Exclude<PaymentMethod, 'Credit'>;
+  notes: string;
+  createdAt: string;
 }
 
 export interface MonthlyPerformance {

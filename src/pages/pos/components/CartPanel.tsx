@@ -32,6 +32,7 @@ const PAYMENT_METHODS: { key: PaymentMethod; label: string; icon: string }[] = [
   { key: 'Cheque',        label: 'Cheque', icon: 'ri-file-text-line' },
   { key: 'Bank Transfer', label: 'Bank',   icon: 'ri-bank-line' },
 ];
+const CREDIT_METHOD = { key: 'Credit' as PaymentMethod, label: 'Credit Sale', icon: 'ri-hand-coin-line' };
 
 function productInitials(name: string) {
   return name
@@ -81,6 +82,7 @@ export default function CartPanel({ items, onUpdateQty, onRemove, onClear }: Car
       items:        saleItems,
       paymentMethod,
       cashier:      currentUser.name,
+      status:       paymentMethod === 'Credit' ? 'credit' : 'completed',
     });
     writeLog(currentUser, {
       category: 'sales', action: 'complete',
@@ -214,21 +216,37 @@ export default function CartPanel({ items, onUpdateQty, onRemove, onClear }: Car
           </div>
 
           {/* Payment Method */}
-          <div className="grid grid-cols-4 gap-1.5 min-w-0">
-            {PAYMENT_METHODS.map((m) => (
-              <button
-                key={m.key}
-                onClick={() => setPaymentMethod(m.key)}
-                className={`flex flex-col items-center gap-1 py-2 rounded-lg border text-xs font-semibold transition-all cursor-pointer min-w-0 ${
-                  paymentMethod === m.key
-                    ? 'bg-indigo-600 border-indigo-600 text-white'
-                    : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-300'
-                }`}
-              >
-                <i className={`${m.icon} text-base`}></i>
-                <span className="truncate max-w-full px-1">{m.label}</span>
-              </button>
-            ))}
+          <div className="space-y-1.5">
+            <div className="grid grid-cols-4 gap-1.5 min-w-0">
+              {PAYMENT_METHODS.map((m) => (
+                <button
+                  key={m.key}
+                  onClick={() => setPaymentMethod(m.key)}
+                  className={`flex flex-col items-center gap-1 py-2 rounded-lg border text-xs font-semibold transition-all cursor-pointer min-w-0 ${
+                    paymentMethod === m.key
+                      ? 'bg-indigo-600 border-indigo-600 text-white'
+                      : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-300'
+                  }`}
+                >
+                  <i className={`${m.icon} text-base`}></i>
+                  <span className="truncate max-w-full px-1">{m.label}</span>
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => setPaymentMethod(CREDIT_METHOD.key)}
+              className={`w-full flex items-center justify-center gap-2 py-2 rounded-lg border text-xs font-semibold transition-all cursor-pointer ${
+                paymentMethod === 'Credit'
+                  ? 'bg-violet-600 border-violet-600 text-white'
+                  : 'bg-white border-slate-200 text-slate-600 hover:border-violet-300'
+              }`}
+            >
+              <i className={`${CREDIT_METHOD.icon} text-base`}></i>
+              <span>{CREDIT_METHOD.label}</span>
+              {paymentMethod !== 'Credit' && (
+                <span className="text-slate-400 font-normal">(registered customers only)</span>
+              )}
+            </button>
           </div>
 
           {/* Complete Sale */}
@@ -254,6 +272,7 @@ export default function CartPanel({ items, onUpdateQty, onRemove, onClear }: Car
           addCustomer={addCustomer}
           onComplete={handleCustomerConfirm}
           onCancel={() => setShowCustomerModal(false)}
+          paymentMethod={paymentMethod}
         />
       )}
 

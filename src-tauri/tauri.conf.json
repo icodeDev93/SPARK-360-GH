@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "SPARK 360",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "identifier": "com.spark360.app",
   "build": {
     "frontendDist": "../out",
@@ -29,12 +29,25 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "publisher": "SPARK 360",
+    "windows": {
+      "allowDowngrades": false
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEJENDdFQUQ0OUE1NTFFOTMKUldTVEhsV2ExT3BIdmV5dXFqRU1OV29TcUZjYVVKS3BZU1NHcElVMnZ2TVlGNW5mdnRjd1ZDdzIK",
+      "endpoints": [
+        "https://raw.githubusercontent.com/icodeDev93/SPARK-360-GH/main/releases/latest.json"
+      ]
+    }
   }
 }

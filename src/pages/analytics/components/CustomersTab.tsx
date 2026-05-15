@@ -7,46 +7,33 @@ interface Props {
   variant?: 'full' | 'top';
 }
 
-const CUSTOMER_MAP: Record<string, string> = {
-  'RCP-001': 'Amara Diallo', 'RCP-002': 'Kwame Asante', 'RCP-003': 'Fatima Nkosi',
-  'RCP-004': 'James Osei', 'RCP-005': 'Nia Mensah', 'RCP-006': 'Kofi Boateng',
-};
-const CUSTOMER_AVATARS: Record<string, string> = {
-  'Amara Diallo': 'AD', 'Kwame Asante': 'KA', 'Fatima Nkosi': 'FN',
-  'James Osei': 'JO', 'Nia Mensah': 'NM', 'Kofi Boateng': 'KB',
-  'Abena Owusu': 'AO', 'Yaw Darko': 'YD',
-};
 const AVATAR_COLORS = ['bg-indigo-500', 'bg-emerald-500', 'bg-amber-500', 'bg-rose-500', 'bg-violet-500', 'bg-cyan-500', 'bg-orange-500', 'bg-teal-500'];
 
-function getCustomerName(sale: { receiptNo: string; cashier: string }): string {
-  return CUSTOMER_MAP[sale.receiptNo] || sale.cashier;
-}
-
 export default function CustomersTab({ filter, variant = 'full' }: Props) {
-  const { sales } = useSalesLog();
+  const { invoices } = useSalesLog();
   const isTopOnly = variant === 'top';
 
-  const filteredSales = useMemo(
-    () => sales.filter((s) => s.status === 'completed' && filter.isInRange(s.date)),
-    [sales, filter]
+  const filteredInvoices = useMemo(
+    () => invoices.filter((inv) => inv.status === 'completed' && filter.isInRange(inv.date)),
+    [invoices, filter]
   );
 
   const customerStats = useMemo(() => {
     const map = new Map<string, { name: string; visits: number; revenue: number; items: number; lastDate: string }>();
-    filteredSales.forEach((sale) => {
-      const name = getCustomerName(sale);
+    filteredInvoices.forEach((inv) => {
+      const name = inv.customerName || 'Walk-in Customer';
       const existing = map.get(name);
       if (existing) {
         existing.visits += 1;
-        existing.revenue += sale.grandTotal;
-        existing.items += sale.items.reduce((s, i) => s + i.qty, 0);
-        existing.lastDate = sale.date;
+        existing.revenue += inv.netSales;
+        existing.items += inv.items.reduce((s, i) => s + i.qty, 0);
+        existing.lastDate = inv.date;
       } else {
-        map.set(name, { name, visits: 1, revenue: sale.grandTotal, items: sale.items.reduce((s, i) => s + i.qty, 0), lastDate: sale.date });
+        map.set(name, { name, visits: 1, revenue: inv.netSales, items: inv.items.reduce((s, i) => s + i.qty, 0), lastDate: inv.date });
       }
     });
     return Array.from(map.values()).sort((a, b) => b.revenue - a.revenue);
-  }, [filteredSales]);
+  }, [filteredInvoices]);
 
   const totalCustomers = customerStats.length;
   const totalRevenue = customerStats.reduce((s, c) => s + c.revenue, 0);
@@ -102,7 +89,7 @@ export default function CustomersTab({ filter, variant = 'full' }: Props) {
                 <tbody>
                   {customerStats.map((c, i) => {
                     const avgOrder = c.visits > 0 ? c.revenue / c.visits : 0;
-                    const initials = CUSTOMER_AVATARS[c.name] || c.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase();
+                    const initials = c.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase();
                     const avatarColor = AVATAR_COLORS[i % AVATAR_COLORS.length];
                     return (
                       <tr key={c.name} className={`border-b border-slate-50 hover:bg-slate-50 transition-all ${i % 2 === 1 ? 'bg-slate-50/30' : ''}`}>

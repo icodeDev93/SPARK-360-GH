@@ -5,6 +5,7 @@ import { ROLE_LABELS, ALL_PERMISSIONS, useAuth } from '@/hooks/useAuth';
 import { supabase, supabaseAdmin } from '@/lib/supabase';
 import PasswordInput from '@/components/ui/PasswordInput';
 import { writeLog, diffFields } from '@/lib/activityLog';
+import { sanitizeText } from '@/lib/sanitize';
 
 interface AppUser {
   id: string;
@@ -150,13 +151,14 @@ export default function UsersPage() {
 
     try {
       if (editTarget) {
-        const initials = getInitials(form.name);
+        const cleanName = sanitizeText(form.name);
+        const initials = getInitials(cleanName);
         const overridesToSave = form.role === 'admin' ? EMPTY_OVERRIDES : form.overrides;
 
         const { error } = await supabase
           .from('profiles')
           .update({
-            name: form.name, email: form.email, role: form.role,
+            name: cleanName, email: form.email, role: form.role,
             status: form.status, initials,
             permission_overrides: overridesToSave,
           })
@@ -174,7 +176,7 @@ export default function UsersPage() {
         if (currentUser) {
           const changes = diffFields(
             { name: editTarget.name, role: editTarget.role, status: editTarget.status },
-            { name: form.name,       role: form.role,       status: form.status },
+            { name: cleanName,       role: form.role,       status: form.status },
             { name: 'Name', role: 'Role', status: 'Status' },
           );
           const overrideChanged =
@@ -183,14 +185,14 @@ export default function UsersPage() {
           if (form.password)   changes.push({ field: 'Password', old: '••••••••', new: '(changed)' });
           writeLog(currentUser, {
             category: 'users', action: 'edit',
-            description: `Edited user ${form.name} (${ROLE_LABELS[form.role].label})`,
+            description: `Edited user ${cleanName} (${ROLE_LABELS[form.role].label})`,
             changes,
           });
         }
 
         setUsers((prev) => prev.map((u) =>
           u.id === editTarget.id
-            ? { ...u, name: form.name, email: form.email, role: form.role, status: form.status, initials, permissionOverrides: overridesToSave }
+            ? { ...u, name: cleanName, email: form.email, role: form.role, status: form.status, initials, permissionOverrides: overridesToSave }
             : u
         ));
       } else {
@@ -205,11 +207,12 @@ export default function UsersPage() {
           return;
         }
 
-        const initials    = getInitials(form.name);
+        const newName     = sanitizeText(form.name);
+        const initials    = getInitials(newName);
         const avatarColor = AVATAR_COLORS[users.length % AVATAR_COLORS.length];
 
         const { error: profileError } = await supabase.from('profiles').insert({
-          id: authData.user.id, name: form.name,
+          id: authData.user.id, name: newName,
           email: form.email.toLowerCase().trim(),
           role: form.role, status: form.status, initials, avatar_color: avatarColor,
           permission_overrides: EMPTY_OVERRIDES,
@@ -221,7 +224,7 @@ export default function UsersPage() {
         }
 
         const newUser: AppUser = {
-          id: authData.user.id, name: form.name,
+          id: authData.user.id, name: newName,
           email: form.email.toLowerCase().trim(),
           role: form.role, status: form.status, initials, avatarColor,
           permissionOverrides: EMPTY_OVERRIDES,
@@ -230,7 +233,7 @@ export default function UsersPage() {
         if (currentUser) {
           writeLog(currentUser, {
             category: 'users', action: 'create',
-            description: `Created new user ${form.name} (${ROLE_LABELS[form.role].label}) — ${form.email.toLowerCase().trim()}`,
+            description: `Created new user ${newName} (${ROLE_LABELS[form.role].label}) — ${form.email.toLowerCase().trim()}`,
           });
         }
       }
@@ -448,6 +451,7 @@ export default function UsersPage() {
                   onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
                   placeholder="e.g. Kofi Boateng"
                   autoComplete="off"
+                  maxLength={100}
                   className={`w-full border rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none transition-all ${errors.name ? 'border-red-400' : 'border-slate-200 focus:border-indigo-400'}`}
                 />
                 {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name}</p>}

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Supplier, PurchaseOrder } from '@/mocks/suppliers';
+import { sanitizeMultiline } from '@/lib/sanitize';
 
 interface Props {
   suppliers: Supplier[];
@@ -46,7 +47,7 @@ export default function PurchaseOrderForm({ suppliers, onSave, onClose, defaultS
       total: form.total,
       status: form.status,
       paymentStatus: form.paymentStatus,
-      notes: form.notes,
+      notes: sanitizeMultiline(form.notes),
     });
     onClose();
   };
