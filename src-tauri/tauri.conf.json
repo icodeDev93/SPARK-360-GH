@@ -44,7 +44,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEJENDdFQUQ0OUE1NTFFOTMKUldTVEhsV2ExT3BIdmV5dXFqRU1OV29TcUZjYVVKS3BZU1NHcElVMnZ2TVlGNW5mdnRjd1ZDdzIK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEI5NDczODVFNjlENzBDQTAKUldTZ0ROZHBYamhIdVc3ZW9zSUo0QmFycHIxdnUvYkVDd1ZQVDdRM2JXVTdFSU5sWXpiWVNJaGYK",
       "endpoints": [
         "https://raw.githubusercontent.com/icodeDev93/SPARK-360-GH/main/releases/latest.json"
       ]

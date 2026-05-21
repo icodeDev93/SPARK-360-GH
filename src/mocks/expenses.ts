@@ -1,4 +1,4 @@
-import type { ExpenseRecord, ExpenseCategory, PaymentMethod } from '@/types/erp';
+import type { ExpenseRecord, ExpenseCategory, ExpensePaymentMethod } from '@/types/erp';
 
 export { EXPENSE_CATEGORIES, PAYMENT_METHODS } from '@/lib/constants';
 
@@ -8,7 +8,7 @@ function makeExpense(
   category: ExpenseCategory,
   description: string,
   amountGHS: number,
-  paidBy: PaymentMethod,
+  paidBy: ExpensePaymentMethod,
   notes: string = ''
 ): ExpenseRecord {
   return { expenseId, date, category, description, amountGHS, paidBy, notes, proofUrl: null };

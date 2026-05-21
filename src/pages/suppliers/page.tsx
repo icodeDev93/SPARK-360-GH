@@ -4,6 +4,9 @@ import { useSuppliers } from '@/hooks/useSuppliers';
 import { Supplier, PurchaseOrder } from '@/mocks/suppliers';
 import SupplierForm from './components/SupplierForm';
 import PurchaseOrderForm from './components/PurchaseOrderForm';
+import { useFeedbackModal } from '@/hooks/useFeedbackModal';
+import { useAuth } from '@/hooks/useAuth';
+import { writeLog } from '@/lib/activityLog';
 
 type Tab = 'orders' | 'suppliers';
 
@@ -23,6 +26,8 @@ const PAY_STATUS_STYLE: Record<string, string> = {
 
 export default function SuppliersPage() {
   const { suppliers, orders, addSupplier, updateSupplier, deleteSupplier, addOrder, updateOrderStatus, getSupplierOrders } = useSuppliers();
+  const { showFeedback } = useFeedbackModal();
+  const { currentUser } = useAuth();
   const [tab, setTab] = useState<Tab>('suppliers');
   const [showSupplierForm, setShowSupplierForm] = useState(false);
   const [showOrderForm, setShowOrderForm] = useState(false);
@@ -52,6 +57,59 @@ export default function SuppliersPage() {
   const handleNewOrderForSupplier = (supplierId: string) => {
     setDefaultSupplierId(supplierId);
     setShowOrderForm(true);
+  };
+
+  const handleSaveSupplier = (data: Omit<Supplier, 'id' | 'totalOrders' | 'totalSpent'>) => {
+    const isEdit = !!editSupplier;
+    if (editSupplier) updateSupplier(editSupplier.id, data);
+    else addSupplier(data);
+    if (currentUser) {
+      writeLog(currentUser, {
+        category: 'suppliers',
+        action: isEdit ? 'edit' : 'create',
+        description: `${isEdit ? 'Updated' : 'Added'} supplier ${data.name}`,
+      });
+    }
+    showFeedback({
+      title: isEdit ? 'Supplier Updated' : 'Supplier Added',
+      message: `${data.name} has been ${isEdit ? 'updated' : 'added'} successfully.`,
+      buttonLabel: 'Continue',
+    });
+  };
+
+  const handleSaveOrder = (data: Omit<PurchaseOrder, 'id'>) => {
+    addOrder(data);
+    if (currentUser) {
+      writeLog(currentUser, {
+        category: 'purchases',
+        action: 'create',
+        description: `Recorded purchase order for ${data.supplierName}`,
+      });
+    }
+    showFeedback({
+      title: 'Purchase Order Recorded',
+      message: `Purchase order for ${data.supplierName} has been recorded successfully.`,
+      buttonLabel: 'Continue',
+    });
+  };
+
+  const handleDeleteSupplier = (id: string) => {
+    const target = suppliers.find((supplier) => supplier.id === id);
+    deleteSupplier(id);
+    if (currentUser && target) {
+      writeLog(currentUser, {
+        category: 'suppliers',
+        action: 'delete',
+        description: `Deleted supplier ${target.name}`,
+      });
+    }
+    setDeleteTarget(null);
+    showFeedback({
+      title: 'Supplier Deleted',
+      message: `${target?.name ?? 'The supplier'} has been removed successfully.`,
+      buttonLabel: 'Continue',
+      kind: 'deleted',
+    });
   };
 
   return (
@@ -340,7 +398,7 @@ export default function SuppliersPage() {
       {showSupplierForm && (
         <SupplierForm
           initial={editSupplier ?? undefined}
-          onSave={(data) => editSupplier ? updateSupplier(editSupplier.id, data) : addSupplier(data)}
+          onSave={handleSaveSupplier}
           onClose={() => { setShowSupplierForm(false); setEditSupplier(null); }}
         />
       )}
@@ -350,7 +408,7 @@ export default function SuppliersPage() {
         <PurchaseOrderForm
           suppliers={suppliers}
           defaultSupplierId={defaultSupplierId}
-          onSave={addOrder}
+          onSave={handleSaveOrder}
           onClose={() => { setShowOrderForm(false); setDefaultSupplierId(undefined); }}
         />
       )}
@@ -423,7 +481,7 @@ export default function SuppliersPage() {
             <p className="text-slate-500 text-sm mb-6 leading-relaxed">This supplier and their data will be permanently removed. Purchase orders will remain in history.</p>
             <div className="flex gap-3">
               <button onClick={() => setDeleteTarget(null)} className="flex-1 py-2.5 rounded-lg border border-slate-200 text-slate-700 text-sm font-semibold hover:bg-slate-50 cursor-pointer whitespace-nowrap transition-all">Cancel</button>
-              <button onClick={() => { deleteSupplier(deleteTarget); setDeleteTarget(null); }} className="flex-1 py-2.5 rounded-lg bg-red-500 hover:bg-red-600 text-white text-sm font-bold cursor-pointer whitespace-nowrap transition-all">Delete</button>
+              <button onClick={() => handleDeleteSupplier(deleteTarget)} className="flex-1 py-2.5 rounded-lg bg-red-500 hover:bg-red-600 text-white text-sm font-bold cursor-pointer whitespace-nowrap transition-all">Delete</button>
             </div>
           </div>
         </div>

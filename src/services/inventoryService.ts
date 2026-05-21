@@ -1,5 +1,10 @@
 import type { InventoryItem, StockStatus } from '@/types/erp';
 
+type InventoryItemDraft = Pick<
+  InventoryItem,
+  'itemId' | 'sku' | 'productName' | 'category' | 'supplier' | 'costPrice' | 'sellingPrice' | 'currentStock' | 'reorderLevel' | 'image'
+> & Partial<Omit<InventoryItem, 'itemId' | 'sku' | 'productName' | 'category' | 'supplier' | 'costPrice' | 'sellingPrice' | 'currentStock' | 'reorderLevel' | 'image' | 'stockStatus' | 'marginPerUnit'>>;
+
 export function getStockStatus(currentStock: number, reorderLevel: number): StockStatus {
   if (currentStock === 0) return 'OUT OF STOCK';
   if (currentStock <= reorderLevel) return 'LOW';
@@ -56,12 +61,38 @@ export function getLowStockItems(items: InventoryItem[]): InventoryItem[] {
 }
 
 export function enrichInventoryItem(
-  item: Omit<InventoryItem, 'stockStatus' | 'marginPerUnit'> | Omit<InventoryItem, 'stockStatus' | 'marginPerUnit' | 'expiryDate'>
+  item: InventoryItemDraft
 ): InventoryItem {
+  const quantityPerBox = item.quantityPerBox ?? 0;
+  const wholesaleQuantity = item.wholesaleQuantity ?? 0;
+  const singleQuantity = item.singleQuantity ?? item.currentStock ?? 0;
+  const currentStock = quantityPerBox > 0
+    ? Math.max(0, Math.floor(wholesaleQuantity * quantityPerBox + singleQuantity))
+    : Math.max(0, Math.floor(item.currentStock ?? singleQuantity));
+  const singleCostPrice = item.singleCostPrice ?? item.costPrice ?? 0;
+  const singleSellingPrice = item.singleSellingPrice ?? item.sellingPrice ?? 0;
+  const reorderLevel = item.stockLimit ?? item.reorderLevel ?? 0;
+
   return {
     ...item,
-    expiryDate: 'expiryDate' in item ? item.expiryDate : '',
-    stockStatus: getStockStatus(item.currentStock, item.reorderLevel),
-    marginPerUnit: calcMarginPerUnit(item.sellingPrice, item.costPrice),
+    costPrice: singleCostPrice,
+    sellingPrice: singleSellingPrice,
+    wholesaleCostPrice: item.wholesaleCostPrice ?? 0,
+    singleCostPrice,
+    wholesaleSellingPrice: item.wholesaleSellingPrice ?? 0,
+    halfSellingPrice: item.halfSellingPrice ?? 0,
+    quarterSellingPrice: item.quarterSellingPrice ?? 0,
+    singleSellingPrice,
+    wholesaleQuantity,
+    singleQuantity,
+    quantityPerBox,
+    stockLimit: reorderLevel,
+    description: item.description ?? '',
+    priceLevels: item.priceLevels ?? [],
+    currentStock,
+    reorderLevel,
+    expiryDate: item.expiryDate ?? '',
+    stockStatus: getStockStatus(currentStock, reorderLevel),
+    marginPerUnit: calcMarginPerUnit(singleSellingPrice, singleCostPrice),
   };
 }

@@ -7,6 +7,7 @@ import TaxSection from './components/TaxSection';
 import ReceiptSection from './components/ReceiptSection';
 import RolePermissionsSection from './components/RolePermissionsSection';
 import CreditSection from './components/CreditSection';
+import { useFeedbackModal } from '@/hooks/useFeedbackModal';
 
 type Tab = 'store' | 'tax' | 'receipt' | 'permissions' | 'credit';
 
@@ -21,6 +22,7 @@ const BASE_TABS: { key: Tab; label: string; icon: string; desc: string; adminOnl
 export default function SettingsPage() {
   const { settings, updateSettings, resetSettings } = useSettings();
   const { currentUser } = useAuth();
+  const { showFeedback } = useFeedbackModal();
   const isAdmin = currentUser?.role === 'admin';
   const tabs = isAdmin ? BASE_TABS : BASE_TABS.filter((t) => !t.adminOnly);
   const [activeTab, setActiveTab] = useState<Tab>('store');
@@ -30,6 +32,11 @@ export default function SettingsPage() {
   const handleSave = () => {
     // Settings are auto-saved via localStorage in useSettings, just show feedback
     setSaved(true);
+    showFeedback({
+      title: 'Settings Saved',
+      message: 'Your settings have been saved successfully.',
+      buttonLabel: 'Continue',
+    });
     setTimeout(() => setSaved(false), 2500);
   };
 
@@ -37,18 +44,23 @@ export default function SettingsPage() {
     resetSettings();
     setShowReset(false);
     setSaved(true);
+    showFeedback({
+      title: 'Settings Reset',
+      message: 'Settings have been reset to their default values.',
+      buttonLabel: 'Continue',
+    });
     setTimeout(() => setSaved(false), 2500);
   };
 
   return (
     <AppLayout>
           {/* Page Header */}
-          <div className="flex items-center justify-between mb-8">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-8">
             <div>
               <h1 className="text-2xl font-bold text-slate-800">Settings</h1>
               <p className="text-slate-400 text-sm mt-1">Manage your store configuration and preferences</p>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <button
                 onClick={() => setShowReset(true)}
                 className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-slate-200 text-slate-600 text-sm font-semibold hover:bg-slate-100 transition-all cursor-pointer whitespace-nowrap"
@@ -74,9 +86,9 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          <div className="flex gap-6">
+          <div className="flex flex-col gap-6 lg:flex-row">
             {/* Sidebar Tabs */}
-            <div className="w-56 flex-shrink-0">
+            <div className="w-full lg:w-56 flex-shrink-0">
               <div className="bg-white rounded-xl border border-slate-100 overflow-hidden">
                 {tabs.map((tab, idx) => (
                   <button

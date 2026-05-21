@@ -8,6 +8,7 @@ import { useExpenses } from '@/hooks/useExpenses';
 import { useAuth } from '@/hooks/useAuth';
 import { useInventory } from '@/hooks/useInventory';
 import { calcKpiSummary, calcMonthlyPerformance } from '@/services/dashboardService';
+import { Link } from 'react-router-dom';
 
 const CURRENT_YEAR = new Date().getFullYear();
 const TODAY = new Date().toISOString().split('T')[0];
@@ -21,6 +22,12 @@ const KPI_CONFIG = [
 
 function fmt(val: number) {
   return `₵${val.toLocaleString('en-GH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function calcCreditOutstanding(invoices: ReturnType<typeof useSalesLog>['invoices']) {
+  return invoices
+    .filter((inv) => inv.status === 'credit')
+    .reduce((sum, inv) => sum + inv.balanceDue, 0);
 }
 
 export default function DashboardPage() {
@@ -37,7 +44,10 @@ export default function DashboardPage() {
     : invoices;
   const scopedExpenses = isAttendant ? [] : expenses;
 
-  const kpi = calcKpiSummary(inventoryItems, scopedInvoices, scopedExpenses);
+  const kpi = {
+    ...calcKpiSummary(inventoryItems, scopedInvoices, scopedExpenses),
+    creditOutstanding: calcCreditOutstanding(invoices),
+  };
   const monthlyData = calcMonthlyPerformance(scopedInvoices, scopedExpenses, CURRENT_YEAR);
   const recentInvoices = scopedInvoices.slice(0, 6);
   const recentItems = inventoryItems.slice(0, 4);
@@ -94,9 +104,12 @@ export default function DashboardPage() {
       <div className="bg-white rounded-xl p-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-slate-800 font-bold text-base">Recently Added Items</h3>
-          <button className="text-indigo-600 text-xs font-semibold hover:underline cursor-pointer whitespace-nowrap">
+          <Link
+            to="/inventory"
+            className="relative z-10 inline-flex min-h-10 items-center rounded-lg px-3 text-xs font-semibold text-indigo-600 hover:bg-indigo-50 hover:underline whitespace-nowrap"
+          >
             View Inventory
-          </button>
+          </Link>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           {recentItems.map((item) => (

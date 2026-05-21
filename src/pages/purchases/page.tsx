@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react';
 import AppLayout from '@/components/feature/AppLayout';
 import Paginator from '@/components/ui/Paginator';
 import { useSuppliers } from '@/hooks/useSuppliers';
+import { useFeedbackModal } from '@/hooks/useFeedbackModal';
+import { useAuth } from '@/hooks/useAuth';
+import { writeLog } from '@/lib/activityLog';
 
 const PAGE_SIZE = 20;
 
@@ -25,6 +28,8 @@ function fmt(n: number) {
 
 export default function PurchasesPage() {
   const { suppliers, orders, loading, deleteOrder } = useSuppliers();
+  const { showFeedback } = useFeedbackModal();
+  const { currentUser } = useAuth();
   const [tab, setTab]                           = useState<Tab>('purchases');
   const [showSupplierForm, setShowSupplierForm]     = useState(false);
   const [deleteOrderTarget, setDeleteOrderTarget]   = useState<{ id: string; supplierName: string } | null>(null);
@@ -249,6 +254,19 @@ export default function PurchasesPage() {
               <button
                 onClick={() => {
                   deleteOrder(deleteOrderTarget.id);
+                  if (currentUser) {
+                    writeLog(currentUser, {
+                      category: 'purchases',
+                      action: 'delete',
+                      description: `Deleted purchase order ${deleteOrderTarget.id} from ${deleteOrderTarget.supplierName}`,
+                    });
+                  }
+                  showFeedback({
+                    title: 'Purchase Order Deleted',
+                    message: `${deleteOrderTarget.id} has been removed successfully.`,
+                    buttonLabel: 'Continue',
+                    kind: 'deleted',
+                  });
                   setDeleteOrderTarget(null);
                 }}
                 className="flex-1 py-2.5 rounded-lg bg-red-500 hover:bg-red-600 text-white text-sm font-bold cursor-pointer"

@@ -4,13 +4,13 @@ import { salesByCategory, topProducts } from '@/mocks/reports';
 import { useAnalyticsFilter } from '@/hooks/useAnalyticsFilter';
 import { useSalesLog } from '@/hooks/useSalesLog';
 import { useExpenses } from '@/hooks/useExpenses';
-import { useCustomers } from '@/hooks/useCustomers';
 import DateRangePicker from '@/pages/analytics/components/DateRangePicker';
 import ExportMenu from '@/pages/analytics/components/ExportMenu';
 import SalesReport from './components/SalesReport';
 import InventoryReport from './components/InventoryReport';
+import CustomerReceivablesReport from './components/CustomerReceivablesReport';
 
-type ReportTab = 'overview' | 'sales' | 'inventory';
+type ReportTab = 'overview' | 'sales' | 'inventory' | 'customer-receivables';
 
 const colorMap: Record<string, { bg: string; icon: string }> = {
   emerald: { bg: 'bg-emerald-50', icon: 'text-emerald-600' },
@@ -23,21 +23,25 @@ const colorMap: Record<string, { bg: string; icon: string }> = {
 const categoryColors = ['bg-indigo-500', 'bg-violet-500', 'bg-emerald-500', 'bg-amber-500', 'bg-rose-500'];
 
 const TAB_CONFIG = [
-  { key: 'overview',   label: 'Overview',          icon: 'ri-dashboard-3-line' },
-  { key: 'sales',      label: 'Sales Report',       icon: 'ri-line-chart-line' },
-  { key: 'inventory',  label: 'Inventory Report',   icon: 'ri-archive-drawer-line' },
+  { key: 'overview',              label: 'Overview',                    icon: 'ri-dashboard-3-line' },
+  { key: 'sales',                 label: 'Sales Report',                icon: 'ri-line-chart-line' },
+  { key: 'inventory',             label: 'Inventory Report',            icon: 'ri-archive-drawer-line' },
+  { key: 'customer-receivables',  label: 'Customer Receivables Report', icon: 'ri-hand-coin-line' },
 ];
 
 export default function ReportsPage() {
   const [tab, setTab] = useState<ReportTab>('overview');
   const filter = useAnalyticsFilter();
-  const { sales } = useSalesLog();
+  const { sales, invoices } = useSalesLog();
   const { expenses } = useExpenses();
-  const { customers } = useCustomers();
 
   const filteredSales = useMemo(
     () => sales.filter((s) => s.status === 'completed' && filter.isInRange(s.date)),
     [sales, filter]
+  );
+  const filteredCreditInvoices = useMemo(
+    () => invoices.filter((inv) => inv.status === 'credit' && filter.isInRange(inv.date)),
+    [invoices, filter]
   );
   const filteredExpenses = useMemo(
     () => expenses.filter((e) => filter.isInRange(e.date)),
@@ -46,13 +50,13 @@ export default function ReportsPage() {
   const totalRevenue = filteredSales.reduce((sum, s) => sum + s.grandTotal, 0);
   const totalExpenses = filteredExpenses.reduce((sum, e) => sum + e.amountGHS, 0);
   const netProfit = totalRevenue - totalExpenses;
-  const customerReceivables = customers.reduce((sum, c) => sum + c.outstandingBalance, 0);
+  const customerReceivables = filteredCreditInvoices.reduce((sum, inv) => sum + inv.balanceDue, 0);
 
   return (
     <AppLayout>
       {/* Header Row: Tabs + Date Picker + Export */}
       <div className="flex flex-col lg:flex-row lg:items-center gap-3 mb-6">
-        <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-xl p-1 flex-shrink-0">
+        <div className="flex flex-wrap items-center gap-1 bg-white border border-slate-200 rounded-xl p-1 flex-shrink-0">
           {TAB_CONFIG.map((t) => (
             <button
               key={t.key}
@@ -89,7 +93,7 @@ export default function ReportsPage() {
           )}
         </span>
         <span className="text-slate-400 text-xs">
-          {tab === 'inventory' ? 'Exports use current inventory snapshot' : 'Sales report data filtered to this period'}
+          {tab === 'inventory' ? 'Exports use current inventory snapshot' : 'Report data filtered to this period'}
         </span>
       </div>
 
@@ -101,7 +105,7 @@ export default function ReportsPage() {
               { label: 'Total Revenue',         value: `₵${totalRevenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}`,         icon: 'ri-funds-line',        color: 'emerald', note: 'Collected sales' },
               { label: 'Total Expenses',         value: `₵${totalExpenses.toLocaleString('en-US', { minimumFractionDigits: 2 })}`,        icon: 'ri-wallet-3-line',     color: 'amber',   note: 'Expenses in period' },
               { label: 'Net Profit',             value: `₵${netProfit.toLocaleString('en-US', { minimumFractionDigits: 2 })}`,            icon: 'ri-coins-line',        color: netProfit >= 0 ? 'emerald' : 'rose', note: netProfit >= 0 ? 'Revenue minus expenses' : 'Running at a loss' },
-              { label: 'Customer Receivables',   value: `₵${customerReceivables.toLocaleString('en-US', { minimumFractionDigits: 2 })}`,  icon: 'ri-hand-coin-line',    color: 'violet',  note: 'Outstanding credit balances' },
+              { label: 'Customer Receivables',   value: `₵${customerReceivables.toLocaleString('en-US', { minimumFractionDigits: 2 })}`,  icon: 'ri-hand-coin-line',    color: 'violet',  note: `${filteredCreditInvoices.length} credit invoice${filteredCreditInvoices.length !== 1 ? 's' : ''}` },
             ].map((s) => {
               const c = colorMap[s.color] || colorMap.indigo;
               return (
@@ -220,8 +224,9 @@ export default function ReportsPage() {
         </div>
       )}
 
-      {tab === 'sales'     && <SalesReport filter={filter} />}
+      {tab === 'sales' && <SalesReport filter={filter} />}
       {tab === 'inventory' && <InventoryReport />}
+      {tab === 'customer-receivables' && <CustomerReceivablesReport filter={filter} />}
     </AppLayout>
   );
 }

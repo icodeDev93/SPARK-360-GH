@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Supplier, PurchaseOrder } from '@/mocks/suppliers';
 import { supabase } from '@/lib/supabase';
+import { sanitizeEmail, sanitizeMultiline, sanitizeText } from '@/lib/sanitize';
 
 const toDateValue = (value: string) => {
   if (!value || value === 'TBD') return null;
@@ -62,6 +63,39 @@ const toPurchaseOrder = (r: PurchaseRow): PurchaseOrder => ({
   notes: r.notes ?? '',
 });
 
+const cleanSupplier = (supplier: Omit<Supplier, 'id' | 'totalOrders' | 'totalSpent'>): Omit<Supplier, 'id' | 'totalOrders' | 'totalSpent'> => ({
+  ...supplier,
+  name: sanitizeText(supplier.name),
+  contact: sanitizeText(supplier.contact),
+  phone: sanitizeText(supplier.phone),
+  email: sanitizeEmail(supplier.email),
+  address: sanitizeText(supplier.address),
+  category: sanitizeText(supplier.category),
+  joinedDate: sanitizeText(supplier.joinedDate),
+  notes: sanitizeMultiline(supplier.notes),
+});
+
+const cleanSupplierPatch = (data: Partial<Omit<Supplier, 'id'>>): Partial<Omit<Supplier, 'id'>> => ({
+  ...data,
+  ...(data.name !== undefined ? { name: sanitizeText(data.name) } : {}),
+  ...(data.contact !== undefined ? { contact: sanitizeText(data.contact) } : {}),
+  ...(data.phone !== undefined ? { phone: sanitizeText(data.phone) } : {}),
+  ...(data.email !== undefined ? { email: sanitizeEmail(data.email) } : {}),
+  ...(data.address !== undefined ? { address: sanitizeText(data.address) } : {}),
+  ...(data.category !== undefined ? { category: sanitizeText(data.category) } : {}),
+  ...(data.joinedDate !== undefined ? { joinedDate: sanitizeText(data.joinedDate) } : {}),
+  ...(data.notes !== undefined ? { notes: sanitizeMultiline(data.notes) } : {}),
+});
+
+const cleanOrder = (order: Omit<PurchaseOrder, 'id'>): Omit<PurchaseOrder, 'id'> => ({
+  ...order,
+  supplierId: sanitizeText(order.supplierId),
+  supplierName: sanitizeText(order.supplierName),
+  date: sanitizeText(order.date),
+  expectedDate: sanitizeText(order.expectedDate),
+  notes: sanitizeMultiline(order.notes),
+});
+
 export function useSuppliers() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
@@ -92,7 +126,8 @@ export function useSuppliers() {
   }, []);
 
   const addSupplier = async (data: Omit<Supplier, 'id' | 'totalOrders' | 'totalSpent'>) => {
-    const newSup: Supplier = { ...data, id: 'Pending...', totalOrders: 0, totalSpent: 0 };
+    const cleanData = cleanSupplier(data);
+    const newSup: Supplier = { ...cleanData, id: 'Pending...', totalOrders: 0, totalSpent: 0 };
     setSuppliers((prev) => [newSup, ...prev]);
     const { data: inserted, error } = await supabase.from('suppliers').insert({
       name: newSup.name, contact_name: newSup.contact, phone: newSup.phone,
@@ -107,11 +142,12 @@ export function useSuppliers() {
   };
 
   const updateSupplier = async (id: string, data: Partial<Omit<Supplier, 'id'>>) => {
-    setSuppliers((prev) => prev.map((s) => s.id === id ? { ...s, ...data } : s));
+    const cleanData = cleanSupplierPatch(data);
+    setSuppliers((prev) => prev.map((s) => s.id === id ? { ...s, ...cleanData } : s));
     const { error } = await supabase.from('suppliers').update({
-      name: data.name, contact_name: data.contact, phone: data.phone, email: data.email,
-      address: data.address, category: data.category, status: data.status,
-      joined_date: data.joinedDate ? toDateValue(data.joinedDate) : undefined, notes: data.notes,
+      name: cleanData.name, contact_name: cleanData.contact, phone: cleanData.phone, email: cleanData.email,
+      address: cleanData.address, category: cleanData.category, status: cleanData.status,
+      joined_date: cleanData.joinedDate ? toDateValue(cleanData.joinedDate) : undefined, notes: cleanData.notes,
     }).eq('supplier_code', id);
     if (error) console.error(error);
   };
@@ -123,11 +159,12 @@ export function useSuppliers() {
   };
 
   const addOrder = async (data: Omit<PurchaseOrder, 'id'>) => {
-    const newOrder: PurchaseOrder = { ...data, id: 'Pending...' };
+    const cleanData = cleanOrder(data);
+    const newOrder: PurchaseOrder = { ...cleanData, id: 'Pending...' };
     setOrders((prev) => [newOrder, ...prev]);
     setSuppliers((prev) => prev.map((s) =>
-      s.id === data.supplierId
-        ? { ...s, totalOrders: s.totalOrders + 1, totalSpent: s.totalSpent + data.total }
+      s.id === cleanData.supplierId
+        ? { ...s, totalOrders: s.totalOrders + 1, totalSpent: s.totalSpent + cleanData.total }
         : s
     ));
     const { data: inserted, error } = await supabase.from('purchases').insert({

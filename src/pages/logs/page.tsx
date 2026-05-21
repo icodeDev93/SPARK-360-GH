@@ -21,7 +21,10 @@ const CATEGORY_META: Record<LogCategory, { label: string; icon: string; color: s
   inventory: { label: 'Inventory',   icon: 'ri-archive-drawer-line',     color: 'text-violet-700',  bg: 'bg-violet-100' },
   expenses:  { label: 'Expenses',    icon: 'ri-wallet-3-line',           color: 'text-amber-700',   bg: 'bg-amber-100' },
   customers: { label: 'Customers',   icon: 'ri-group-line',              color: 'text-cyan-700',    bg: 'bg-cyan-100' },
+  credit:    { label: 'Credit',      icon: 'ri-hand-coin-line',          color: 'text-purple-700',  bg: 'bg-purple-100' },
+  'bank-deposit': { label: 'Bank Deposit', icon: 'ri-bank-card-line',     color: 'text-blue-700',    bg: 'bg-blue-100' },
   purchases: { label: 'Purchases',   icon: 'ri-store-3-line',            color: 'text-teal-700',    bg: 'bg-teal-100' },
+  suppliers: { label: 'Suppliers',   icon: 'ri-truck-line',              color: 'text-orange-700',  bg: 'bg-orange-100' },
   users:     { label: 'Users',       icon: 'ri-user-settings-line',      color: 'text-rose-700',    bg: 'bg-rose-100' },
   settings:  { label: 'Settings',    icon: 'ri-settings-3-line',         color: 'text-slate-700',   bg: 'bg-slate-100' },
   auth:      { label: 'Auth',        icon: 'ri-shield-keyhole-line',     color: 'text-emerald-700', bg: 'bg-emerald-100' },
@@ -37,7 +40,7 @@ const ACTION_META: Record<LogAction, { label: string; color: string; bg: string 
   complete: { label: 'Completed', color: 'text-indigo-700',  bg: 'bg-indigo-100' },
 };
 
-const ALL_CATEGORIES: LogCategory[] = ['sales', 'inventory', 'expenses', 'customers', 'purchases', 'users', 'settings', 'auth'];
+const ALL_CATEGORIES: LogCategory[] = ['sales', 'inventory', 'expenses', 'customers', 'credit', 'bank-deposit', 'purchases', 'suppliers', 'users', 'settings', 'auth'];
 const ALL_ACTIONS: LogAction[] = ['create', 'edit', 'delete', 'login', 'logout', 'refund', 'complete'];
 
 function fullTime(iso: string) {

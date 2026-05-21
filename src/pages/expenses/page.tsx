@@ -6,9 +6,10 @@ const PAGE_SIZE = 20;
 import { useExpenses } from '@/hooks/useExpenses';
 import { EXPENSE_CATEGORIES } from '@/mocks/expenses';
 import ExpenseForm from './components/ExpenseForm';
-import type { ExpenseRecord, PaymentMethod } from '@/types/erp';
+import type { ExpenseRecord, ExpensePaymentMethod } from '@/types/erp';
 import { useAuth } from '@/hooks/useAuth';
 import { writeLog, diffFields } from '@/lib/activityLog';
+import { useFeedbackModal } from '@/hooks/useFeedbackModal';
 
 const CATEGORY_COLORS: Record<string, string> = {
   Rent:        'bg-emerald-100 text-emerald-700',
@@ -34,7 +35,7 @@ const CATEGORY_ICONS: Record<string, string> = {
   Other:       'ri-more-line',
 };
 
-const PAYMENT_ICONS: Record<PaymentMethod, string> = {
+const PAYMENT_ICONS: Record<ExpensePaymentMethod, string> = {
   Cash:            'ri-money-dollar-circle-line',
   MoMo:            'ri-smartphone-line',
   Cheque:          'ri-file-list-3-line',
@@ -57,6 +58,7 @@ function formatDate(iso: string) {
 export default function ExpensesPage() {
   const { expenses, addExpense, updateExpense, deleteExpense, totalByCategory, grandTotalGHS } = useExpenses();
   const { currentUser } = useAuth();
+  const { showFeedback } = useFeedbackModal();
   const [showForm, setShowForm]           = useState(false);
   const [editTarget, setEditTarget]       = useState<ExpenseRecord | null>(null);
   const [deleteTarget, setDeleteTarget]   = useState<string | null>(null);
@@ -101,6 +103,11 @@ export default function ExpensesPage() {
         description: `Added expense "${data.description}" — ${data.category}, ₵${data.amountGHS.toFixed(2)} via ${data.paidBy}`,
       });
     }
+    showFeedback({
+      title: editTarget ? 'Expense Updated' : 'Expense Recorded',
+      message: `${data.description} has been ${editTarget ? 'updated' : 'recorded'} successfully.`,
+      buttonLabel: 'Continue',
+    });
     setEditTarget(null);
   };
 
@@ -353,6 +360,12 @@ export default function ExpensesPage() {
                   description: `Deleted expense "${target.description}" — ${target.category}, ₵${target.amountGHS.toFixed(2)}`,
                 });
                 setDeleteTarget(null);
+                showFeedback({
+                  title: 'Expense Deleted',
+                  message: `${target?.description ?? 'The expense'} has been removed successfully.`,
+                  buttonLabel: 'Continue',
+                  kind: 'deleted',
+                });
               }} className="flex-1 py-2.5 rounded-lg bg-red-500 hover:bg-red-600 text-white text-sm font-bold cursor-pointer whitespace-nowrap">Delete</button>
             </div>
           </div>

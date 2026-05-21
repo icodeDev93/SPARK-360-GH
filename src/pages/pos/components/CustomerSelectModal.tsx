@@ -1,13 +1,13 @@
 import { useState } from 'react';
-import type { Customer, CustomerType, PaymentMethod } from '@/types/erp';
-import { sanitizeText, sanitizeEmail, isValidEmail } from '@/lib/sanitize';
+import type { Customer, CustomerStatus, PaymentMethod } from '@/types/erp';
+import { sanitizeText, sanitizeMultiline } from '@/lib/sanitize';
 
 type Step = 'select' | 'phone' | 'found' | 'not_found' | 'add_form';
 
 interface Props {
   customers: Customer[];
   addCustomer: (
-    data: Omit<Customer, 'customerId' | 'totalPurchases' | 'outstandingBalance' | 'lastOrderDate'>
+    data: Omit<Customer, 'customerId' | 'totalPurchases' | 'lastOrderDate'>
   ) => Promise<Customer>;
   onComplete: (customerId: string | null, customerName: string) => void;
   onCancel: () => void;
@@ -25,9 +25,12 @@ export default function CustomerSelectModal({ customers, addCustomer, onComplete
   const [form, setForm] = useState({
     fullName: '',
     phone: '',
-    email: '',
     address: '',
-    customerType: 'Retail' as CustomerType,
+    remarks: '',
+    debtLimit: '0.00',
+    visitingDay: 'Sunday',
+    statusFlag: 'Active' as CustomerStatus,
+    outstandingBalance: '0.00',
   });
 
   const handlePhoneSearch = () => {
@@ -50,18 +53,22 @@ export default function CustomerSelectModal({ customers, addCustomer, onComplete
     setFormError('');
     if (!form.fullName.trim()) { setFormError('Full name is required.'); return; }
     if (!form.phone.trim()) { setFormError('Phone number is required.'); return; }
-    if (form.email.trim() && !isValidEmail(form.email.trim())) { setFormError('Invalid email address.'); return; }
     setSaving(true);
     try {
       const cleanName = sanitizeText(form.fullName);
       const saved = await addCustomer({
         fullName: cleanName,
         phone: sanitizeText(form.phone),
-        email: sanitizeEmail(form.email),
-        customerType: form.customerType,
-        statusFlag: 'Active',
+        email: '',
+        customerType: 'Retail',
+        address: sanitizeText(form.address),
+        remarks: sanitizeMultiline(form.remarks),
+        debtLimit: Math.max(0, parseFloat(form.debtLimit) || 0),
+        visitingDay: form.visitingDay,
+        outstandingBalance: Math.max(0, parseFloat(form.outstandingBalance) || 0),
+        statusFlag: form.statusFlag,
         avatar: getInitials(cleanName),
-        notes: form.address.trim() || undefined,
+        notes: sanitizeMultiline(form.remarks) || undefined,
       });
       onComplete(saved.customerId, saved.fullName);
     } finally {
@@ -70,8 +77,8 @@ export default function CustomerSelectModal({ customers, addCustomer, onComplete
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl w-full max-w-sm mx-4 flex flex-col overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl w-full max-w-sm mx-4 flex max-h-[92vh] flex-col overflow-hidden">
 
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
@@ -115,7 +122,7 @@ export default function CustomerSelectModal({ customers, addCustomer, onComplete
         </div>
 
         {/* Body */}
-        <div className="px-6 py-5">
+        <div className="px-6 py-5 overflow-y-auto">
 
           {/* ── Step: select ── */}
           {step === 'select' && (
@@ -198,12 +205,14 @@ export default function CustomerSelectModal({ customers, addCustomer, onComplete
                 <div className="flex-1 min-w-0">
                   <p className="text-slate-800 font-semibold text-sm truncate">{foundCustomer.fullName}</p>
                   <p className="text-slate-500 text-xs">{foundCustomer.phone}</p>
-                  {foundCustomer.email && (
-                    <p className="text-slate-400 text-xs truncate">{foundCustomer.email}</p>
+                  {foundCustomer.address && (
+                    <p className="text-slate-400 text-xs truncate">{foundCustomer.address}</p>
                   )}
                 </div>
-                <span className="flex-shrink-0 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-xs font-semibold">
-                  {foundCustomer.customerType}
+                <span className={`flex-shrink-0 px-2 py-0.5 rounded-full text-xs font-semibold ${
+                  foundCustomer.statusFlag === 'Active' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'
+                }`}>
+                  {foundCustomer.statusFlag}
                 </span>
               </div>
 
@@ -286,18 +295,6 @@ export default function CustomerSelectModal({ customers, addCustomer, onComplete
                 />
               </div>
 
-              {/* Email */}
-              <div>
-                <label className="block text-slate-700 text-xs font-semibold mb-1">Email</label>
-                <input
-                  type="email"
-                  value={form.email}
-                  onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
-                  placeholder="Optional"
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm text-slate-800 placeholder-slate-400 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all"
-                />
-              </div>
-
               {/* Address */}
               <div>
                 <label className="block text-slate-700 text-xs font-semibold mb-1">Address</label>
@@ -310,25 +307,67 @@ export default function CustomerSelectModal({ customers, addCustomer, onComplete
                 />
               </div>
 
-              {/* Customer Type */}
               <div>
-                <label className="block text-slate-700 text-xs font-semibold mb-1">Customer Type</label>
-                <div className="flex gap-2">
-                  {(['Retail', 'Wholesale'] as CustomerType[]).map((type) => (
-                    <button
-                      key={type}
-                      type="button"
-                      onClick={() => setForm((p) => ({ ...p, customerType: type }))}
-                      className={`flex-1 py-2 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
-                        form.customerType === type
-                          ? 'bg-indigo-600 border-indigo-600 text-white'
-                          : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-300'
-                      }`}
-                    >
-                      {type}
-                    </button>
+                <label className="block text-slate-700 text-xs font-semibold mb-1">Remarks</label>
+                <input
+                  type="text"
+                  value={form.remarks}
+                  onChange={(e) => setForm((p) => ({ ...p, remarks: e.target.value }))}
+                  placeholder="Optional"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm text-slate-800 placeholder-slate-400 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-700 text-xs font-semibold mb-1">Debt Limit</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={form.debtLimit}
+                  onChange={(e) => setForm((p) => ({ ...p, debtLimit: e.target.value }))}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm text-slate-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all font-mono"
+                />
+                <p className="text-slate-400 text-[11px] mt-1">0 means UNLIMITED.</p>
+              </div>
+
+              <div>
+                <label className="block text-slate-700 text-xs font-semibold mb-1">Visiting Day</label>
+                <select
+                  value={form.visitingDay}
+                  onChange={(e) => setForm((p) => ({ ...p, visitingDay: e.target.value }))}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm text-slate-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all bg-white"
+                >
+                  {['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((day) => (
+                    <option key={day} value={day}>{day}</option>
                   ))}
-                </div>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-slate-700 text-xs font-semibold mb-1">Status</label>
+                <select
+                  value={form.statusFlag}
+                  onChange={(e) => setForm((p) => ({ ...p, statusFlag: e.target.value as CustomerStatus }))}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm text-slate-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all bg-white"
+                >
+                  {['Active', 'Inactive', 'Blocked'].map((status) => (
+                    <option key={status} value={status}>{status}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-slate-700 text-xs font-semibold mb-1">Balance</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={form.outstandingBalance}
+                  onChange={(e) => setForm((p) => ({ ...p, outstandingBalance: e.target.value }))}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm text-slate-800 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all font-mono"
+                />
+                <p className="text-slate-400 text-[11px] mt-1">This is not editable after saving.</p>
               </div>
 
               {/* Error */}

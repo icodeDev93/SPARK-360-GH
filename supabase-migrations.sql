@@ -21,11 +21,41 @@ CREATE TABLE IF NOT EXISTS credit_payments (
   id             UUID        DEFAULT gen_random_uuid() PRIMARY KEY,
   customer_id    UUID        REFERENCES customers(id) ON DELETE CASCADE,
   sale_id        TEXT,
+  invoice_number TEXT,
+  receipt_id     UUID        REFERENCES receipts(id) ON DELETE SET NULL,
   amount         NUMERIC(12,2) NOT NULL CHECK (amount > 0),
   payment_method TEXT        NOT NULL,
   notes          TEXT        DEFAULT '',
   created_at     TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE sales
+  ADD COLUMN IF NOT EXISTS invoice_number TEXT;
+
+UPDATE sales
+SET invoice_number = receipt_number
+WHERE invoice_number IS NULL;
+
+ALTER TABLE sales
+  ALTER COLUMN invoice_number SET NOT NULL;
+
+ALTER TABLE sales
+  ALTER COLUMN receipt_number DROP NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS sales_invoice_number_key
+ON sales(invoice_number);
+
+CREATE INDEX IF NOT EXISTS idx_credit_payments_invoice_number
+ON credit_payments(invoice_number);
+
+CREATE INDEX IF NOT EXISTS idx_credit_payments_receipt_id
+ON credit_payments(receipt_id);
+
+ALTER TABLE receipts
+  DROP CONSTRAINT IF EXISTS receipts_sale_id_key;
+
+CREATE INDEX IF NOT EXISTS idx_receipts_sale_id
+ON receipts(sale_id);
 
 -- 5. Enable real-time for credit_payments (safe to re-run)
 DO $$
@@ -143,3 +173,165 @@ SELECT
   (SELECT COUNT(*) FROM information_schema.check_constraints
     WHERE constraint_name='sales_payment_method_check'
       AND check_clause LIKE '%Credit%')                                      AS payment_method_allows_credit;
+
+-- ============================================================
+-- 12. Inventory product structure fields
+-- ============================================================
+ALTER TABLE public.inventory
+  ADD COLUMN IF NOT EXISTS wholesale_cost_price NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (wholesale_cost_price >= 0),
+  ADD COLUMN IF NOT EXISTS single_cost_price NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (single_cost_price >= 0),
+  ADD COLUMN IF NOT EXISTS wholesale_selling_price NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (wholesale_selling_price >= 0),
+  ADD COLUMN IF NOT EXISTS half_selling_price NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (half_selling_price >= 0),
+  ADD COLUMN IF NOT EXISTS quarter_selling_price NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (quarter_selling_price >= 0),
+  ADD COLUMN IF NOT EXISTS single_selling_price NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (single_selling_price >= 0),
+  ADD COLUMN IF NOT EXISTS wholesale_quantity NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (wholesale_quantity >= 0),
+  ADD COLUMN IF NOT EXISTS single_quantity INTEGER NOT NULL DEFAULT 0 CHECK (single_quantity >= 0),
+  ADD COLUMN IF NOT EXISTS quantity_per_box INTEGER NOT NULL DEFAULT 0 CHECK (quantity_per_box >= 0),
+  ADD COLUMN IF NOT EXISTS stock_limit INTEGER NOT NULL DEFAULT 0 CHECK (stock_limit >= 0),
+  ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS price_levels JSONB NOT NULL DEFAULT '[]'::JSONB;
+
+UPDATE public.inventory
+SET
+  single_cost_price = CASE WHEN single_cost_price = 0 THEN cost_price ELSE single_cost_price END,
+  single_selling_price = CASE WHEN single_selling_price = 0 THEN selling_price ELSE single_selling_price END,
+  wholesale_cost_price = CASE WHEN wholesale_cost_price = 0 THEN cost_price ELSE wholesale_cost_price END,
+  wholesale_selling_price = CASE WHEN wholesale_selling_price = 0 THEN selling_price ELSE wholesale_selling_price END,
+  single_quantity = CASE WHEN single_quantity = 0 THEN current_stock ELSE single_quantity END,
+  stock_limit = CASE WHEN stock_limit = 0 THEN reorder_level ELSE stock_limit END;
+
+NOTIFY pgrst, 'reload schema';
+
+-- ============================================================
+-- 15. Sync role permissions for current pages
+-- ============================================================
+UPDATE public.role_permissions
+SET permissions = array_append(permissions, 'credit')
+WHERE role IN ('manager', 'cashier')
+  AND 'customers' = ANY(permissions)
+  AND NOT 'credit' = ANY(permissions);
+
+UPDATE public.role_permissions
+SET permissions = array_append(permissions, 'bank-deposit')
+WHERE role IN ('manager', 'cashier')
+  AND 'expenses' = ANY(permissions)
+  AND NOT 'bank-deposit' = ANY(permissions);
+
+NOTIFY pgrst, 'reload schema';
+
+-- ============================================================
+-- 14. Bank master records for deposit dropdown
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.banks (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  bank_name TEXT NOT NULL CHECK (btrim(bank_name) <> ''),
+  branch TEXT NOT NULL CHECK (btrim(branch) <> ''),
+  address TEXT NOT NULL CHECK (btrim(address) <> ''),
+  telephone TEXT NOT NULL CHECK (btrim(telephone) <> ''),
+  created_by TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (bank_name, branch)
+);
+
+ALTER TABLE public.bank_deposits
+  ADD COLUMN IF NOT EXISTS bank_id UUID REFERENCES public.banks(id) ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS idx_banks_bank_name ON public.banks(bank_name);
+CREATE INDEX IF NOT EXISTS idx_bank_deposits_bank_id ON public.bank_deposits(bank_id);
+
+DROP TRIGGER IF EXISTS set_banks_updated_at ON public.banks;
+CREATE TRIGGER set_banks_updated_at BEFORE UPDATE ON public.banks
+FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+DROP TRIGGER IF EXISTS set_bank_created_by ON public.banks;
+CREATE TRIGGER set_bank_created_by BEFORE INSERT ON public.banks
+FOR EACH ROW EXECUTE FUNCTION public.set_expense_created_by();
+
+ALTER TABLE public.banks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.banks FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "banks_select_backoffice" ON public.banks;
+CREATE POLICY "banks_select_backoffice"
+ON public.banks FOR SELECT
+TO authenticated
+USING (public.is_backoffice_user());
+
+DROP POLICY IF EXISTS "banks_manage_backoffice" ON public.banks;
+CREATE POLICY "banks_manage_backoffice"
+ON public.banks FOR ALL
+TO authenticated
+USING (public.is_backoffice_user())
+WITH CHECK (public.is_backoffice_user());
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime'
+      AND schemaname = 'public'
+      AND tablename = 'banks'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.banks;
+  END IF;
+END $$;
+
+NOTIFY pgrst, 'reload schema';
+
+-- ============================================================
+-- 13. Bank deposit records
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.bank_deposits (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  deposit_date DATE NOT NULL DEFAULT current_date,
+  bank_name TEXT NOT NULL CHECK (btrim(bank_name) <> ''),
+  account_no TEXT NOT NULL CHECK (btrim(account_no) <> ''),
+  amount NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (amount > 0),
+  remarks TEXT,
+  created_by TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_bank_deposits_deposit_date ON public.bank_deposits(deposit_date DESC);
+CREATE INDEX IF NOT EXISTS idx_bank_deposits_bank_name ON public.bank_deposits(bank_name);
+
+DROP TRIGGER IF EXISTS set_bank_deposits_updated_at ON public.bank_deposits;
+CREATE TRIGGER set_bank_deposits_updated_at BEFORE UPDATE ON public.bank_deposits
+FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+DROP TRIGGER IF EXISTS set_bank_deposit_created_by ON public.bank_deposits;
+CREATE TRIGGER set_bank_deposit_created_by BEFORE INSERT ON public.bank_deposits
+FOR EACH ROW EXECUTE FUNCTION public.set_expense_created_by();
+
+ALTER TABLE public.bank_deposits ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.bank_deposits FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "bank_deposits_select_backoffice" ON public.bank_deposits;
+CREATE POLICY "bank_deposits_select_backoffice"
+ON public.bank_deposits FOR SELECT
+TO authenticated
+USING (public.is_backoffice_user());
+
+DROP POLICY IF EXISTS "bank_deposits_manage_backoffice" ON public.bank_deposits;
+CREATE POLICY "bank_deposits_manage_backoffice"
+ON public.bank_deposits FOR ALL
+TO authenticated
+USING (public.is_backoffice_user())
+WITH CHECK (public.is_backoffice_user());
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime'
+      AND schemaname = 'public'
+      AND tablename = 'bank_deposits'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.bank_deposits;
+  END IF;
+END $$;
+
+NOTIFY pgrst, 'reload schema';

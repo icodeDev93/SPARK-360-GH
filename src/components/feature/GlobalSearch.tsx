@@ -28,6 +28,7 @@ const PAGES: SearchResult[] = [
   { id: 'p-sup',       category: 'Pages', icon: 'ri-truck-line',           iconBg: 'bg-indigo-50',  iconColor: 'text-indigo-500', title: 'Suppliers',          subtitle: 'Manage suppliers',             route: '/suppliers' },
   { id: 'p-cus',       category: 'Pages', icon: 'ri-user-line',            iconBg: 'bg-indigo-50',  iconColor: 'text-indigo-500', title: 'Customers',          subtitle: 'Customer management',          route: '/customers' },
   { id: 'p-exp',       category: 'Pages', icon: 'ri-wallet-3-line',        iconBg: 'bg-indigo-50',  iconColor: 'text-indigo-500', title: 'Expenses',           subtitle: 'Expense tracking',             route: '/expenses' },
+  { id: 'p-bank',      category: 'Pages', icon: 'ri-bank-card-line',       iconBg: 'bg-indigo-50',  iconColor: 'text-indigo-500', title: 'Bank Deposit',       subtitle: 'Record bank deposits',         route: '/bank-deposit' },
   { id: 'p-ana',       category: 'Pages', icon: 'ri-bar-chart-box-line',   iconBg: 'bg-indigo-50',  iconColor: 'text-indigo-500', title: 'Analytics & Reports', subtitle: 'Charts, KPIs and exports',   route: '/analytics' },
   { id: 'p-set',       category: 'Pages', icon: 'ri-settings-3-line',      iconBg: 'bg-indigo-50',  iconColor: 'text-indigo-500', title: 'Settings',           subtitle: 'App configuration',            route: '/settings' },
   { id: 'p-usr',       category: 'Pages', icon: 'ri-team-line',            iconBg: 'bg-indigo-50',  iconColor: 'text-indigo-500', title: 'User Management',    subtitle: 'Manage staff accounts',        route: '/users' },
@@ -144,19 +145,20 @@ export default function GlobalSearch() {
       route:      '/customers',
     }));
 
-    // Receipts
+    // Sales documents
     invoices.filter(inv =>
-      inv.receiptNo.toLowerCase().includes(q) ||
+      inv.invoiceNo.toLowerCase().includes(q) ||
+      (inv.receiptNo ?? '').toLowerCase().includes(q) ||
       inv.customerName.toLowerCase().includes(q) ||
       inv.cashier.toLowerCase().includes(q) ||
       inv.paymentMethod.toLowerCase().includes(q)
     ).slice(0, 5).forEach(inv => out.push({
       id:         `receipt-${inv.invoiceNo}`,
-      category:   'Receipts',
+      category:   inv.receiptNo ? 'Receipts' : 'Invoices',
       icon:       'ri-receipt-line',
       iconBg:     'bg-violet-50',
       iconColor:  'text-violet-600',
-      title:      inv.receiptNo,
+      title:      inv.receiptNo ?? inv.invoiceNo,
       subtitle:   `${inv.customerName} · ${fmt(inv.netSales)} · ${inv.date}`,
       badge:      inv.status,
       route:      '/sales-history',

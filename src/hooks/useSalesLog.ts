@@ -1,14 +1,16 @@
-import { useState, useEffect } from 'react';
-import type { InvoiceRecord, SaleLineItem, PaymentMethod } from '@/types/erp';
-import { generateNextInvoiceNo, buildInvoice, refundInvoice, calcLineItem, calcInvoiceTotals } from '@/services/salesService';
+import { useState, useEffect, useRef } from 'react';
+import type { CreditPayment, InvoiceRecord, SaleLineItem, PaymentMethod } from '@/types/erp';
+import { generateNextInvoiceNo, generateReceiptNo, buildInvoice, refundInvoice, calcLineItem, calcInvoiceTotals } from '@/services/salesService';
 import { supabase } from '@/lib/supabase';
+import { sanitizeMultiline, sanitizeText } from '@/lib/sanitize';
 
 export type { InvoiceRecord, SaleLineItem, PaymentMethod };
 
 export { calcLineItem };
 
 export interface SaleRecord {
-  receiptNo: string;
+  invoiceNo: string;
+  receiptNo: string | null;
   date: string;
   time: string;
   cashier: string;
@@ -29,6 +31,7 @@ const SEED_INVOICES: InvoiceRecord[] = [
       calcLineItem('P006', 'Bourbon Biscuits (150g)', 48, 0, 18.00, 12.00),
     ],
     netSales: 1264, totalCost: 826, grossMargin: 438,
+    amountPaid: 1264, balanceDue: 0,
     paymentMethod: 'MoMo', status: 'completed', cashier: 'Ama Owusu',
   },
   {
@@ -38,6 +41,7 @@ const SEED_INVOICES: InvoiceRecord[] = [
       calcLineItem('P001', 'Pringles Original (165g)', 24, 0, 42.00, 28.00),
     ],
     netSales: 2088, totalCost: 1332, grossMargin: 756,
+    amountPaid: 2088, balanceDue: 0,
     paymentMethod: 'Bank Transfer', status: 'completed', cashier: 'Kwame Mensah',
   },
   {
@@ -47,6 +51,7 @@ const SEED_INVOICES: InvoiceRecord[] = [
       calcLineItem('P012', "Wrigley's Spearmint Gum (10s)", 200, 0, 5.00, 3.00),
     ],
     netSales: 2950, totalCost: 1950, grossMargin: 1000,
+    amountPaid: 2950, balanceDue: 0,
     paymentMethod: 'Cheque', status: 'completed', cashier: 'Ama Owusu',
   },
   {
@@ -56,6 +61,7 @@ const SEED_INVOICES: InvoiceRecord[] = [
       calcLineItem('P008', 'Choco Mallow (Pack of 6)', 20, 0, 14.00, 8.00),
     ],
     netSales: 760, totalCost: 448, grossMargin: 312,
+    amountPaid: 760, balanceDue: 0,
     paymentMethod: 'Cash', status: 'refunded', cashier: 'Kwame Mensah',
   },
   {
@@ -65,6 +71,7 @@ const SEED_INVOICES: InvoiceRecord[] = [
       calcLineItem('P013', 'FanChoco Bar (50g)', 100, 0, 10.00, 6.00),
     ],
     netSales: 3400, totalCost: 2040, grossMargin: 1360,
+    amountPaid: 3400, balanceDue: 0,
     paymentMethod: 'Bank Transfer', status: 'completed', cashier: 'Ama Owusu',
   },
   {
@@ -74,12 +81,13 @@ const SEED_INVOICES: InvoiceRecord[] = [
       calcLineItem('P007', 'Kit Kat 4-Finger (41.5g)', 24, 0, 16.00, 10.00),
     ],
     netSales: 648, totalCost: 420, grossMargin: 228,
+    amountPaid: 648, balanceDue: 0,
     paymentMethod: 'MoMo', status: 'completed', cashier: 'Kwame Mensah',
   },
 ];
 
 type InvoiceRow = {
-  id: string; receipt_number: string; sale_date: string;
+  id: string; invoice_number: string | null; receipt_number: string | null; sale_date: string;
   customer_id: string | null;
   customer_name: string; total_amount: number; total_cost: number; gross_margin: number;
   payment_method: string; status: string; cashier: string | null;
@@ -90,6 +98,19 @@ type InvoiceRow = {
 
 type ReceiptRow = {
   receipt_number: string;
+};
+
+type CreditPaymentRow = {
+  id?: string;
+  customer_id?: string | null;
+  sale_id: string | null;
+  invoice_number: string | null;
+  receipt_id?: string | null;
+  amount: number;
+  payment_method?: string | null;
+  notes?: string | null;
+  created_at?: string | null;
+  receipts?: ReceiptRow | ReceiptRow[] | null;
 };
 
 type ItemRow = {
@@ -108,25 +129,109 @@ const toLineItem = (i: ItemRow): SaleLineItem => {
   };
 };
 
-const receiptNumberFromRow = (r: InvoiceRow): string => {
-  if (Array.isArray(r.receipts)) return r.receipts[0]?.receipt_number ?? r.receipt_number;
-  return r.receipts?.receipt_number ?? r.receipt_number;
+const invoiceNumberFromRow = (r: InvoiceRow): string => r.invoice_number ?? r.receipt_number ?? r.id;
+
+const joinedReceiptNumberFromRow = (r: InvoiceRow): string | null => {
+  if (Array.isArray(r.receipts)) return r.receipts[0]?.receipt_number ?? null;
+  return r.receipts?.receipt_number ?? null;
 };
 
-const toInvoice = (r: InvoiceRow): InvoiceRecord => ({
-  invoiceNo: r.receipt_number, receiptNo: receiptNumberFromRow(r),
-  date: r.sale_date, customerId: r.customer_id ?? '',
-  customerName: r.customer_name, netSales: r.total_amount, totalCost: r.total_cost,
-  grossMargin: r.gross_margin, paymentMethod: r.payment_method as PaymentMethod,
-  status: r.status as InvoiceRecord['status'], cashier: r.cashier ?? '',
-  items: (r.sale_items ?? []).map(toLineItem),
+const receiptNumberFromRow = (r: InvoiceRow): string | null => {
+  if (r.receipt_number && !/^INV\d+$/i.test(r.receipt_number)) return r.receipt_number;
+  const receiptNo = joinedReceiptNumberFromRow(r);
+  if (receiptNo) return receiptNo;
+  return null;
+};
+
+const paymentTotalForRow = (r: InvoiceRow, paymentsByKey: Map<string, number>): number => {
+  const invoiceNo = invoiceNumberFromRow(r);
+  return Math.min(r.total_amount, paymentsByKey.get(invoiceNo) ?? paymentsByKey.get(r.id) ?? 0);
+};
+
+const toInvoice = (r: InvoiceRow, paymentsByKey = new Map<string, number>()): InvoiceRecord => {
+  const amountPaid = paymentTotalForRow(r, paymentsByKey);
+  const balanceDue = Math.max(0, r.total_amount - amountPaid);
+  const isPaidSale = r.status === 'completed' || r.status === 'refunded';
+
+  return {
+    invoiceNo: invoiceNumberFromRow(r), receiptNo: receiptNumberFromRow(r),
+    date: r.sale_date, customerId: r.customer_id ?? '',
+    customerName: r.customer_name, netSales: r.total_amount, totalCost: r.total_cost,
+    grossMargin: r.gross_margin,
+    amountPaid: isPaidSale && amountPaid === 0 ? r.total_amount : amountPaid,
+    balanceDue: isPaidSale ? 0 : balanceDue,
+    paymentMethod: r.payment_method as PaymentMethod,
+    status: r.status as InvoiceRecord['status'], cashier: r.cashier ?? '',
+    items: (r.sale_items ?? []).map(toLineItem),
+  };
+};
+
+const toCreditPayment = (payment: CreditPaymentRow): CreditPayment => ({
+  id: payment.id ?? `${payment.sale_id ?? payment.invoice_number ?? 'payment'}-${payment.created_at ?? Date.now()}`,
+  customerId: payment.customer_id ?? '',
+  saleId: payment.sale_id ?? undefined,
+  invoiceNo: payment.invoice_number ?? undefined,
+  receiptNo: joinedReceiptNumberFromRow({ receipts: payment.receipts } as InvoiceRow),
+  receiptId: payment.receipt_id ?? null,
+  amount: Number(payment.amount ?? 0),
+  paymentMethod: (payment.payment_method ?? 'Cash') as Exclude<PaymentMethod, 'Credit'>,
+  notes: payment.notes ?? '',
+  createdAt: payment.created_at ?? '',
 });
+
+const fetchCreditPayments = async (): Promise<CreditPaymentRow[]> => {
+  const fullResult = await supabase
+    .from('credit_payments')
+    .select('id,customer_id,sale_id,invoice_number,receipt_id,amount,payment_method,notes,created_at,receipts(receipt_number)');
+
+  if (!fullResult.error) return (fullResult.data ?? []) as CreditPaymentRow[];
+
+  const metadataResult = await supabase
+    .from('credit_payments')
+    .select('id,customer_id,sale_id,invoice_number,receipt_id,amount,payment_method,notes,created_at');
+
+  if (!metadataResult.error) return (metadataResult.data ?? []) as CreditPaymentRow[];
+
+  const totalsResult = await supabase
+    .from('credit_payments')
+    .select('sale_id,invoice_number,amount');
+
+  if (totalsResult.error) {
+    console.error(fullResult.error);
+    console.error(metadataResult.error);
+    console.error(totalsResult.error);
+    return [];
+  }
+
+  return (totalsResult.data ?? []) as CreditPaymentRow[];
+};
 
 const saleItemsText = (items: SaleLineItem[]): string =>
   items.map((it) => `${it.productName} [${it.netQty} pcs]`).join(', ');
 
-const saleRow = (inv: InvoiceRecord) => ({
-  receipt_number: inv.invoiceNo,
+const cleanLineItem = (item: SaleLineItem): SaleLineItem => ({
+  ...item,
+  productId: sanitizeText(item.productId),
+  productName: sanitizeText(item.productName),
+});
+
+const cleanInvoice = (inv: InvoiceRecord): InvoiceRecord => ({
+  ...inv,
+  invoiceNo: sanitizeText(inv.invoiceNo),
+  receiptNo: inv.receiptNo ? sanitizeText(inv.receiptNo) : null,
+  date: sanitizeText(inv.date),
+  customerId: sanitizeText(inv.customerId),
+  customerName: sanitizeText(inv.customerName),
+  paymentMethod: sanitizeText(inv.paymentMethod) as PaymentMethod,
+  cashier: sanitizeText(inv.cashier),
+  items: inv.items.map(cleanLineItem),
+});
+
+const saleRow = (invoice: InvoiceRecord) => {
+  const inv = cleanInvoice(invoice);
+  return ({
+  invoice_number: inv.invoiceNo,
+  receipt_number: inv.receiptNo,
   sale_date: inv.date,
   customer_id: inv.customerId || null,
   customer_name: inv.customerName,
@@ -138,13 +243,13 @@ const saleRow = (inv: InvoiceRecord) => ({
   payment_method: inv.paymentMethod,
   status: inv.status,
   cashier: inv.cashier,
-});
+})};
 
 const insertSale = async (inv: InvoiceRecord) => {
   const result = await supabase.from('sales').insert(saleRow(inv)).select('id').single();
   if (result.error?.code === '42703') {
-    const { items: _items, customer_id: _cid, ...safeRow } = saleRow(inv) as Record<string, unknown>;
-    return supabase.from('sales').insert(safeRow).select('id').single();
+    const { items: _items, customer_id: _cid, invoice_number: _invoiceNo, ...safeRow } = saleRow(inv) as Record<string, unknown>;
+    return supabase.from('sales').insert({ ...safeRow, receipt_number: inv.invoiceNo }).select('id').single();
   }
   return result;
 };
@@ -158,8 +263,8 @@ const insertSaleItems = async (saleId: string, items: SaleLineItem[]) => {
 // net_quantity is a generated column (quantity - returned_quantity) — never write it
 const saleItemRows = (saleId: string, items: SaleLineItem[]) => items.map((it) => ({
   sale_id: saleId,
-  product_code: it.productId,
-  product_name: it.productName,
+  product_code: sanitizeText(it.productId),
+  product_name: sanitizeText(it.productName),
   quantity: it.qty,
   returned_quantity: it.returnsQty,
   unit_price: it.unitPrice,
@@ -169,15 +274,21 @@ const saleItemRows = (saleId: string, items: SaleLineItem[]) => items.map((it) =
   line_margin: it.grossMargin,
 }));
 
-const receiptRow = (saleId: string, inv: InvoiceRecord) => ({
+const receiptRow = (
+  saleId: string,
+  inv: InvoiceRecord,
+  receiptNo: string,
+  paymentMethod: Exclude<PaymentMethod, 'Credit'> | PaymentMethod = inv.paymentMethod,
+  paymentAmount = inv.netSales
+) => ({
   sale_id: saleId,
-  receipt_number: inv.receiptNo,
-  customer_name: inv.customerName,
-  cashier: inv.cashier,
-  subtotal: inv.netSales,
-  total_amount: inv.netSales,
-  payment_method: inv.paymentMethod,
-  receipt_payload: inv,
+  receipt_number: sanitizeText(receiptNo),
+  customer_name: sanitizeText(inv.customerName),
+  cashier: sanitizeText(inv.cashier),
+  subtotal: paymentAmount,
+  total_amount: paymentAmount,
+  payment_method: sanitizeText(paymentMethod) as PaymentMethod,
+  receipt_payload: cleanInvoice({ ...inv, receiptNo, paymentMethod }),
 });
 
 const productNumber = (productId: string) => {
@@ -186,6 +297,7 @@ const productNumber = (productId: string) => {
 };
 
 const toSaleRecord = (inv: InvoiceRecord): SaleRecord => ({
+  invoiceNo: inv.invoiceNo,
   receiptNo: inv.receiptNo,
   date: inv.date,
   time: '00:00',
@@ -205,9 +317,35 @@ const toSaleRecord = (inv: InvoiceRecord): SaleRecord => ({
   status: inv.status,
 });
 
+const findSaleByInvoiceNo = async (invoiceNo: string): Promise<{ id: string } | null> => {
+  const byInvoice = await supabase
+    .from('sales')
+    .select('id')
+    .eq('invoice_number', invoiceNo)
+    .maybeSingle();
+
+  if (byInvoice.data) return byInvoice.data;
+  if (byInvoice.error && byInvoice.error.code !== 'PGRST116' && byInvoice.error.code !== '42703') {
+    console.error(byInvoice.error);
+  }
+
+  const byLegacyReceipt = await supabase
+    .from('sales')
+    .select('id')
+    .eq('receipt_number', invoiceNo)
+    .maybeSingle();
+
+  if (byLegacyReceipt.error && byLegacyReceipt.error.code !== 'PGRST116') {
+    console.error(byLegacyReceipt.error);
+  }
+  return byLegacyReceipt.data ?? null;
+};
+
 export function useSalesLog() {
   const [invoices, setInvoices] = useState<InvoiceRecord[]>([]);
+  const [creditPayments, setCreditPayments] = useState<CreditPayment[]>([]);
   const [loading, setLoading] = useState(true);
+  const creditPaymentsInFlight = useRef(new Set<string>());
 
   useEffect(() => {
     const fetchSales = async () => {
@@ -216,7 +354,16 @@ export function useSalesLog() {
         .select('*, sale_items(*), receipts(receipt_number)')
         .order('sale_date', { ascending: false });
       if (error) { console.error(error); setLoading(false); return; }
-      setInvoices(data ? data.map(toInvoice) : []);
+      const paymentTotals = new Map<string, number>();
+      const payments = await fetchCreditPayments();
+      payments.forEach((payment) => {
+        [payment.invoice_number, payment.sale_id].forEach((key) => {
+          if (!key) return;
+          paymentTotals.set(key, (paymentTotals.get(key) ?? 0) + Number(payment.amount ?? 0));
+        });
+      });
+      setCreditPayments(payments.map(toCreditPayment));
+      setInvoices(data ? (data as InvoiceRow[]).map((row) => toInvoice(row, paymentTotals)) : []);
       setLoading(false);
     };
 
@@ -227,20 +374,30 @@ export function useSalesLog() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sales' }, fetchSales)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sale_items' }, fetchSales)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'receipts' }, fetchSales)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'credit_payments' }, fetchSales)
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
   }, []);
 
   const addInvoice = (
-    data: Omit<InvoiceRecord, 'invoiceNo' | 'date' | 'status' | 'netSales' | 'totalCost' | 'grossMargin'>
-      & { status?: InvoiceRecord['status'] }
+    data: Omit<InvoiceRecord, 'invoiceNo' | 'receiptNo' | 'date' | 'status' | 'netSales' | 'totalCost' | 'grossMargin' | 'amountPaid' | 'balanceDue'>
+      & { receiptNo?: string | null; status?: InvoiceRecord['status'] }
   ): InvoiceRecord => {
     const invoiceNo = generateNextInvoiceNo(invoices);
     const status = data.status ?? 'completed';
+    const receiptNo = status === 'credit' ? null : data.receiptNo ? sanitizeText(data.receiptNo) : generateReceiptNo();
+    const cleanData = {
+      ...data,
+      customerId: sanitizeText(data.customerId),
+      customerName: sanitizeText(data.customerName),
+      paymentMethod: sanitizeText(data.paymentMethod) as PaymentMethod,
+      cashier: sanitizeText(data.cashier),
+      items: data.items.map(cleanLineItem),
+    };
     const newInvoice = buildInvoice(
-      invoiceNo, data.receiptNo, data.customerId, data.customerName,
-      data.items, data.paymentMethod, data.cashier, status
+      invoiceNo, receiptNo, cleanData.customerId, cleanData.customerName,
+      cleanData.items, cleanData.paymentMethod, cleanData.cashier, status
     );
     // Optimistic update
     setInvoices((prev) => [newInvoice, ...prev]);
@@ -251,8 +408,10 @@ export function useSalesLog() {
       if (newInvoice.items.length > 0) {
         insertSaleItems(sale.id, newInvoice.items);
       }
-      supabase.from('receipts').insert(receiptRow(sale.id, newInvoice))
-        .then(({ error: e }) => { if (e) console.error(e); });
+      if (newInvoice.receiptNo) {
+        supabase.from('receipts').insert(receiptRow(sale.id, newInvoice, newInvoice.receiptNo))
+          .then(({ error: e }) => { if (e) console.error(e); });
+      }
       // Stock deduction is handled by the DB trigger on sale_items INSERT
       // For credit sales, increase the customer's outstanding balance
       if (status === 'credit' && newInvoice.customerId && newInvoice.customerId !== 'walk-in') {
@@ -272,51 +431,114 @@ export function useSalesLog() {
     setInvoices((prev) => prev.map((inv) =>
       inv.invoiceNo === invoiceNo ? refundInvoice(inv) : inv
     ));
+    const sale = await findSaleByInvoiceNo(invoiceNo);
+    if (!sale) return;
     const { error } = await supabase.from('sales')
-      .update({ status: 'refunded' }).eq('receipt_number', invoiceNo);
+      .update({ status: 'refunded' }).eq('id', sale.id);
     if (error) console.error(error);
   };
 
   const deleteInvoice = async (invoiceNo: string) => {
     setInvoices((prev) => prev.filter((inv) => inv.invoiceNo !== invoiceNo));
-    const { data: sale } = await supabase.from('sales').select('id').eq('receipt_number', invoiceNo).single();
+    const sale = await findSaleByInvoiceNo(invoiceNo);
     if (sale) {
       await supabase.from('sale_items').delete().eq('sale_id', sale.id);
       await supabase.from('receipts').delete().eq('sale_id', sale.id);
     }
-    const { error } = await supabase.from('sales').delete().eq('receipt_number', invoiceNo);
+    const { error } = sale
+      ? await supabase.from('sales').delete().eq('id', sale.id)
+      : await supabase.from('sales').delete().eq('receipt_number', invoiceNo);
     if (error) console.error(error);
   };
 
-  const markCreditAsPaid = async (invoiceNo: string, paymentMethod: Exclude<PaymentMethod, 'Credit'>) => {
-    const inv = invoices.find((i) => i.invoiceNo === invoiceNo);
-    if (!inv || inv.status !== 'credit') return;
+  const recordCreditPayment = async (
+    invoiceNo: string,
+    amount: number,
+    paymentMethod: Exclude<PaymentMethod, 'Credit'>,
+    notes = ''
+  ): Promise<{ receiptNo: string; remainingBalance: number } | null> => {
+    const cleanInvoiceNo = sanitizeText(invoiceNo);
+    if (creditPaymentsInFlight.current.has(cleanInvoiceNo)) return null;
 
-    setInvoices((prev) => prev.map((i) =>
-      i.invoiceNo === invoiceNo ? { ...i, status: 'completed' as const } : i
-    ));
+    const inv = invoices.find((i) => i.invoiceNo === cleanInvoiceNo);
+    if (!inv || inv.status !== 'credit') return null;
 
-    const { error } = await supabase.from('sales')
-      .update({ status: 'completed' }).eq('receipt_number', invoiceNo);
-    if (error) { console.error(error); return; }
+    const currentBalance = Math.max(0, inv.balanceDue || inv.netSales - inv.amountPaid);
+    const paymentAmount = Math.min(currentBalance, Math.max(0, amount));
+    if (paymentAmount <= 0) return null;
+    creditPaymentsInFlight.current.add(cleanInvoiceNo);
 
-    if (inv.customerId && inv.customerId !== 'walk-in') {
-      const { data: cust } = await supabase
-        .from('customers').select('outstanding_balance').eq('id', inv.customerId).single();
-      if (cust) {
-        await supabase.from('customers').update({
-          outstanding_balance: Math.max(0, (cust.outstanding_balance ?? 0) - inv.netSales),
-        }).eq('id', inv.customerId);
+    try {
+      const nextAmountPaid = Math.min(inv.netSales, inv.amountPaid + paymentAmount);
+      const remainingBalance = Math.max(0, inv.netSales - nextAmountPaid);
+      const nextStatus: InvoiceRecord['status'] = remainingBalance <= 0.005 ? 'completed' : 'credit';
+      const receiptNo = generateReceiptNo();
+      const updatedInvoice: InvoiceRecord = {
+        ...inv,
+        receiptNo,
+        amountPaid: nextAmountPaid,
+        balanceDue: remainingBalance,
+        status: nextStatus,
+      };
+
+      setInvoices((prev) => prev.map((i) =>
+        i.invoiceNo === cleanInvoiceNo ? updatedInvoice : i
+      ));
+
+      const sale = await findSaleByInvoiceNo(cleanInvoiceNo);
+      if (!sale) return null;
+
+      const { error } = await supabase.from('sales')
+        .update({ status: nextStatus, receipt_number: receiptNo }).eq('id', sale.id);
+      if (error) { console.error(error); return null; }
+
+      if (inv.customerId && inv.customerId !== 'walk-in') {
+        const { data: cust } = await supabase
+          .from('customers').select('outstanding_balance').eq('id', inv.customerId).single();
+        if (cust) {
+          await supabase.from('customers').update({
+            outstanding_balance: Math.max(0, (cust.outstanding_balance ?? 0) - paymentAmount),
+          }).eq('id', inv.customerId);
+        }
       }
-    }
 
-    await supabase.from('credit_payments').insert({
-      customer_id: inv.customerId || null,
-      sale_id: invoiceNo,
-      amount: inv.netSales,
-      payment_method: paymentMethod,
-      notes: `Full payment for credit sale ${invoiceNo}`,
-    }).then(({ error: e }) => { if (e) console.error(e); });
+      const { data: receipt, error: receiptError } = await supabase
+        .from('receipts')
+        .insert(receiptRow(sale.id, updatedInvoice, receiptNo, paymentMethod, paymentAmount))
+        .select('id')
+        .single();
+      if (receiptError) console.error(receiptError);
+
+      const paymentPayload = {
+        customer_id: inv.customerId || null,
+        sale_id: sale.id,
+        invoice_number: cleanInvoiceNo,
+        receipt_id: receipt?.id ?? null,
+        amount: paymentAmount,
+        payment_method: sanitizeText(paymentMethod),
+        notes: sanitizeMultiline(notes) || `${nextStatus === 'completed' ? 'Final' : 'Partial'} payment for credit invoice ${cleanInvoiceNo}`,
+      };
+
+      const paymentResult = await supabase.from('credit_payments').insert(paymentPayload);
+      if (paymentResult.error?.code === '42703') {
+        const { invoice_number: _invoiceNumber, receipt_id: _receiptId, ...legacyPayload } = paymentPayload;
+        const legacyResult = await supabase.from('credit_payments').insert(legacyPayload);
+        if (legacyResult.error) console.error(legacyResult.error);
+      } else if (paymentResult.error) {
+        console.error(paymentResult.error);
+      }
+
+      return { receiptNo, remainingBalance };
+    } finally {
+      creditPaymentsInFlight.current.delete(cleanInvoiceNo);
+    }
+  };
+
+  const markCreditAsPaid = async (invoiceNo: string, paymentMethod: Exclude<PaymentMethod, 'Credit'>): Promise<string | null> => {
+    const inv = invoices.find((i) => i.invoiceNo === invoiceNo);
+    if (!inv) return null;
+    const result = await recordCreditPayment(invoiceNo, inv.balanceDue || inv.netSales - inv.amountPaid, paymentMethod);
+    return result?.receiptNo ?? null;
   };
 
   const processReturn = async (invoiceNo: string, returns: { productId: string; returnQty: number }[]) => {
@@ -331,11 +553,16 @@ export function useSalesLog() {
     });
 
     const newTotals = calcInvoiceTotals(updatedItems);
+    const nextBalanceDue = Math.max(0, newTotals.netSales - inv.amountPaid);
+    const nextStatus: InvoiceRecord['status'] =
+      inv.status === 'credit' && nextBalanceDue <= 0.005 ? 'completed' : inv.status;
     setInvoices((prev) => prev.map((i) =>
-      i.invoiceNo === invoiceNo ? { ...i, items: updatedItems, ...newTotals } : i
+      i.invoiceNo === invoiceNo
+        ? { ...i, items: updatedItems, ...newTotals, balanceDue: nextBalanceDue, status: nextStatus }
+        : i
     ));
 
-    const { data: sale } = await supabase.from('sales').select('id').eq('receipt_number', invoiceNo).single();
+    const sale = await findSaleByInvoiceNo(invoiceNo);
     if (!sale) return;
 
     for (const ret of returns) {
@@ -362,6 +589,7 @@ export function useSalesLog() {
       total_amount: newTotals.netSales,
       total_cost: newTotals.totalCost,
       gross_margin: newTotals.grossMargin,
+      status: nextStatus,
     }).eq('id', sale.id);
 
     // For credit sales, reduce the customer's outstanding balance by the returned value
@@ -370,12 +598,13 @@ export function useSalesLog() {
         const item = inv.items.find((i) => i.productId === ret.productId);
         return sum + (item ? item.unitPrice * ret.returnQty : 0);
       }, 0);
-      if (returnedValue > 0) {
+      const outstandingReduction = Math.min(inv.balanceDue, returnedValue);
+      if (outstandingReduction > 0) {
         const { data: cust } = await supabase
           .from('customers').select('outstanding_balance').eq('id', inv.customerId).single();
         if (cust) {
           await supabase.from('customers').update({
-            outstanding_balance: Math.max(0, (cust.outstanding_balance ?? 0) - returnedValue),
+            outstanding_balance: Math.max(0, (cust.outstanding_balance ?? 0) - outstandingReduction),
           }).eq('id', inv.customerId);
         }
       }
@@ -393,5 +622,5 @@ export function useSalesLog() {
 
   const sales = invoices.map(toSaleRecord);
 
-  return { invoices, sales, loading, addInvoice, refund, deleteInvoice, markCreditAsPaid, processReturn, totalRevenue, todayInvoices };
+  return { invoices, sales, creditPayments, loading, addInvoice, refund, deleteInvoice, recordCreditPayment, markCreditAsPaid, processReturn, totalRevenue, todayInvoices };
 }

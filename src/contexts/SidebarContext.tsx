@@ -25,4 +25,5 @@ export function SidebarProvider({ children }: { children: ReactNode }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const useSidebar = () => useContext(SidebarContext);

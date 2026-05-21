@@ -9,6 +9,7 @@ import { useSuppliers } from '@/hooks/useSuppliers';
 import type { InventoryItem } from '@/types/erp';
 import { useAuth } from '@/hooks/useAuth';
 import { writeLog, diffFields } from '@/lib/activityLog';
+import { useFeedbackModal } from '@/hooks/useFeedbackModal';
 
 const CAT_COLORS = [
   'bg-indigo-100 text-indigo-600',
@@ -55,6 +56,7 @@ export default function InventoryPage() {
   const { items, categories, saveItem, deleteItem, addCategory, renameCategory, deleteCategory } = useInventory();
   const { suppliers } = useSuppliers();
   const { currentUser } = useAuth();
+  const { showFeedback } = useFeedbackModal();
   const [pageTab, setPageTab] = useState<'items' | 'categories'>('items');
 
   // ── Categories ──────────────────────────────────────────────────────────────
@@ -127,6 +129,11 @@ export default function InventoryPage() {
     }
     setDrawerOpen(false);
     setEditItem(null);
+    showFeedback({
+      title: isEdit ? 'Item Updated' : 'Item Saved',
+      message: `${item.productName} has been ${isEdit ? 'updated' : 'added'} successfully.`,
+      buttonLabel: 'Continue',
+    });
   };
 
   const handleDelete = (id: string) => {
@@ -139,6 +146,12 @@ export default function InventoryPage() {
       });
     }
     setDeleteId(null);
+    showFeedback({
+      title: 'Item Deleted',
+      message: `${target?.productName ?? 'The item'} has been removed from inventory.`,
+      buttonLabel: 'Continue',
+      kind: 'deleted',
+    });
   };
 
   const lowCount = items.filter((i) => i.stockStatus === 'LOW').length;

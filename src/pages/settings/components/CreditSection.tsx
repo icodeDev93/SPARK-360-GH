@@ -25,7 +25,7 @@ export default function CreditSection({ settings, onChange }: Props) {
 
       {/* Invoice Due Days */}
       <div className="p-5 bg-slate-50 rounded-xl border border-slate-100 space-y-4">
-        <div className="flex items-start justify-between gap-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
           <div className="flex-1">
             <p className="text-slate-800 font-semibold text-sm">Invoice Due Days</p>
             <p className="text-slate-400 text-xs mt-0.5 leading-relaxed">

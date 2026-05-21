@@ -51,10 +51,12 @@ export default function CartPanel({ items, onUpdateQty, onRemove, onClear }: Car
   const { customers, addCustomer } = useCustomers();
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('Cash');
   const [discount, setDiscount] = useState(0);
+  const [showPaymentComplete, setShowPaymentComplete] = useState(false);
   const [showReceipt, setShowReceipt] = useState(false);
   const [receiptNo, setReceiptNo] = useState('');
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [receiptCustomerName, setReceiptCustomerName] = useState('');
+  const [creditInvoice, setCreditInvoice] = useState<{ invoiceNo: string; customerName: string; amount: number } | null>(null);
 
   const taxRate    = settings.taxEnabled ? settings.taxRate / 100 : 0;
   const subtotal   = items.reduce((sum, i) => sum + i.price * i.qty, 0);
@@ -67,31 +69,45 @@ export default function CartPanel({ items, onUpdateQty, onRemove, onClear }: Car
     setShowCustomerModal(true);
   };
 
+  const handleCreditSale = () => {
+    setPaymentMethod('Credit');
+    if (items.length > 0) setShowCustomerModal(true);
+  };
+
   const handleCustomerConfirm = (customerId: string | null, customerName: string) => {
     setShowCustomerModal(false);
     const saleItems = items.map((item) =>
       calcLineItem(item.id, item.name, item.qty, 0, item.price, item.costPrice)
     );
-    const nextReceiptNo = generateReceiptNo();
-    setReceiptNo(nextReceiptNo);
+    const isCreditSale = paymentMethod === 'Credit';
+    const nextReceiptNo = isCreditSale ? null : generateReceiptNo();
     setReceiptCustomerName(customerName);
-    addInvoice({
+    const invoice = addInvoice({
       receiptNo:    nextReceiptNo,
       customerId:   customerId ?? 'walk-in',
       customerName,
       items:        saleItems,
       paymentMethod,
       cashier:      currentUser.name,
-      status:       paymentMethod === 'Credit' ? 'credit' : 'completed',
+      status:       isCreditSale ? 'credit' : 'completed',
     });
+    if (nextReceiptNo) setReceiptNo(nextReceiptNo);
+    const saleDescription = isCreditSale
+      ? `Created credit invoice ${invoice.invoiceNo} for ${customerName} — ₵${grandTotal.toFixed(2)} (${saleItems.length} item${saleItems.length !== 1 ? 's' : ''})`
+      : `Completed sale ${nextReceiptNo} for ${customerName} — ₵${grandTotal.toFixed(2)} via ${paymentMethod} (${saleItems.length} item${saleItems.length !== 1 ? 's' : ''})`;
     writeLog(currentUser, {
-      category: 'sales', action: 'complete',
-      description: `Completed sale ${nextReceiptNo} for ${customerName} — ₵${grandTotal.toFixed(2)} via ${paymentMethod} (${saleItems.length} item${saleItems.length !== 1 ? 's' : ''})`,
+      category: isCreditSale ? 'credit' : 'sales', action: 'complete',
+      description: saleDescription,
     });
-    setShowReceipt(true);
+    if (isCreditSale) {
+      setCreditInvoice({ invoiceNo: invoice.invoiceNo, customerName, amount: grandTotal });
+    } else {
+      setShowPaymentComplete(true);
+    }
   };
 
   const handleNewSale = () => {
+    setShowPaymentComplete(false);
     setShowReceipt(false);
     onClear();
     setDiscount(0);
@@ -100,6 +116,19 @@ export default function CartPanel({ items, onUpdateQty, onRemove, onClear }: Car
 
   const handleCloseReceipt = () => {
     setShowReceipt(false);
+    setShowPaymentComplete(false);
+    onClear();
+    setDiscount(0);
+    setPaymentMethod('Cash');
+  };
+
+  const handlePrintReceipt = () => {
+    setShowPaymentComplete(false);
+    setShowReceipt(true);
+  };
+
+  const handleCloseCreditInvoice = () => {
+    setCreditInvoice(null);
     onClear();
     setDiscount(0);
     setPaymentMethod('Cash');
@@ -234,9 +263,12 @@ export default function CartPanel({ items, onUpdateQty, onRemove, onClear }: Car
               ))}
             </div>
             <button
-              onClick={() => setPaymentMethod(CREDIT_METHOD.key)}
+              onClick={handleCreditSale}
+              disabled={items.length === 0}
               className={`w-full flex items-center justify-center gap-2 py-2 rounded-lg border text-xs font-semibold transition-all cursor-pointer ${
-                paymentMethod === 'Credit'
+                items.length === 0
+                  ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
+                  : paymentMethod === 'Credit'
                   ? 'bg-violet-600 border-violet-600 text-white'
                   : 'bg-white border-slate-200 text-slate-600 hover:border-violet-300'
               }`}
@@ -259,8 +291,8 @@ export default function CartPanel({ items, onUpdateQty, onRemove, onClear }: Car
                 : 'bg-emerald-600 hover:bg-emerald-700 text-white'
             }`}
           >
-            <i className="ri-check-line text-lg"></i>
-            Complete Sale
+            <i className={`${paymentMethod === 'Credit' ? 'ri-file-list-3-line' : 'ri-check-line'} text-lg`}></i>
+            {paymentMethod === 'Credit' ? 'Create Invoice' : 'Complete Sale'}
           </button>
         </div>
       </div>
@@ -274,6 +306,74 @@ export default function CartPanel({ items, onUpdateQty, onRemove, onClear }: Car
           onCancel={() => setShowCustomerModal(false)}
           paymentMethod={paymentMethod}
         />
+      )}
+
+      {showPaymentComplete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="relative w-full max-w-sm overflow-hidden rounded-3xl bg-white shadow-2xl">
+            <div className="absolute inset-x-0 top-0 h-40 bg-indigo-50"></div>
+            <div className="absolute inset-x-0 top-0 h-40 opacity-50">
+              <div className="grid grid-cols-5 gap-4 p-5 text-white/70">
+                {Array.from({ length: 15 }).map((_, index) => (
+                  <i key={index} className="ri-sparkling-2-line text-sm"></i>
+                ))}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleNewSale}
+              className="absolute right-4 top-4 z-10 w-8 h-8 flex items-center justify-center rounded-full text-slate-400 hover:bg-white/80 hover:text-slate-600 transition-all cursor-pointer"
+              aria-label="Close"
+            >
+              <i className="ri-close-line text-xl"></i>
+            </button>
+
+            <div className="relative px-7 pb-7 pt-12 text-center">
+              <div className="mx-auto mb-8 w-32 h-32 rounded-full flex items-center justify-center bg-gradient-to-br from-indigo-400 to-blue-700 shadow-xl shadow-indigo-200">
+                <i className="ri-check-line text-white text-6xl drop-shadow-md"></i>
+              </div>
+
+              <h2 className="text-slate-900 text-2xl font-extrabold mb-3">Payment Complete</h2>
+              <p className="text-slate-500 text-sm leading-6 mb-5">
+                Sale has been recorded for {receiptCustomerName}. You can print the receipt now or continue to a new sale.
+              </p>
+
+              <div className="rounded-2xl bg-slate-50 border border-slate-100 p-4 mb-6 space-y-2 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500">Receipt No.</span>
+                  <span className="font-mono font-bold text-indigo-600">{receiptNo}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500">Payment</span>
+                  <span className="font-semibold text-slate-700">{paymentMethod}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500">Amount</span>
+                  <span className="font-mono font-bold text-indigo-600">{settings.currencySymbol}{grandTotal.toFixed(2)}</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={handleNewSale}
+                  className="rounded-xl border border-slate-200 py-3 text-sm font-bold text-slate-700 hover:bg-slate-50 transition-all cursor-pointer"
+                >
+                  Continue
+                </button>
+                <button
+                  type="button"
+                  onClick={handlePrintReceipt}
+                  className="rounded-xl bg-indigo-600 py-3 text-sm font-bold text-white shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <i className="ri-printer-line text-base"></i>
+                  Print Receipt
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Receipt Modal */}
@@ -291,6 +391,49 @@ export default function CartPanel({ items, onUpdateQty, onRemove, onClear }: Car
           onClose={handleCloseReceipt}
           onNewSale={handleNewSale}
         />
+      )}
+
+      {creditInvoice && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="relative bg-white rounded-2xl w-full max-w-sm p-6 shadow-xl">
+            <button
+              type="button"
+              onClick={handleCloseCreditInvoice}
+              className="absolute right-4 top-4 w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-all cursor-pointer"
+              aria-label="Close"
+              title="Close"
+            >
+              <i className="ri-close-line text-xl"></i>
+            </button>
+            <div className="w-12 h-12 flex items-center justify-center rounded-xl bg-violet-100 text-violet-600 mb-4">
+              <i className="ri-file-list-3-line text-xl"></i>
+            </div>
+            <h3 className="text-slate-800 font-bold text-base mb-1">Credit Invoice Created</h3>
+            <p className="text-slate-500 text-sm mb-4">
+              No receipt has been generated yet. A receipt will be created when this invoice is paid.
+            </p>
+            <div className="bg-slate-50 rounded-xl p-4 space-y-2 mb-5">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-500">Invoice No.</span>
+                <span className="font-mono font-bold text-indigo-600">{creditInvoice.invoiceNo}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-500">Customer</span>
+                <span className="font-semibold text-slate-700">{creditInvoice.customerName}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-500">Amount Due</span>
+                <span className="font-mono font-bold text-violet-600">{settings.currencySymbol}{creditInvoice.amount.toFixed(2)}</span>
+              </div>
+            </div>
+            <button
+              onClick={handleCloseCreditInvoice}
+              className="w-full py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold cursor-pointer transition-all"
+            >
+              Start New Sale
+            </button>
+          </div>
+        </div>
       )}
     </>
   );

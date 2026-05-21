@@ -1,5 +1,5 @@
 import type { SaleRecord } from '@/hooks/useSalesLog';
-import type { ExpenseRecord, InventoryItem } from '@/types/erp';
+import type { ExpenseRecord, InventoryItem, InvoiceRecord } from '@/types/erp';
 import { inventoryItems } from '@/mocks/inventory';
 
 // ─── CSV helpers ────────────────────────────────────────────────────────────
@@ -34,9 +34,10 @@ function downloadCSV(filename: string, csv: string): void {
 
 export function exportSalesCSV(sales: SaleRecord[], label: string): void {
   const completed = sales.filter((s) => s.status === 'completed');
-  const headers = ['Receipt No', 'Date', 'Time', 'Cashier', 'Items', 'Subtotal (₵)', 'Tax (₵)', 'Discount (₵)', 'Grand Total (₵)', 'Payment Method', 'Status'];
+  const headers = ['Invoice No', 'Receipt No', 'Date', 'Time', 'Cashier', 'Items', 'Subtotal (₵)', 'Tax (₵)', 'Discount (₵)', 'Grand Total (₵)', 'Payment Method', 'Status'];
   const rows = completed.map((s) => [
-    s.receiptNo,
+    s.invoiceNo,
+    s.receiptNo ?? '',
     s.date,
     s.time,
     s.cashier,
@@ -49,6 +50,30 @@ export function exportSalesCSV(sales: SaleRecord[], label: string): void {
     s.status,
   ]);
   downloadCSV(`sales-report-${label}.csv`, buildCSV(headers, rows));
+}
+
+export function exportCustomerReceivablesCSV(invoices: InvoiceRecord[], label: string): void {
+  const creditInvoices = invoices.filter((inv) => inv.status === 'credit');
+  const headers = ['Invoice No', 'Date', 'Customer', 'Invoice Total (GHS)', 'Amount Paid (GHS)', 'Outstanding (GHS)', 'Status'];
+  const rows: (string | number)[][] = creditInvoices.map((inv) => [
+    inv.invoiceNo,
+    inv.date,
+    inv.customerName,
+    inv.netSales.toFixed(2),
+    inv.amountPaid.toFixed(2),
+    inv.balanceDue.toFixed(2),
+    'Credit',
+  ]);
+  rows.push([
+    'TOTAL',
+    '',
+    '',
+    creditInvoices.reduce((sum, inv) => sum + inv.netSales, 0).toFixed(2),
+    creditInvoices.reduce((sum, inv) => sum + inv.amountPaid, 0).toFixed(2),
+    creditInvoices.reduce((sum, inv) => sum + inv.balanceDue, 0).toFixed(2),
+    '',
+  ]);
+  downloadCSV(`customer-receivables-report-${label}.csv`, buildCSV(headers, rows));
 }
 
 // ─── Products CSV ────────────────────────────────────────────────────────────
@@ -185,6 +210,7 @@ export function printAnalyticsPDF(
   sales: SaleRecord[],
   expenses: ExpenseRecord[],
   liveItems?: InventoryItem[],
+  creditInvoiceRecords: InvoiceRecord[] = [],
 ): void {
   const win = window.open('', '_blank', 'width=1050,height=820');
   if (!win) return;
@@ -367,6 +393,12 @@ export function printAnalyticsPDF(
   const isProducts  = tabKey === 'products' || tabKey === 'top-products' || tabKey === 'product-report';
   const isCustomers = tabKey === 'customers' || tabKey === 'top-customers' || tabKey === 'customer-report';
   const isInventory = tabKey === 'inventory' || tabKey === 'stock-report';
+  const isReceivables = tabKey === 'customer-receivables';
+  const creditInvoices = creditInvoiceRecords.filter((inv) => inv.status === 'credit');
+  const totalReceivables = creditInvoices.reduce((sum, inv) => sum + inv.balanceDue, 0);
+  const totalCreditValue = creditInvoices.reduce((sum, inv) => sum + inv.netSales, 0);
+  const totalCreditPaid = creditInvoices.reduce((sum, inv) => sum + inv.amountPaid, 0);
+  const receivableCustomers = new Set(creditInvoices.map((inv) => inv.customerId || inv.customerName)).size;
 
   const now = new Date().toLocaleString('en-US', { dateStyle: 'long', timeStyle: 'short' });
   let body = '';
@@ -381,6 +413,7 @@ export function printAnalyticsPDF(
       ${kpi('Total Expenses', fmt(totalExpenses), `${expenses.length} expense records`,              '#e11d48')}
       ${kpi('Net Profit',     fmt(netProfit),     `Margin: ${netMargin.toFixed(1)}%`,                netProfit >= 0 ? '#059669' : '#e11d48')}
       ${kpi('Avg. Sale',      fmt(completed.length > 0 ? totalRevenue / completed.length : 0), 'Per transaction', '#d97706')}
+      ${kpi('Customer Receivables', fmt(totalReceivables), `${creditInvoices.length} credit invoices`, '#7c3aed')}
     </div>
 
     ${dailyRevenue.length > 0 ? `
@@ -693,6 +726,57 @@ export function printAnalyticsPDF(
   // ══════════════════════════════════════════════════════════════════════════
   // STOCK / INVENTORY
   // ══════════════════════════════════════════════════════════════════════════
+  if (isReceivables) {
+    body += `
+    <div style="display:flex;gap:12px;margin-bottom:22px;flex-wrap:wrap;">
+      ${kpi('Credit Invoices', `${creditInvoices.length}`, 'Outstanding invoices', '#4f46e5')}
+      ${kpi('Customers', `${receivableCustomers}`, 'With receivables', '#7c3aed')}
+      ${kpi('Invoice Value', fmt(totalCreditValue), 'Original credit total', '#d97706')}
+      ${kpi('Total Receivable', fmt(totalReceivables), 'Balance still unpaid', '#e11d48')}
+    </div>
+
+    <div style="${SEC}">
+      <div style="${SH}">
+        <h3 style="font-size:13px;font-weight:700;color:#1e293b;margin:0;">Customer Receivables</h3>
+        <span style="font-size:11px;color:#64748b;">${creditInvoices.length} invoice${creditInvoices.length !== 1 ? 's' : ''} · ${label}</span>
+      </div>
+      <table style="width:100%;border-collapse:collapse;">
+        <thead><tr>
+          <th style="${TH}">Invoice No.</th>
+          <th style="${TH}">Date</th>
+          <th style="${TH}">Customer</th>
+          <th style="${THR}">Invoice Total</th>
+          <th style="${THR}">Amount Paid</th>
+          <th style="${THR}">Outstanding</th>
+          <th style="${THC}">Status</th>
+        </tr></thead>
+        <tbody>
+          ${creditInvoices.length === 0
+            ? `<tr><td colspan="7" style="${TDC}padding:24px;color:#94a3b8;">No customer receivables found for this date range</td></tr>`
+            : creditInvoices.map((inv, i) => `
+            <tr style="background:${i % 2 ? '#fafafa' : '#fff'};">
+              <td style="${TD}font-weight:700;font-family:'Courier New',monospace;color:#1e293b;">${inv.invoiceNo}</td>
+              <td style="${TD}">${sd(inv.date)}</td>
+              <td style="${TD}font-weight:600;color:#1e293b;">${inv.customerName}</td>
+              <td style="${TDR}font-family:'Courier New',monospace;color:#334155;">${fmt(inv.netSales)}</td>
+              <td style="${TDR}font-family:'Courier New',monospace;color:#059669;">${fmt(inv.amountPaid)}</td>
+              <td style="${TDR}font-weight:800;font-family:'Courier New',monospace;color:#e11d48;">${fmt(inv.balanceDue)}</td>
+              <td style="${TDC}">${badge('Credit', '#fef3c7', '#b45309')}</td>
+            </tr>`).join('')}
+        </tbody>
+        <tfoot style="background:#f8fafc;border-top:2px solid #e2e8f0;">
+          <tr>
+            <td colspan="3" style="${TD}font-weight:700;color:#1e293b;">TOTAL</td>
+            <td style="${TDR}font-weight:800;font-family:'Courier New',monospace;color:#334155;">${fmt(totalCreditValue)}</td>
+            <td style="${TDR}font-weight:800;font-family:'Courier New',monospace;color:#059669;">${fmt(totalCreditPaid)}</td>
+            <td style="${TDR}font-weight:900;font-family:'Courier New',monospace;color:#e11d48;">${fmt(totalReceivables)}</td>
+            <td style="${TDC}"></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>`;
+  }
+
   if (isInventory) {
     const totalValue   = invItems.reduce((s, i) => s + i.costPrice * i.currentStock, 0);
     const outOfStock   = invItems.filter((i) => i.stockStatus === 'OUT OF STOCK').length;
