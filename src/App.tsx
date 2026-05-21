@@ -7,12 +7,30 @@ import { SidebarProvider } from "./contexts/SidebarContext";
 import { FeedbackModalProvider } from "./contexts/FeedbackModalContext";
 import { useEffect } from "react";
 import { initOfflineStore } from "./lib/offlineStore";
+import { syncPendingChanges } from "./lib/syncEngine";
+import { offlineSyncHandlers } from "./lib/offlineSyncHandlers";
 
 function App() {
   useEffect(() => {
-    initOfflineStore().catch((error) => {
-      console.error("Unable to initialize offline desktop storage", error);
-    });
+    const runSync = () => {
+      syncPendingChanges({ handlers: offlineSyncHandlers }).catch((error) => {
+        console.error("Unable to sync offline changes", error);
+      });
+    };
+
+    initOfflineStore()
+      .then(runSync)
+      .catch((error) => {
+        console.error("Unable to initialize offline desktop storage", error);
+      });
+
+    window.addEventListener("online", runSync);
+    const syncInterval = window.setInterval(runSync, 60_000);
+
+    return () => {
+      window.removeEventListener("online", runSync);
+      window.clearInterval(syncInterval);
+    };
   }, []);
 
   return (

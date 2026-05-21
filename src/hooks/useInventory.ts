@@ -3,6 +3,7 @@ import type { InventoryItem } from '@/types/erp';
 import { enrichInventoryItem } from '@/services/inventoryService';
 import { supabase } from '@/lib/supabase';
 import { sanitizeMultiline, sanitizeText, sanitizeUrl } from '@/lib/sanitize';
+import { loadLocalCollection, queueLocalMutation, saveLocalCollection } from '@/lib/localCache';
 
 type Row = {
   id?: string; product_code: string; product_name: string; sku: string;
@@ -82,14 +83,29 @@ export function useInventory() {
 
   useEffect(() => {
     const fetchInventory = async () => {
+      const [cachedItems, cachedCategories] = await Promise.all([
+        loadLocalCollection<InventoryItem>('inventory'),
+        loadLocalCollection<string>('inventory_categories'),
+      ]);
+      if (cachedItems.length) setItems(cachedItems);
+      if (cachedCategories.length) setCategories(cachedCategories);
+
       const [itemsRes, catsRes] = await Promise.all([
         supabase.from('inventory').select('*').order('product_name'),
         supabase.from('inventory_categories').select('name').order('name'),
       ]);
       if (itemsRes.error) console.error(itemsRes.error);
       if (catsRes.error) console.error(catsRes.error);
-      setItems(itemsRes.data ? itemsRes.data.map(toItem) : []);
-      setCategories(catsRes.data ? catsRes.data.map((r: { name: string }) => r.name) : []);
+      if (!itemsRes.error && itemsRes.data) {
+        const nextItems = itemsRes.data.map(toItem);
+        setItems(nextItems);
+        saveLocalCollection('inventory', nextItems);
+      }
+      if (!catsRes.error && catsRes.data) {
+        const nextCategories = catsRes.data.map((r: { name: string }) => r.name);
+        setCategories(nextCategories);
+        saveLocalCollection('inventory_categories', nextCategories);
+      }
       setLoading(false);
     };
 
@@ -107,56 +123,81 @@ export function useInventory() {
   const saveItem = async (item: InventoryItem) => {
     const enriched = enrichInventoryItem(cleanItem(item));
     const existing = items.find((i) => i.itemId === enriched.itemId);
-    setItems((prev) => {
-      return existing
-        ? prev.map((i) => i.itemId === enriched.itemId ? enriched : i)
-        : [...prev, enriched];
-    });
+    const optimisticItems = existing
+      ? items.map((i) => i.itemId === enriched.itemId ? enriched : i)
+      : [...items, enriched];
+    setItems(optimisticItems);
+    saveLocalCollection('inventory', optimisticItems);
     const request = existing
       ? supabase.from('inventory').update(toRow(enriched)).eq('product_code', enriched.itemId).select('*').single()
       : supabase.from('inventory').insert(toRow(enriched)).select('*').single();
 
     const { data, error } = await request;
-    if (error) console.error(error);
+    if (error) {
+      console.error(error);
+      queueLocalMutation('inventory', enriched.itemId, existing ? 'update' : 'create', enriched);
+    }
     if (data) {
       const saved = toItem(data);
-      setItems((prev) => prev.map((i) => i.itemId === enriched.itemId ? saved : i));
+      const syncedItems = optimisticItems.map((i) => i.itemId === enriched.itemId ? saved : i);
+      setItems(syncedItems);
+      saveLocalCollection('inventory', syncedItems);
     }
   };
 
   const deleteItem = async (itemId: string) => {
-    setItems((prev) => prev.filter((i) => i.itemId !== itemId));
+    const nextItems = items.filter((i) => i.itemId !== itemId);
+    setItems(nextItems);
+    saveLocalCollection('inventory', nextItems);
     const { error } = await supabase.from('inventory').delete().eq('product_code', itemId);
-    if (error) console.error(error);
+    if (error) {
+      console.error(error);
+      queueLocalMutation('inventory', itemId, 'delete', { itemId });
+    }
   };
 
   const addCategory = async (name: string) => {
     const cleanName = sanitizeText(name);
     if (!cleanName || categories.includes(cleanName)) return;
-    setCategories((prev) => [...prev, cleanName]);
+    const nextCategories = [...categories, cleanName];
+    setCategories(nextCategories);
+    saveLocalCollection('inventory_categories', nextCategories);
     const { error } = await supabase.from('inventory_categories').insert({ name: cleanName });
-    if (error) console.error(error);
+    if (error) {
+      console.error(error);
+      queueLocalMutation('inventory_categories', cleanName, 'create', { name: cleanName });
+    }
   };
 
   const renameCategory = async (original: string, newName: string) => {
     const cleanOriginal = sanitizeText(original);
     const cleanNewName = sanitizeText(newName);
     if (!cleanNewName) return;
-    setCategories((prev) => prev.map((c) => c === cleanOriginal ? cleanNewName : c));
-    setItems((prev) => prev.map((i) =>
+    const nextCategories = categories.map((c) => c === cleanOriginal ? cleanNewName : c);
+    const nextItems = items.map((i) =>
       i.category === cleanOriginal ? { ...i, category: cleanNewName } : i
-    ));
+    );
+    setCategories(nextCategories);
+    setItems(nextItems);
+    saveLocalCollection('inventory_categories', nextCategories);
+    saveLocalCollection('inventory', nextItems);
     await supabase.from('inventory_categories')
       .update({ name: cleanNewName }).eq('name', cleanOriginal);
-    await supabase.from('inventory')
+    const { error } = await supabase.from('inventory')
       .update({ category_name: cleanNewName }).eq('category_name', cleanOriginal);
+    if (error) queueLocalMutation('inventory_categories', cleanOriginal, 'update', { original: cleanOriginal, name: cleanNewName });
   };
 
   const deleteCategory = async (name: string) => {
     const cleanName = sanitizeText(name);
-    setCategories((prev) => prev.filter((c) => c !== cleanName));
+    const nextCategories = categories.filter((c) => c !== cleanName);
+    setCategories(nextCategories);
+    saveLocalCollection('inventory_categories', nextCategories);
     const { error } = await supabase.from('inventory_categories').delete().eq('name', cleanName);
-    if (error) console.error(error);
+    if (error) {
+      console.error(error);
+      queueLocalMutation('inventory_categories', cleanName, 'delete', { name: cleanName });
+    }
   };
 
   return { items, categories, loading, saveItem, deleteItem, addCategory, renameCategory, deleteCategory };

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import type { BankDepositRecord } from '@/types/erp';
 import { sanitizeMultiline, sanitizeText } from '@/lib/sanitize';
+import { createLocalId, loadLocalCollection, queueLocalMutation, saveLocalCollection } from '@/lib/localCache';
 
 type Row = {
   id: string;
@@ -53,6 +54,8 @@ export function useBankDeposits() {
 
   useEffect(() => {
     const fetchDeposits = async () => {
+      const cached = await loadLocalCollection<BankDepositRecord>('bank_deposits');
+      if (cached.length) setDeposits(cached);
       const { data, error } = await supabase
         .from('bank_deposits')
         .select('*')
@@ -65,7 +68,9 @@ export function useBankDeposits() {
         return;
       }
 
-      setDeposits(data ? data.map(toRecord) : []);
+      const nextDeposits = data ? data.map(toRecord) : [];
+      setDeposits(nextDeposits);
+      saveLocalCollection('bank_deposits', nextDeposits);
       setLoading(false);
     };
 
@@ -82,27 +87,31 @@ export function useBankDeposits() {
   const addDeposit = async (data: Omit<BankDepositRecord, 'depositId' | 'createdBy' | 'createdAt'>) => {
     const temp: BankDepositRecord = {
       ...cleanDeposit(data),
-      depositId: `DEP${Date.now()}`,
+      depositId: createLocalId(),
       createdBy: '',
       createdAt: new Date().toISOString(),
     };
-    setDeposits((prev) => [temp, ...prev]);
+    const nextDeposits = [temp, ...deposits];
+    setDeposits(nextDeposits);
+    saveLocalCollection('bank_deposits', nextDeposits);
 
     const { data: inserted, error } = await supabase
       .from('bank_deposits')
-      .insert(toRow(data))
+      .insert({ id: temp.depositId, ...toRow(data) })
       .select('*')
       .single();
 
     if (error) {
       console.error(error);
-      setDeposits((prev) => prev.filter((deposit) => deposit.depositId !== temp.depositId));
-      throw error;
+      queueLocalMutation('bank_deposits', temp.depositId, 'create', temp);
+      return;
     }
 
     if (inserted) {
       const saved = toRecord(inserted);
-      setDeposits((prev) => prev.map((deposit) => deposit.depositId === temp.depositId ? saved : deposit));
+      const syncedDeposits = nextDeposits.map((deposit) => deposit.depositId === temp.depositId ? saved : deposit);
+      setDeposits(syncedDeposits);
+      saveLocalCollection('bank_deposits', syncedDeposits);
     }
   };
 
@@ -110,10 +119,11 @@ export function useBankDeposits() {
     depositId: string,
     data: Omit<BankDepositRecord, 'depositId' | 'createdBy' | 'createdAt'>
   ) => {
-    const previous = deposits;
-    setDeposits((prev) => prev.map((deposit) => (
+    const nextDeposits = deposits.map((deposit) => (
       deposit.depositId === depositId ? { ...deposit, ...cleanDeposit(data) } : deposit
-    )));
+    ));
+    setDeposits(nextDeposits);
+    saveLocalCollection('bank_deposits', nextDeposits);
 
     const { data: updated, error } = await supabase
       .from('bank_deposits')
@@ -124,22 +134,25 @@ export function useBankDeposits() {
 
     if (error) {
       console.error(error);
-      setDeposits(previous);
-      throw error;
+      queueLocalMutation('bank_deposits', depositId, 'update', nextDeposits.find((deposit) => deposit.depositId === depositId));
+      return nextDeposits.find((deposit) => deposit.depositId === depositId);
     }
 
     if (updated) {
       const saved = toRecord(updated);
-      setDeposits((prev) => prev.map((deposit) => (
+      const syncedDeposits = deposits.map((deposit) => (
         deposit.depositId === depositId ? saved : deposit
-      )));
+      ));
+      setDeposits(syncedDeposits);
+      saveLocalCollection('bank_deposits', syncedDeposits);
       return saved;
     }
   };
 
   const deleteDeposit = async (depositId: string) => {
-    const previous = deposits;
-    setDeposits((prev) => prev.filter((deposit) => deposit.depositId !== depositId));
+    const nextDeposits = deposits.filter((deposit) => deposit.depositId !== depositId);
+    setDeposits(nextDeposits);
+    saveLocalCollection('bank_deposits', nextDeposits);
 
     const { error } = await supabase
       .from('bank_deposits')
@@ -148,8 +161,7 @@ export function useBankDeposits() {
 
     if (error) {
       console.error(error);
-      setDeposits(previous);
-      throw error;
+      queueLocalMutation('bank_deposits', depositId, 'delete', { depositId });
     }
   };
 

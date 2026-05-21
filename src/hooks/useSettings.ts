@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { sanitizeEmail, sanitizeMultiline, sanitizeText, sanitizeUrl } from '@/lib/sanitize';
+import { loadLocalCollection, queueLocalMutation, saveLocalCollection } from '@/lib/localCache';
 
 export interface StoreSettings {
   storeName: string; storeAddress: string; storePhone: string; storeEmail: string;
@@ -60,8 +61,17 @@ export function useSettings() {
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase.from('store_settings').select('*').eq('settings_key', 'default').single();
-      if (data) setSettings(toSettings(data as Row));
+      const cached = await loadLocalCollection<StoreSettings>('store_settings');
+      if (cached[0]) setSettings(cached[0]);
+      const { data, error } = await supabase.from('store_settings').select('*').eq('settings_key', 'default').single();
+      if (data) {
+        const next = toSettings(data as Row);
+        setSettings(next);
+        saveLocalCollection('store_settings', [next]);
+      }
+      else if (error) {
+        console.error(error);
+      }
       else {
         await supabase.from('store_settings').insert({ settings_key: 'default', ...Object.fromEntries(
           Object.entries(DEFAULT_SETTINGS).map(([k, v]) => [
@@ -85,12 +95,17 @@ export function useSettings() {
       timezone: next.timezone, invoice_due_days: next.invoiceDueDays,
     };
     const { error } = await supabase.from('store_settings').upsert({ settings_key: 'default', ...row }, { onConflict: 'settings_key' });
-    if (error) console.error(error);
+    saveLocalCollection('store_settings', [next]);
+    if (error) {
+      console.error(error);
+      queueLocalMutation('store_settings', 'default', 'update', next);
+    }
   };
 
   const resetSettings = async () => {
     setSettings(DEFAULT_SETTINGS);
-    await supabase.from('store_settings').upsert({ settings_key: 'default',
+    saveLocalCollection('store_settings', [DEFAULT_SETTINGS]);
+    const { error } = await supabase.from('store_settings').upsert({ settings_key: 'default',
       store_name: DEFAULT_SETTINGS.storeName, store_address: DEFAULT_SETTINGS.storeAddress,
       store_phone: DEFAULT_SETTINGS.storePhone, store_email: DEFAULT_SETTINGS.storeEmail,
       store_logo: '', currency: 'GHS', currency_symbol: '₵', tax_rate: 10, tax_label: 'VAT',
@@ -98,6 +113,7 @@ export function useSettings() {
       receipt_show_logo: true, receipt_show_tax: true, receipt_show_barcode: true,
       receipt_theme: 'minimal', timezone: 'Africa/Accra', invoice_due_days: 30,
     }, { onConflict: 'settings_key' });
+    if (error) queueLocalMutation('store_settings', 'default', 'update', DEFAULT_SETTINGS);
   };
 
   return { settings, updateSettings, resetSettings };

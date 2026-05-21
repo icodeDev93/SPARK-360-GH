@@ -93,6 +93,7 @@ interface AuthContextValue {
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+const AUTH_CACHE_KEY = 'spark360:auth-user';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser]       = useState<AuthUser | null>(null);
@@ -149,6 +150,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     (async () => {
       try {
+        const cached = localStorage.getItem(AUTH_CACHE_KEY);
+        if (cached) setCurrentUser(JSON.parse(cached));
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user?.id) {
           const { data: profile } = await supabase
@@ -156,8 +159,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             .select('*')
             .eq('id', session.user.id)
             .single();
-          if (profile) setCurrentUser(mapRow(profile));
+          if (profile) {
+            const user = mapRow(profile);
+            setCurrentUser(user);
+            localStorage.setItem(AUTH_CACHE_KEY, JSON.stringify(user));
+          }
         }
+      } catch (error) {
+        console.warn('Using cached auth profile because Supabase session restore failed.', error);
       } finally {
         setSessionLoading(false);
       }
@@ -193,6 +202,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const user = mapRow(profile);
       setCurrentUser(user);
+      localStorage.setItem(AUTH_CACHE_KEY, JSON.stringify(user));
       writeLog(user, { category: 'auth', action: 'login', description: `${user.name} (${ROLE_LABELS[user.role].label}) logged in` });
       return { success: true };
     } finally {
@@ -205,6 +215,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await writeLog(currentUser, { category: 'auth', action: 'logout', description: `${currentUser.name} (${ROLE_LABELS[currentUser.role].label}) logged out` });
     }
     await supabase.auth.signOut();
+    localStorage.removeItem(AUTH_CACHE_KEY);
     setCurrentUser(null);
   };
 
@@ -234,7 +245,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       next_avatar_url: sanitizeUrl(avatarUrl),
     });
     if (error) return { success: false, error: error.message };
-    if (data) setCurrentUser(mapRow(data as Record<string, unknown>));
+    if (data) {
+      const user = mapRow(data as Record<string, unknown>);
+      setCurrentUser(user);
+      localStorage.setItem(AUTH_CACHE_KEY, JSON.stringify(user));
+    }
     return { success: true };
   };
 

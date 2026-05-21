@@ -3,6 +3,7 @@ import type { CreditPayment, InvoiceRecord, SaleLineItem, PaymentMethod } from '
 import { generateNextInvoiceNo, generateReceiptNo, buildInvoice, refundInvoice, calcLineItem, calcInvoiceTotals } from '@/services/salesService';
 import { supabase } from '@/lib/supabase';
 import { sanitizeMultiline, sanitizeText } from '@/lib/sanitize';
+import { loadLocalCollection, queueLocalMutation, saveLocalCollection } from '@/lib/localCache';
 
 export type { InvoiceRecord, SaleLineItem, PaymentMethod };
 
@@ -349,6 +350,13 @@ export function useSalesLog() {
 
   useEffect(() => {
     const fetchSales = async () => {
+      const [cachedInvoices, cachedPayments] = await Promise.all([
+        loadLocalCollection<InvoiceRecord>('sales_invoices'),
+        loadLocalCollection<CreditPayment>('credit_payments'),
+      ]);
+      if (cachedInvoices.length) setInvoices(cachedInvoices);
+      if (cachedPayments.length) setCreditPayments(cachedPayments);
+
       const { data, error } = await supabase
         .from('sales')
         .select('*, sale_items(*), receipts(receipt_number)')
@@ -362,8 +370,12 @@ export function useSalesLog() {
           paymentTotals.set(key, (paymentTotals.get(key) ?? 0) + Number(payment.amount ?? 0));
         });
       });
-      setCreditPayments(payments.map(toCreditPayment));
-      setInvoices(data ? (data as InvoiceRow[]).map((row) => toInvoice(row, paymentTotals)) : []);
+      const nextPayments = payments.map(toCreditPayment);
+      const nextInvoices = data ? (data as InvoiceRow[]).map((row) => toInvoice(row, paymentTotals)) : [];
+      setCreditPayments(nextPayments);
+      setInvoices(nextInvoices);
+      saveLocalCollection('credit_payments', nextPayments);
+      saveLocalCollection('sales_invoices', nextInvoices);
       setLoading(false);
     };
 
@@ -400,10 +412,16 @@ export function useSalesLog() {
       cleanData.items, cleanData.paymentMethod, cleanData.cashier, status
     );
     // Optimistic update
-    setInvoices((prev) => [newInvoice, ...prev]);
+    const nextInvoices = [newInvoice, ...invoices];
+    setInvoices(nextInvoices);
+    saveLocalCollection('sales_invoices', nextInvoices);
     // Background save
     insertSale(newInvoice).then(async ({ data: sale, error }) => {
-      if (error) { console.error(error); return; }
+      if (error) {
+        console.error(error);
+        queueLocalMutation('sales', newInvoice.invoiceNo, 'create', newInvoice);
+        return;
+      }
       if (!sale) return;
       if (newInvoice.items.length > 0) {
         insertSaleItems(sale.id, newInvoice.items);
@@ -428,18 +446,28 @@ export function useSalesLog() {
   };
 
   const refund = async (invoiceNo: string) => {
-    setInvoices((prev) => prev.map((inv) =>
+    const nextInvoices = invoices.map((inv) =>
       inv.invoiceNo === invoiceNo ? refundInvoice(inv) : inv
-    ));
+    );
+    setInvoices(nextInvoices);
+    saveLocalCollection('sales_invoices', nextInvoices);
     const sale = await findSaleByInvoiceNo(invoiceNo);
-    if (!sale) return;
+    if (!sale) {
+      queueLocalMutation('sales', invoiceNo, 'update', nextInvoices.find((inv) => inv.invoiceNo === invoiceNo));
+      return;
+    }
     const { error } = await supabase.from('sales')
       .update({ status: 'refunded' }).eq('id', sale.id);
-    if (error) console.error(error);
+    if (error) {
+      console.error(error);
+      queueLocalMutation('sales', invoiceNo, 'update', nextInvoices.find((inv) => inv.invoiceNo === invoiceNo));
+    }
   };
 
   const deleteInvoice = async (invoiceNo: string) => {
-    setInvoices((prev) => prev.filter((inv) => inv.invoiceNo !== invoiceNo));
+    const nextInvoices = invoices.filter((inv) => inv.invoiceNo !== invoiceNo);
+    setInvoices(nextInvoices);
+    saveLocalCollection('sales_invoices', nextInvoices);
     const sale = await findSaleByInvoiceNo(invoiceNo);
     if (sale) {
       await supabase.from('sale_items').delete().eq('sale_id', sale.id);
@@ -448,7 +476,10 @@ export function useSalesLog() {
     const { error } = sale
       ? await supabase.from('sales').delete().eq('id', sale.id)
       : await supabase.from('sales').delete().eq('receipt_number', invoiceNo);
-    if (error) console.error(error);
+    if (error) {
+      console.error(error);
+      queueLocalMutation('sales', invoiceNo, 'delete', { invoiceNo });
+    }
   };
 
   const recordCreditPayment = async (
@@ -481,16 +512,37 @@ export function useSalesLog() {
         status: nextStatus,
       };
 
-      setInvoices((prev) => prev.map((i) =>
+      const nextInvoices = invoices.map((i) =>
         i.invoiceNo === cleanInvoiceNo ? updatedInvoice : i
-      ));
+      );
+      setInvoices(nextInvoices);
+      saveLocalCollection('sales_invoices', nextInvoices);
 
       const sale = await findSaleByInvoiceNo(cleanInvoiceNo);
-      if (!sale) return null;
+      if (!sale) {
+        queueLocalMutation('credit_payments', `${cleanInvoiceNo}-${receiptNo}`, 'create', {
+          invoiceNo: cleanInvoiceNo,
+          receiptNo,
+          amount: paymentAmount,
+          paymentMethod,
+          notes,
+        });
+        return { receiptNo, remainingBalance };
+      }
 
       const { error } = await supabase.from('sales')
         .update({ status: nextStatus, receipt_number: receiptNo }).eq('id', sale.id);
-      if (error) { console.error(error); return null; }
+      if (error) {
+        console.error(error);
+        queueLocalMutation('credit_payments', `${cleanInvoiceNo}-${receiptNo}`, 'create', {
+          invoiceNo: cleanInvoiceNo,
+          receiptNo,
+          amount: paymentAmount,
+          paymentMethod,
+          notes,
+        });
+        return { receiptNo, remainingBalance };
+      }
 
       if (inv.customerId && inv.customerId !== 'walk-in') {
         const { data: cust } = await supabase
@@ -528,6 +580,24 @@ export function useSalesLog() {
         console.error(paymentResult.error);
       }
 
+      const nextPayments = [
+        {
+          id: `${cleanInvoiceNo}-${receiptNo}`,
+          customerId: inv.customerId,
+          saleId: sale.id,
+          invoiceNo: cleanInvoiceNo,
+          receiptNo,
+          receiptId: receipt?.id ?? null,
+          amount: paymentAmount,
+          paymentMethod,
+          notes: sanitizeMultiline(notes),
+          createdAt: new Date().toISOString(),
+        },
+        ...creditPayments,
+      ];
+      setCreditPayments(nextPayments);
+      saveLocalCollection('credit_payments', nextPayments);
+
       return { receiptNo, remainingBalance };
     } finally {
       creditPaymentsInFlight.current.delete(cleanInvoiceNo);
@@ -556,14 +626,19 @@ export function useSalesLog() {
     const nextBalanceDue = Math.max(0, newTotals.netSales - inv.amountPaid);
     const nextStatus: InvoiceRecord['status'] =
       inv.status === 'credit' && nextBalanceDue <= 0.005 ? 'completed' : inv.status;
-    setInvoices((prev) => prev.map((i) =>
+    const nextInvoices = invoices.map((i) =>
       i.invoiceNo === invoiceNo
         ? { ...i, items: updatedItems, ...newTotals, balanceDue: nextBalanceDue, status: nextStatus }
         : i
-    ));
+    );
+    setInvoices(nextInvoices);
+    saveLocalCollection('sales_invoices', nextInvoices);
 
     const sale = await findSaleByInvoiceNo(invoiceNo);
-    if (!sale) return;
+    if (!sale) {
+      queueLocalMutation('sales', invoiceNo, 'update', nextInvoices.find((i) => i.invoiceNo === invoiceNo));
+      return;
+    }
 
     for (const ret of returns) {
       if (ret.returnQty <= 0) continue;

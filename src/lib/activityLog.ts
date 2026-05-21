@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase';
 import type { AuthUser } from '@/hooks/useAuth';
 import { sanitizeText } from '@/lib/sanitize';
+import { loadLocalCollection, queueLocalMutation, saveLocalCollection } from './localCache';
 
 export interface LogChange {
   field: string;
@@ -24,20 +25,26 @@ export interface LogEntry {
 }
 
 export async function writeLog(user: AuthUser, entry: LogEntry): Promise<void> {
+  const localLog = {
+    id: `LOG${Date.now()}`,
+    user_id: user.id,
+    user_name: sanitizeText(user.name),
+    user_role: user.role,
+    category: entry.category,
+    action: entry.action,
+    description: sanitizeText(entry.description),
+    changes: entry.changes?.length ? entry.changes.map((change) => ({
+      field: sanitizeText(change.field),
+      old: sanitizeText(change.old),
+      new: sanitizeText(change.new),
+    })) : null,
+    created_at: new Date().toISOString(),
+  };
   try {
-    await supabase.from('user_logs').insert({
-      user_id:     user.id,
-      user_name:   sanitizeText(user.name),
-      user_role:   user.role,
-      category:    entry.category,
-      action:      entry.action,
-      description: sanitizeText(entry.description),
-      changes:     entry.changes?.length ? entry.changes.map((change) => ({
-        field: sanitizeText(change.field),
-        old: sanitizeText(change.old),
-        new: sanitizeText(change.new),
-      })) : null,
-    });
+    const current = await loadLocalCollection<typeof localLog>('user_logs');
+    await saveLocalCollection('user_logs', [localLog, ...current].slice(0, 1000));
+    const { error } = await supabase.from('user_logs').insert(localLog);
+    if (error) await queueLocalMutation('user_logs', localLog.id, 'create', localLog);
   } catch {
     // Logging failures never block the main action
   }

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import type { BankRecord } from '@/types/erp';
 import { sanitizeText } from '@/lib/sanitize';
+import { createLocalId, loadLocalCollection, queueLocalMutation, saveLocalCollection } from '@/lib/localCache';
 
 type Row = {
   id: string;
@@ -46,6 +47,8 @@ export function useBanks() {
 
   useEffect(() => {
     const fetchBanks = async () => {
+      const cached = await loadLocalCollection<BankRecord>('banks');
+      if (cached.length) setBanks(cached);
       const { data, error } = await supabase
         .from('banks')
         .select('*')
@@ -58,7 +61,9 @@ export function useBanks() {
         return;
       }
 
-      setBanks(data ? data.map(toRecord) : []);
+      const nextBanks = data ? data.map(toRecord) : [];
+      setBanks(nextBanks);
+      saveLocalCollection('banks', nextBanks);
       setLoading(false);
     };
 
@@ -75,27 +80,31 @@ export function useBanks() {
   const addBank = async (data: Omit<BankRecord, 'bankId' | 'createdBy' | 'createdAt'>) => {
     const temp: BankRecord = {
       ...cleanBank(data),
-      bankId: `BANK${Date.now()}`,
+      bankId: createLocalId(),
       createdBy: '',
       createdAt: new Date().toISOString(),
     };
-    setBanks((prev) => [...prev, temp].sort((a, b) => a.bankName.localeCompare(b.bankName)));
+    const nextBanks = [...banks, temp].sort((a, b) => a.bankName.localeCompare(b.bankName));
+    setBanks(nextBanks);
+    saveLocalCollection('banks', nextBanks);
 
     const { data: inserted, error } = await supabase
       .from('banks')
-      .insert(toRow(data))
+      .insert({ id: temp.bankId, ...toRow(data) })
       .select('*')
       .single();
 
     if (error) {
       console.error(error);
-      setBanks((prev) => prev.filter((bank) => bank.bankId !== temp.bankId));
-      throw error;
+      queueLocalMutation('banks', temp.bankId, 'create', temp);
+      return temp;
     }
 
     if (inserted) {
       const saved = toRecord(inserted);
-      setBanks((prev) => prev.map((bank) => bank.bankId === temp.bankId ? saved : bank));
+      const syncedBanks = nextBanks.map((bank) => bank.bankId === temp.bankId ? saved : bank);
+      setBanks(syncedBanks);
+      saveLocalCollection('banks', syncedBanks);
       return saved;
     }
 
@@ -103,10 +112,11 @@ export function useBanks() {
   };
 
   const updateBank = async (bankId: string, data: Omit<BankRecord, 'bankId' | 'createdBy' | 'createdAt'>) => {
-    const previous = banks;
-    setBanks((prev) => prev
+    const nextBanks = banks
       .map((bank) => bank.bankId === bankId ? { ...bank, ...cleanBank(data) } : bank)
-      .sort((a, b) => a.bankName.localeCompare(b.bankName)));
+      .sort((a, b) => a.bankName.localeCompare(b.bankName));
+    setBanks(nextBanks);
+    saveLocalCollection('banks', nextBanks);
 
     const { data: updated, error } = await supabase
       .from('banks')
@@ -117,22 +127,25 @@ export function useBanks() {
 
     if (error) {
       console.error(error);
-      setBanks(previous);
-      throw error;
+      queueLocalMutation('banks', bankId, 'update', nextBanks.find((bank) => bank.bankId === bankId));
+      return nextBanks.find((bank) => bank.bankId === bankId);
     }
 
     if (updated) {
       const saved = toRecord(updated);
-      setBanks((prev) => prev
+      const syncedBanks = banks
         .map((bank) => bank.bankId === bankId ? saved : bank)
-        .sort((a, b) => a.bankName.localeCompare(b.bankName)));
+        .sort((a, b) => a.bankName.localeCompare(b.bankName));
+      setBanks(syncedBanks);
+      saveLocalCollection('banks', syncedBanks);
       return saved;
     }
   };
 
   const deleteBank = async (bankId: string) => {
-    const previous = banks;
-    setBanks((prev) => prev.filter((bank) => bank.bankId !== bankId));
+    const nextBanks = banks.filter((bank) => bank.bankId !== bankId);
+    setBanks(nextBanks);
+    saveLocalCollection('banks', nextBanks);
 
     const { error } = await supabase
       .from('banks')
@@ -141,8 +154,7 @@ export function useBanks() {
 
     if (error) {
       console.error(error);
-      setBanks(previous);
-      throw error;
+      queueLocalMutation('banks', bankId, 'delete', { bankId });
     }
   };
 

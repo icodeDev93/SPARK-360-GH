@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Supplier, PurchaseOrder } from '@/mocks/suppliers';
 import { supabase } from '@/lib/supabase';
 import { sanitizeEmail, sanitizeMultiline, sanitizeText } from '@/lib/sanitize';
+import { loadLocalCollection, queueLocalMutation, saveLocalCollection } from '@/lib/localCache';
 
 const toDateValue = (value: string) => {
   if (!value || value === 'TBD') return null;
@@ -103,14 +104,28 @@ export function useSuppliers() {
 
   useEffect(() => {
     const fetchAll = async () => {
+      const [cachedSuppliers, cachedOrders] = await Promise.all([
+        loadLocalCollection<Supplier>('suppliers'),
+        loadLocalCollection<PurchaseOrder>('purchases'),
+      ]);
+      if (cachedSuppliers.length) setSuppliers(cachedSuppliers);
+      if (cachedOrders.length) setOrders(cachedOrders);
       const [supRes, ordRes] = await Promise.all([
         supabase.from('suppliers').select('*').order('name'),
         supabase.from('purchases').select('*').order('purchase_date', { ascending: false }),
       ]);
       if (supRes.error) console.error(supRes.error);
       if (ordRes.error) console.error(ordRes.error);
-      setSuppliers(supRes.data ? supRes.data.map((r) => toSupplier(r as SupplierRow)) : []);
-      setOrders(ordRes.data ? ordRes.data.map((r) => toPurchaseOrder(r as PurchaseRow)) : []);
+      if (!supRes.error && supRes.data) {
+        const nextSuppliers = supRes.data.map((r) => toSupplier(r as SupplierRow));
+        setSuppliers(nextSuppliers);
+        saveLocalCollection('suppliers', nextSuppliers);
+      }
+      if (!ordRes.error && ordRes.data) {
+        const nextOrders = ordRes.data.map((r) => toPurchaseOrder(r as PurchaseRow));
+        setOrders(nextOrders);
+        saveLocalCollection('purchases', nextOrders);
+      }
       setLoading(false);
     };
 
@@ -127,71 +142,108 @@ export function useSuppliers() {
 
   const addSupplier = async (data: Omit<Supplier, 'id' | 'totalOrders' | 'totalSpent'>) => {
     const cleanData = cleanSupplier(data);
-    const newSup: Supplier = { ...cleanData, id: 'Pending...', totalOrders: 0, totalSpent: 0 };
-    setSuppliers((prev) => [newSup, ...prev]);
+    const newSup: Supplier = { ...cleanData, id: `SUP${Date.now()}`, totalOrders: 0, totalSpent: 0 };
+    const nextSuppliers = [newSup, ...suppliers];
+    setSuppliers(nextSuppliers);
+    saveLocalCollection('suppliers', nextSuppliers);
     const { data: inserted, error } = await supabase.from('suppliers').insert({
-      name: newSup.name, contact_name: newSup.contact, phone: newSup.phone,
+      supplier_code: newSup.id, name: newSup.name, contact_name: newSup.contact, phone: newSup.phone,
       email: newSup.email, address: newSup.address, category: newSup.category,
       status: newSup.status, joined_date: toDateValue(newSup.joinedDate), notes: newSup.notes,
     }).select('*').single();
-    if (error) console.error(error);
+    if (error) {
+      console.error(error);
+      queueLocalMutation('suppliers', newSup.id, 'create', newSup);
+    }
     if (inserted) {
       const savedSupplier = toSupplier(inserted as SupplierRow);
-      setSuppliers((prev) => prev.map((supplier) => supplier === newSup ? savedSupplier : supplier));
+      const syncedSuppliers = nextSuppliers.map((supplier) => supplier.id === newSup.id ? savedSupplier : supplier);
+      setSuppliers(syncedSuppliers);
+      saveLocalCollection('suppliers', syncedSuppliers);
     }
   };
 
   const updateSupplier = async (id: string, data: Partial<Omit<Supplier, 'id'>>) => {
     const cleanData = cleanSupplierPatch(data);
-    setSuppliers((prev) => prev.map((s) => s.id === id ? { ...s, ...cleanData } : s));
+    const nextSuppliers = suppliers.map((s) => s.id === id ? { ...s, ...cleanData } : s);
+    setSuppliers(nextSuppliers);
+    saveLocalCollection('suppliers', nextSuppliers);
     const { error } = await supabase.from('suppliers').update({
       name: cleanData.name, contact_name: cleanData.contact, phone: cleanData.phone, email: cleanData.email,
       address: cleanData.address, category: cleanData.category, status: cleanData.status,
       joined_date: cleanData.joinedDate ? toDateValue(cleanData.joinedDate) : undefined, notes: cleanData.notes,
     }).eq('supplier_code', id);
-    if (error) console.error(error);
+    if (error) {
+      console.error(error);
+      queueLocalMutation('suppliers', id, 'update', nextSuppliers.find((supplier) => supplier.id === id));
+    }
   };
 
   const deleteSupplier = async (id: string) => {
-    setSuppliers((prev) => prev.filter((s) => s.id !== id));
+    const nextSuppliers = suppliers.filter((s) => s.id !== id);
+    setSuppliers(nextSuppliers);
+    saveLocalCollection('suppliers', nextSuppliers);
     const { error } = await supabase.from('suppliers').delete().eq('supplier_code', id);
-    if (error) console.error(error);
+    if (error) {
+      console.error(error);
+      queueLocalMutation('suppliers', id, 'delete', { id });
+    }
   };
 
   const addOrder = async (data: Omit<PurchaseOrder, 'id'>) => {
     const cleanData = cleanOrder(data);
-    const newOrder: PurchaseOrder = { ...cleanData, id: 'Pending...' };
-    setOrders((prev) => [newOrder, ...prev]);
-    setSuppliers((prev) => prev.map((s) =>
+    const newOrder: PurchaseOrder = { ...cleanData, id: `PUR${Date.now()}` };
+    const nextOrders = [newOrder, ...orders];
+    const nextSuppliers = suppliers.map((s) =>
       s.id === cleanData.supplierId
         ? { ...s, totalOrders: s.totalOrders + 1, totalSpent: s.totalSpent + cleanData.total }
         : s
-    ));
+    );
+    setOrders(nextOrders);
+    setSuppliers(nextSuppliers);
+    saveLocalCollection('purchases', nextOrders);
+    saveLocalCollection('suppliers', nextSuppliers);
     const { data: inserted, error } = await supabase.from('purchases').insert({
+      purchase_number: newOrder.id,
       supplier_code: newOrder.supplierId,
       supplier_name: newOrder.supplierName, purchase_date: toDateValue(newOrder.date),
       expected_date: toDateValue(newOrder.expectedDate), item_count: newOrder.items,
       subtotal: newOrder.total, total_amount: newOrder.total, status: newOrder.status,
       payment_status: newOrder.paymentStatus, notes: newOrder.notes,
     }).select('*').single();
-    if (error) console.error(error);
+    if (error) {
+      console.error(error);
+      queueLocalMutation('purchases', newOrder.id, 'create', newOrder);
+    }
     if (inserted) {
       const savedOrder = toPurchaseOrder(inserted as PurchaseRow);
-      setOrders((prev) => prev.map((order) => order === newOrder ? savedOrder : order));
+      const syncedOrders = nextOrders.map((order) => order.id === newOrder.id ? savedOrder : order);
+      setOrders(syncedOrders);
+      saveLocalCollection('purchases', syncedOrders);
     }
   };
 
   const deleteOrder = async (id: string) => {
-    setOrders((prev) => prev.filter((o) => o.id !== id));
+    const nextOrders = orders.filter((o) => o.id !== id);
+    setOrders(nextOrders);
+    saveLocalCollection('purchases', nextOrders);
     const { error } = await supabase.from('purchases').delete().eq('purchase_number', id);
-    if (error) console.error(error);
+    if (error) {
+      console.error(error);
+      queueLocalMutation('purchases', id, 'delete', { id });
+    }
   };
 
   const updateOrderStatus = async (id: string, status: PurchaseOrder['status'], paymentStatus: PurchaseOrder['paymentStatus']) => {
-    setOrders((prev) => prev.map((o) => o.id === id ? { ...o, status, paymentStatus } : o));
+    const nextOrders = orders.map((o) => o.id === id ? { ...o, status, paymentStatus } : o);
+    setOrders(nextOrders);
+    saveLocalCollection('purchases', nextOrders);
     const { error } = await supabase.from('purchases')
       .update({ status, payment_status: paymentStatus }).eq('purchase_number', id);
-    if (error) console.error(error);
+    if (error) {
+      console.error(error);
+      queueLocalMutation('purchases', id, 'update', nextOrders.find((order) => order.id === id));
+    }
   };
 
   const getSupplierOrders = (supplierId: string) => orders.filter((o) => o.supplierId === supplierId);

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import type { Customer, CustomerType, CustomerStatus } from '@/types/erp';
 import { supabase } from '@/lib/supabase';
 import { sanitizeText, sanitizeEmail, sanitizeMultiline, sanitizeUrl } from '@/lib/sanitize';
+import { createLocalId, loadLocalCollection, queueLocalMutation, saveLocalCollection } from '@/lib/localCache';
 
 type Row = {
   id: string;
@@ -79,10 +80,14 @@ export function useCustomers() {
 
   useEffect(() => {
     const fetchCustomers = async () => {
+      const cached = await loadLocalCollection<Customer>('customers');
+      if (cached.length) setCustomers(cached);
       const { data, error } = await supabase
         .from('customers').select('*').order('full_name');
       if (error) { console.error(error); setLoading(false); return; }
-      setCustomers(data ? data.map(toCustomer) : []);
+      const nextCustomers = data ? data.map(toCustomer) : [];
+      setCustomers(nextCustomers);
+      saveLocalCollection('customers', nextCustomers);
       setLoading(false);
     };
 
@@ -99,37 +104,54 @@ export function useCustomers() {
   const addCustomer = async (data: Omit<Customer, 'customerId' | 'totalPurchases' | 'lastOrderDate'>) => {
     const newCustomer: Customer = {
       ...cleanCustomer(data as Customer),
-      customerId: `C${Date.now()}`,
+      customerId: createLocalId(),
       totalPurchases: 0,
       lastOrderDate: new Date().toISOString().split('T')[0],
     };
     setCustomers((prev) => [...prev, newCustomer]);
+    saveLocalCollection('customers', [...customers, newCustomer]);
     const { data: inserted, error } = await supabase
       .from('customers')
-      .insert(toRow(newCustomer))
+      .insert({ id: newCustomer.customerId, ...toRow(newCustomer) })
       .select('*')
       .single();
-    if (error) console.error(error);
+    if (error) {
+      console.error(error);
+      queueLocalMutation('customers', newCustomer.customerId, 'create', newCustomer);
+    }
     if (!inserted) return newCustomer;
     const savedCustomer = toCustomer(inserted);
-    setCustomers((prev) => prev.map((c) => c.customerId === newCustomer.customerId ? savedCustomer : c));
+    const syncedCustomers = customers.map((c) => c.customerId === newCustomer.customerId ? savedCustomer : c);
+    if (!customers.some((c) => c.customerId === newCustomer.customerId)) syncedCustomers.push(savedCustomer);
+    setCustomers(syncedCustomers);
+    saveLocalCollection('customers', syncedCustomers);
     return savedCustomer;
   };
 
   const updateCustomer = async (customerId: string, data: Partial<Customer>) => {
     const cleanData = cleanCustomerPatch(data);
-    setCustomers((prev) => prev.map((c) => c.customerId === customerId ? { ...c, ...cleanData } : c));
+    const nextCustomers = customers.map((c) => c.customerId === customerId ? { ...c, ...cleanData } : c);
+    setCustomers(nextCustomers);
+    saveLocalCollection('customers', nextCustomers);
     const updated = customers.find((c) => c.customerId === customerId);
     if (!updated) return;
     const { error } = await supabase.from('customers')
       .update(toRow({ ...updated, ...cleanData })).eq('id', customerId);
-    if (error) console.error(error);
+    if (error) {
+      console.error(error);
+      queueLocalMutation('customers', customerId, 'update', { ...updated, ...cleanData });
+    }
   };
 
   const deleteCustomer = async (customerId: string) => {
-    setCustomers((prev) => prev.filter((c) => c.customerId !== customerId));
+    const nextCustomers = customers.filter((c) => c.customerId !== customerId);
+    setCustomers(nextCustomers);
+    saveLocalCollection('customers', nextCustomers);
     const { error } = await supabase.from('customers').delete().eq('id', customerId);
-    if (error) console.error(error);
+    if (error) {
+      console.error(error);
+      queueLocalMutation('customers', customerId, 'delete', { customerId });
+    }
   };
 
   const recordPayment = async (
@@ -142,9 +164,11 @@ export function useCustomers() {
     const customer = customers.find((c) => c.customerId === customerId);
     if (!customer) return;
     const newBalance = Math.max(0, customer.outstandingBalance - amount);
-    setCustomers((prev) => prev.map((c) =>
+    const nextCustomers = customers.map((c) =>
       c.customerId === customerId ? { ...c, outstandingBalance: newBalance } : c
-    ));
+    );
+    setCustomers(nextCustomers);
+    saveLocalCollection('customers', nextCustomers);
     await supabase.from('credit_payments').insert({
       customer_id: customerId,
       sale_id: saleId ?? null,
@@ -154,7 +178,10 @@ export function useCustomers() {
     }).then(({ error: e }) => { if (e) console.error(e); });
     const { error } = await supabase.from('customers')
       .update({ outstanding_balance: newBalance }).eq('id', customerId);
-    if (error) console.error(error);
+    if (error) {
+      console.error(error);
+      queueLocalMutation('customers', customerId, 'update', { ...customer, outstandingBalance: newBalance });
+    }
   };
 
   return { customers, loading, addCustomer, updateCustomer, deleteCustomer, recordPayment };

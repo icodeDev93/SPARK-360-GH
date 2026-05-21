@@ -3,6 +3,7 @@ import AppLayout from '@/components/feature/AppLayout';
 import { supabase } from '@/lib/supabase';
 import { ROLE_LABELS } from '@/hooks/useAuth';
 import type { LogCategory, LogAction, LogChange } from '@/lib/activityLog';
+import { loadLocalCollection, saveLocalCollection } from '@/lib/localCache';
 
 interface LogRow {
   id: string;
@@ -97,12 +98,17 @@ export default function LogsPage() {
 
   useEffect(() => {
     (async () => {
+      const cached = await loadLocalCollection<LogRow>('user_logs');
+      if (cached.length) setLogs(cached);
       const { data, error } = await supabase
         .from('user_logs')
         .select('*')
         .order('created_at', { ascending: false })
         .limit(500);
-      if (!error && data) setLogs(data as LogRow[]);
+      if (!error && data) {
+        setLogs(data as LogRow[]);
+        saveLocalCollection('user_logs', data as LogRow[]);
+      }
       setLoading(false);
     })();
 

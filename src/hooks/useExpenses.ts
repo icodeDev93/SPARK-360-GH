@@ -3,6 +3,7 @@ import type { ExpenseRecord, ExpenseCategory, ExpensePaymentMethod } from '@/typ
 import { totalByCategory, grandTotalGHS } from '@/services/expenseService';
 import { supabase } from '@/lib/supabase';
 import { sanitizeMultiline, sanitizeText, sanitizeUrl } from '@/lib/sanitize';
+import { createLocalId, loadLocalCollection, queueLocalMutation, saveLocalCollection } from '@/lib/localCache';
 
 export type { ExpenseRecord };
 
@@ -45,10 +46,14 @@ export function useExpenses() {
 
   useEffect(() => {
     const fetchExpenses = async () => {
+      const cached = await loadLocalCollection<ExpenseRecord>('expenses');
+      if (cached.length) setExpenses(cached);
       const { data, error } = await supabase
         .from('expenses').select('*').order('expense_date', { ascending: false });
       if (error) { console.error(error); setLoading(false); return; }
-      setExpenses(data ? data.map(toRecord) : []);
+      const nextExpenses = data ? data.map(toRecord) : [];
+      setExpenses(nextExpenses);
+      saveLocalCollection('expenses', nextExpenses);
       setLoading(false);
     };
 
@@ -63,17 +68,24 @@ export function useExpenses() {
   }, []);
 
   const addExpense = async (data: Omit<ExpenseRecord, 'expenseId'>) => {
-    const rec: ExpenseRecord = cleanExpense({ ...data, expenseId: `EXP${Date.now()}` });
-    setExpenses((prev) => [rec, ...prev]);
+    const rec: ExpenseRecord = cleanExpense({ ...data, expenseId: createLocalId() });
+    const nextExpenses = [rec, ...expenses];
+    setExpenses(nextExpenses);
+    saveLocalCollection('expenses', nextExpenses);
     const { data: inserted, error } = await supabase
       .from('expenses')
-      .insert(toRow(rec))
+      .insert({ id: rec.expenseId, ...toRow(rec) })
       .select('*')
       .single();
-    if (error) console.error(error);
+    if (error) {
+      console.error(error);
+      queueLocalMutation('expenses', rec.expenseId, 'create', rec);
+    }
     if (inserted) {
       const saved = toRecord(inserted);
-      setExpenses((prev) => prev.map((e) => e.expenseId === rec.expenseId ? saved : e));
+      const syncedExpenses = nextExpenses.map((e) => e.expenseId === rec.expenseId ? saved : e);
+      setExpenses(syncedExpenses);
+      saveLocalCollection('expenses', syncedExpenses);
     }
   };
 
@@ -87,19 +99,29 @@ export function useExpenses() {
       ...(data.notes !== undefined ? { notes: sanitizeMultiline(data.notes) } : {}),
       ...(data.proofUrl !== undefined ? { proofUrl: data.proofUrl ? sanitizeUrl(data.proofUrl) : null } : {}),
     };
-    setExpenses((prev) => prev.map((e) => e.expenseId === expenseId ? { ...e, ...cleanData } : e));
+    const nextExpenses = expenses.map((e) => e.expenseId === expenseId ? { ...e, ...cleanData } : e);
+    setExpenses(nextExpenses);
+    saveLocalCollection('expenses', nextExpenses);
     const { error } = await supabase.from('expenses').update({
       expense_date: cleanData.date, category: cleanData.category, description: cleanData.description,
       amount: cleanData.amountGHS, paid_by: cleanData.paidBy, notes: cleanData.notes,
       proof_url: cleanData.proofUrl ?? null,
     }).eq('id', expenseId);
-    if (error) console.error(error);
+    if (error) {
+      console.error(error);
+      queueLocalMutation('expenses', expenseId, 'update', nextExpenses.find((e) => e.expenseId === expenseId));
+    }
   };
 
   const deleteExpense = async (expenseId: string) => {
-    setExpenses((prev) => prev.filter((e) => e.expenseId !== expenseId));
+    const nextExpenses = expenses.filter((e) => e.expenseId !== expenseId);
+    setExpenses(nextExpenses);
+    saveLocalCollection('expenses', nextExpenses);
     const { error } = await supabase.from('expenses').delete().eq('id', expenseId);
-    if (error) console.error(error);
+    if (error) {
+      console.error(error);
+      queueLocalMutation('expenses', expenseId, 'delete', { expenseId });
+    }
   };
 
   return {
