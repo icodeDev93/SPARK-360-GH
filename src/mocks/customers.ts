@@ -1,6 +1,6 @@
 import type { Customer } from '@/types/erp';
 
-export const customers: Customer[] = [
+const rawCustomers: Array<Omit<Customer, 'address' | 'remarks' | 'debtLimit' | 'visitingDay'>> = [
   {
     customerId: 'C001',
     fullName: 'Kwame Asante',
@@ -98,6 +98,14 @@ export const customers: Customer[] = [
     lastOrderDate: '2026-03-15',
   },
 ];
+
+export const customers: Customer[] = rawCustomers.map((customer) => ({
+  ...customer,
+  address: '',
+  remarks: '',
+  debtLimit: 0,
+  visitingDay: 'Sunday',
+}));
 
 export const customerHistory = [
   { receiptNo: 'RCP-000041', date: '2026-04-26', items: 4, amountGHS: 1240.00, status: 'Paid', method: 'Bank Transfer' },

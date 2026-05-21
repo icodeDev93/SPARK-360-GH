@@ -1,15 +1,35 @@
+const stripUnsafeChars = (val: string): string =>
+  val
+    .split('')
+    .filter((char) => {
+      const code = char.charCodeAt(0);
+      return code === 9 || code === 10 || code === 13 || (code >= 32 && code !== 127);
+    })
+    .join('')
+    .replace(/[<>]/g, '');
+
 /** Trim and collapse internal whitespace runs to a single space. */
 export const sanitizeText = (val: string): string =>
-  val.trim().replace(/\s+/g, ' ');
+  stripUnsafeChars(val).trim().replace(/\s+/g, ' ');
 
-/** Trim and lowercase — use for email addresses. */
+/** Trim and lowercase; use for email addresses. */
 export const sanitizeEmail = (val: string): string =>
-  val.trim().toLowerCase();
+  sanitizeText(val).toLowerCase();
 
-/** Trim only — preserves internal newlines and formatting in textareas. */
+/** Trim while preserving line breaks in textareas. */
 export const sanitizeMultiline = (val: string): string =>
-  val.trim();
+  stripUnsafeChars(val)
+    .split(/\r?\n/)
+    .map((line) => line.trim().replace(/[ \t]+/g, ' '))
+    .join('\n')
+    .trim();
 
-/** Returns true when val is a plausible email address. */
+export const sanitizeUrl = (val: string): string => {
+  const clean = sanitizeText(val);
+  if (!clean) return '';
+  if (/^(https?:|blob:|data:image\/(?:png|jpeg|jpg|webp);base64,)/i.test(clean)) return clean;
+  return '';
+};
+
 export const isValidEmail = (val: string): boolean =>
-  /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val);
+  /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sanitizeEmail(val));

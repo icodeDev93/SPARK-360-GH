@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useRef, createElement, type ReactNode } from 'react';
 import { supabase } from '@/lib/supabase';
 import { writeLog } from '@/lib/activityLog';
+import { sanitizeUrl } from '@/lib/sanitize';
 
 export type UserRole = 'cashier' | 'manager' | 'admin';
 
@@ -21,15 +22,16 @@ export interface AuthUser {
 }
 
 const ADMIN_PERMISSIONS = [
-  'dashboard', 'pos', 'customers', 'purchases', 'inventory',
-  'expenses', 'reports', 'settings', 'sales-history', 'users',
+  'dashboard', 'pos', 'sales-history', 'customers', 'credit',
+  'purchases', 'inventory', 'expenses', 'bank-deposit',
+  'reports', 'settings', 'users',
 ];
 
 // Static fallback used while Supabase loads (and for display in users/page.tsx)
 export const ROLE_PERMISSIONS: Record<UserRole, string[]> = {
   admin:   ADMIN_PERMISSIONS,
-  manager: ['dashboard', 'pos', 'customers', 'purchases', 'inventory', 'expenses', 'reports', 'sales-history'],
-  cashier: ['pos', 'customers', 'sales-history'],
+  manager: ['dashboard', 'pos', 'sales-history', 'customers', 'credit', 'purchases', 'inventory', 'expenses', 'bank-deposit', 'reports'],
+  cashier: ['pos', 'sales-history', 'customers', 'credit'],
 };
 
 export const ROLE_LABELS: Record<UserRole, { label: string; color: string; bg: string }> = {
@@ -44,9 +46,11 @@ export const ALL_PERMISSIONS = [
   { key: 'pos',           label: 'Sales (POS)',          icon: 'ri-shopping-cart-2-line' },
   { key: 'sales-history', label: 'Sales History',        icon: 'ri-receipt-line' },
   { key: 'customers',     label: 'Customers',            icon: 'ri-group-line' },
+  { key: 'credit',        label: 'Credit Invoices',      icon: 'ri-hand-coin-line' },
   { key: 'purchases',     label: 'Purchases & Supplies', icon: 'ri-store-3-line' },
   { key: 'inventory',     label: 'Inventory',            icon: 'ri-archive-drawer-line' },
   { key: 'expenses',      label: 'Expenses',             icon: 'ri-wallet-3-line' },
+  { key: 'bank-deposit',  label: 'Bank Deposit',         icon: 'ri-bank-card-line' },
   { key: 'reports',       label: 'Analytics & Reports',  icon: 'ri-pie-chart-2-line' },
   { key: 'users',         label: 'User Management',      icon: 'ri-user-settings-line' },
   { key: 'settings',      label: 'Settings',             icon: 'ri-settings-3-line' },
@@ -227,7 +231,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const updateAvatar = async (avatarUrl: string): Promise<{ success: boolean; error?: string }> => {
     const { data, error } = await supabase.rpc('update_own_profile_avatar', {
-      next_avatar_url: avatarUrl,
+      next_avatar_url: sanitizeUrl(avatarUrl),
     });
     if (error) return { success: false, error: error.message };
     if (data) setCurrentUser(mapRow(data as Record<string, unknown>));

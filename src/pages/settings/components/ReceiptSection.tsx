@@ -44,7 +44,7 @@ export default function ReceiptSection({ settings, onChange }: Props) {
       {/* Theme Picker */}
       <div>
         <label className="block text-sm font-semibold text-slate-700 mb-3">Receipt Theme</label>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {themes.map((t) => (
             <button
               key={t.key}

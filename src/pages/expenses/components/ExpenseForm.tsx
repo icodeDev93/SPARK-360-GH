@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import type { ExpenseRecord, PaymentMethod } from '@/types/erp';
+import type { ExpenseRecord, ExpensePaymentMethod } from '@/types/erp';
 import { EXPENSE_CATEGORIES, PAYMENT_METHODS } from '@/mocks/expenses';
 import { supabase } from '@/lib/supabase';
 import { sanitizeText, sanitizeMultiline } from '@/lib/sanitize';
@@ -10,7 +10,7 @@ interface Props {
   onClose: () => void;
 }
 
-const PAYMENT_ICONS: Record<PaymentMethod, string> = {
+const PAYMENT_ICONS: Record<ExpensePaymentMethod, string> = {
   Cash:            'ri-money-dollar-circle-line',
   MoMo:            'ri-smartphone-line',
   Cheque:          'ri-file-list-3-line',
@@ -23,7 +23,7 @@ export default function ExpenseForm({ initial, onSave, onClose }: Props) {
     category:    initial?.category    ?? EXPENSE_CATEGORIES[0],
     amountGHS:   initial?.amountGHS   ?? 0,
     date:        initial?.date        ?? new Date().toISOString().split('T')[0],
-    paidBy:      (initial?.paidBy     ?? 'Cash') as PaymentMethod,
+    paidBy:      (initial?.paidBy     ?? 'Cash') as ExpensePaymentMethod,
     notes:       initial?.notes       ?? '',
     proofUrl:    initial?.proofUrl    ?? null as string | null,
   });

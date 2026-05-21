@@ -1,7 +1,6 @@
 import { useMemo } from 'react';
 import { useSalesLog } from '@/hooks/useSalesLog';
 import { useExpenses } from '@/hooks/useExpenses';
-import { useCustomers } from '@/hooks/useCustomers';
 import type { AnalyticsFilter } from '@/hooks/useAnalyticsFilter';
 
 interface Props { filter: AnalyticsFilter; }
@@ -11,9 +10,8 @@ function parseDate(dateStr: string): Date {
 }
 
 export default function OverviewTab({ filter }: Props) {
-  const { sales } = useSalesLog();
+  const { sales, invoices } = useSalesLog();
   const { expenses } = useExpenses();
-  const { customers } = useCustomers();
 
   const completedSales = useMemo(
     () => sales.filter((s) => s.status === 'completed' && filter.isInRange(s.date)),
@@ -39,7 +37,8 @@ export default function OverviewTab({ filter }: Props) {
   const totalExpenses = filteredExpenses.reduce((s, e) => s + e.amountGHS, 0);
   const netProfit = totalRevenue - totalExpenses;
   const profitMargin = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
-  const customerReceivables = customers.reduce((s, c) => s + c.outstandingBalance, 0);
+  const creditInvoices = invoices.filter((inv) => inv.status === 'credit' && filter.isInRange(inv.date));
+  const customerReceivables = creditInvoices.reduce((s, inv) => s + inv.balanceDue, 0);
   const maxDaily = Math.max(...dailyRevenue.map((d) => d.revenue), 1);
 
   return (

@@ -1,12 +1,15 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import AppLayout from '@/components/feature/AppLayout';
 import Paginator from '@/components/ui/Paginator';
+import CreditPaymentHistory from '@/components/feature/CreditPaymentHistory';
 import { useSalesLog } from '@/hooks/useSalesLog';
 import { useCustomers } from '@/hooks/useCustomers';
 import { useAuth } from '@/hooks/useAuth';
 import { useSettings } from '@/hooks/useSettings';
 import type { InvoiceRecord, PaymentMethod } from '@/types/erp';
 import { writeLog } from '@/lib/activityLog';
+import { useFeedbackModal } from '@/hooks/useFeedbackModal';
+import CreditPaymentReceiptModal, { type CreditPaymentReceipt } from './components/CreditPaymentReceiptModal';
 
 const PAGE_SIZE = 20;
 
@@ -52,9 +55,10 @@ function dueBadge(iso: string, dueDays: number): { label: string; cls: string } 
 }
 
 export default function CreditPage() {
-  const { invoices, markCreditAsPaid, processReturn } = useSalesLog();
+  const { invoices, creditPayments, recordCreditPayment, processReturn } = useSalesLog();
   const { customers } = useCustomers();
   const { currentUser } = useAuth();
+  const { showFeedback } = useFeedbackModal();
   const { settings } = useSettings();
   const { invoiceDueDays } = settings;
 
@@ -64,7 +68,12 @@ export default function CreditPage() {
   const [page, setPage] = useState(1);
   const [selectedInvoice, setSelectedInvoice] = useState<InvoiceRecord | null>(null);
   const [markPaidTarget, setMarkPaidTarget] = useState<InvoiceRecord | null>(null);
+  const [paymentBackInvoice, setPaymentBackInvoice] = useState<InvoiceRecord | null>(null);
   const [markPaidMethod, setMarkPaidMethod] = useState<Exclude<PaymentMethod, 'Credit'>>('Cash');
+  const [markPaidAmount, setMarkPaidAmount] = useState('');
+  const [recordingPayment, setRecordingPayment] = useState(false);
+  const paymentSubmitRef = useRef(false);
+  const [paymentReceipt, setPaymentReceipt] = useState<CreditPaymentReceipt | null>(null);
   const [returnInvoice, setReturnInvoice] = useState<InvoiceRecord | null>(null);
   const [returnQtys, setReturnQtys] = useState<Record<string, number>>({});
 
@@ -83,13 +92,13 @@ export default function CreditPage() {
       .filter((inv) =>
         !q ||
         inv.customerName.toLowerCase().includes(q) ||
-        inv.receiptNo.toLowerCase().includes(q) ||
+        (inv.receiptNo ?? '').toLowerCase().includes(q) ||
         inv.invoiceNo.toLowerCase().includes(q)
       )
       .sort((a, b) => {
         let diff = 0;
         if (sortBy === 'date')   diff = new Date(a.date).getTime() - new Date(b.date).getTime();
-        if (sortBy === 'amount') diff = a.netSales - b.netSales;
+        if (sortBy === 'amount') diff = a.balanceDue - b.balanceDue;
         if (sortBy === 'days')   diff = daysAgo(b.date) - daysAgo(a.date);
         return sortDir === 'asc' ? diff : -diff;
       });
@@ -97,7 +106,7 @@ export default function CreditPage() {
 
   const paginated = creditInvoices.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  const totalOutstanding = creditInvoices.reduce((s, inv) => s + inv.netSales, 0);
+  const totalOutstanding = creditInvoices.reduce((s, inv) => s + inv.balanceDue, 0);
   const uniqueCustomers  = new Set(creditInvoices.map((inv) => inv.customerId || inv.customerName)).size;
   const oldestDays       = creditInvoices.length > 0 ? Math.max(...creditInvoices.map((inv) => daysAgo(inv.date))) : 0;
 
@@ -109,6 +118,28 @@ export default function CreditPage() {
   const sortIcon = (col: string) => {
     if (sortBy !== col) return 'ri-arrow-up-down-line opacity-30';
     return sortDir === 'asc' ? 'ri-arrow-up-line text-indigo-500' : 'ri-arrow-down-line text-indigo-500';
+  };
+
+  const openPaymentModal = (invoice: InvoiceRecord, backInvoice: InvoiceRecord | null = null) => {
+    setPaymentBackInvoice(backInvoice);
+    setMarkPaidTarget(invoice);
+    setMarkPaidMethod('Cash');
+    setMarkPaidAmount(invoice.balanceDue.toFixed(2));
+  };
+
+  const backFromPaymentModal = () => {
+    if (paymentSubmitRef.current) return;
+    const backInvoice = paymentBackInvoice;
+    setMarkPaidTarget(null);
+    setPaymentBackInvoice(null);
+    if (backInvoice) setSelectedInvoice(backInvoice);
+  };
+
+  const closePaymentModal = (force = false) => {
+    if (paymentSubmitRef.current && !force) return;
+    setMarkPaidTarget(null);
+    setPaymentBackInvoice(null);
+    if (!paymentSubmitRef.current) setRecordingPayment(false);
   };
 
   return (
@@ -149,7 +180,7 @@ export default function CreditPage() {
         <i className="ri-search-line text-slate-400 text-sm"></i>
         <input
           type="text"
-          placeholder="Search customer or receipt no..."
+          placeholder="Search customer or invoice no..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className="bg-transparent text-sm text-slate-600 placeholder-slate-400 outline-none flex-1"
@@ -163,7 +194,7 @@ export default function CreditPage() {
             <thead className="bg-slate-50 border-b border-slate-100">
               <tr>
                 <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide px-5 py-3.5 whitespace-nowrap">
-                  Receipt No.
+                  Invoice No.
                 </th>
                 <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide px-5 py-3.5 whitespace-nowrap">
                   Customer
@@ -219,9 +250,9 @@ export default function CreditPage() {
                   const totalQty = inv.items.reduce((s, item) => s + item.netQty, 0);
                   const db = dueBadge(inv.date, invoiceDueDays);
                   return (
-                    <tr key={inv.receiptNo} className={`border-b border-slate-50 hover:bg-slate-50 transition-all ${i % 2 !== 0 ? 'bg-slate-50/40' : ''}`}>
+                    <tr key={inv.invoiceNo} className={`border-b border-slate-50 hover:bg-slate-50 transition-all ${i % 2 !== 0 ? 'bg-slate-50/40' : ''}`}>
                       <td className="px-5 py-3.5">
-                        <span className="text-indigo-600 font-bold text-sm font-mono">{inv.receiptNo}</span>
+                        <span className="text-indigo-600 font-bold text-sm font-mono">{inv.invoiceNo}</span>
                       </td>
                       <td className="px-5 py-3.5">
                         <p className="text-slate-800 text-sm font-semibold">{inv.customerName}</p>
@@ -245,7 +276,8 @@ export default function CreditPage() {
                         </span>
                       </td>
                       <td className="px-5 py-3.5 whitespace-nowrap">
-                        <span className="text-slate-800 font-bold font-mono text-sm">{fmt(inv.netSales)}</span>
+                        <span className="text-slate-800 font-bold font-mono text-sm">{fmt(inv.balanceDue)}</span>
+                        {inv.amountPaid > 0 && <p className="text-emerald-600 text-xs font-mono">Paid {fmt(inv.amountPaid)}</p>}
                       </td>
                       <td className="px-5 py-3.5">
                         <p className="text-slate-600 text-sm truncate max-w-[160px]">
@@ -274,7 +306,7 @@ export default function CreditPage() {
                             <i className="ri-arrow-go-back-line text-sm"></i>
                           </button>
                           <button
-                            onClick={() => { setMarkPaidTarget(inv); setMarkPaidMethod('Cash'); }}
+                            onClick={() => openPaymentModal(inv)}
                             className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-emerald-50 text-slate-400 hover:text-emerald-600 transition-all cursor-pointer"
                             title="Mark as paid"
                           >
@@ -305,7 +337,7 @@ export default function CreditPage() {
             <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
               <div>
                 <h2 className="text-slate-800 font-bold text-base">Invoice Details</h2>
-                <p className="text-indigo-600 text-xs font-bold font-mono mt-0.5">{selectedInvoice.receiptNo}</p>
+                <p className="text-indigo-600 text-xs font-bold font-mono mt-0.5">{selectedInvoice.invoiceNo}</p>
               </div>
               <button onClick={() => setSelectedInvoice(null)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 cursor-pointer">
                 <i className="ri-close-line text-lg"></i>
@@ -356,9 +388,16 @@ export default function CreditPage() {
                 </div>
                 <div className="flex justify-between font-bold text-slate-800 pt-2 border-t border-amber-200 mt-2">
                   <span>Amount Due</span>
-                  <span className="font-mono text-amber-600 text-base">{fmt(selectedInvoice.netSales)}</span>
+                  <span className="font-mono text-amber-600 text-base">{fmt(selectedInvoice.balanceDue)}</span>
                 </div>
+                {selectedInvoice.amountPaid > 0 && (
+                  <div className="flex justify-between text-sm text-emerald-600 pt-1">
+                    <span>Amount Paid</span>
+                    <span className="font-mono">{fmt(selectedInvoice.amountPaid)}</span>
+                  </div>
+                )}
               </div>
+              <CreditPaymentHistory invoice={selectedInvoice} payments={creditPayments} />
               <div className="flex items-center justify-center gap-2 py-2">
                 <i className="ri-hand-coin-line text-violet-500"></i>
                 <span className="text-violet-700 text-sm font-semibold">Credit — Awaiting Payment</span>
@@ -369,10 +408,10 @@ export default function CreditPage() {
                 Close
               </button>
               <button
-                onClick={() => { setMarkPaidTarget(selectedInvoice); setMarkPaidMethod('Cash'); setSelectedInvoice(null); }}
+                onClick={() => { openPaymentModal(selectedInvoice, selectedInvoice); setSelectedInvoice(null); }}
                 className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-bold cursor-pointer"
               >
-                Mark as Paid
+                Record Payment
               </button>
             </div>
           </div>
@@ -382,16 +421,42 @@ export default function CreditPage() {
       {/* Mark as Paid Modal */}
       {markPaidTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-sm mx-4">
-            <div className="w-12 h-12 flex items-center justify-center bg-emerald-100 rounded-xl mb-4">
+          <div className="relative bg-white rounded-2xl p-6 w-full max-w-sm mx-4">
+            <button
+              type="button"
+              onClick={backFromPaymentModal}
+              disabled={recordingPayment}
+              className="absolute left-4 top-4 h-8 flex items-center gap-1.5 rounded-lg px-2 text-black hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer"
+              aria-label="Back"
+              title="Back"
+            >
+              <i className="ri-arrow-left-line text-lg"></i>
+              <span className="text-xs font-bold">Back</span>
+            </button>
+            <div className="w-12 h-12 flex items-center justify-center bg-emerald-100 rounded-xl mb-4 mt-8">
               <i className="ri-checkbox-circle-line text-emerald-600 text-xl"></i>
             </div>
-            <h3 className="text-slate-800 font-bold text-base mb-1">Mark as Paid</h3>
+            <h3 className="text-slate-800 font-bold text-base mb-1">Record Payment</h3>
             <p className="text-slate-500 text-sm mb-4">
-              <span className="font-bold text-indigo-600">{markPaidTarget.receiptNo}</span> — <span className="font-bold text-slate-700">{markPaidTarget.customerName}</span>
+              <span className="font-bold text-indigo-600">{markPaidTarget.invoiceNo}</span> — <span className="font-bold text-slate-700">{markPaidTarget.customerName}</span>
               <br />
-              <span className="text-amber-600 font-bold font-mono">{fmt(markPaidTarget.netSales)}</span>
+              <span className="text-amber-600 font-bold font-mono">{fmt(markPaidTarget.balanceDue)}</span>
+              <br />
+              <span className="text-slate-400 text-xs">Each payment generates its own receipt.</span>
             </p>
+            <div className="mb-4">
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Amount (₵)</label>
+              <input
+                type="number"
+                min="0.01"
+                step="0.01"
+                max={markPaidTarget.balanceDue}
+                value={markPaidAmount}
+                onChange={(e) => setMarkPaidAmount(e.target.value)}
+                placeholder={`Max: ${fmt(markPaidTarget.balanceDue)}`}
+                className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 font-mono"
+              />
+            </div>
             <div className="mb-5">
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Payment Received Via</p>
               <div className="grid grid-cols-2 gap-2">
@@ -411,21 +476,54 @@ export default function CreditPage() {
               </div>
             </div>
             <div className="flex gap-3">
-              <button onClick={() => setMarkPaidTarget(null)} className="flex-1 py-2.5 rounded-lg border border-slate-200 text-slate-700 text-sm font-semibold hover:bg-slate-50 cursor-pointer">
+              <button
+                onClick={() => closePaymentModal()}
+                disabled={recordingPayment}
+                className="flex-1 py-2.5 rounded-lg border border-slate-200 text-slate-700 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              >
                 Cancel
               </button>
               <button
                 onClick={async () => {
-                  await markCreditAsPaid(markPaidTarget.invoiceNo, markPaidMethod);
-                  if (currentUser) writeLog(currentUser, {
-                    category: 'sales', action: 'edit',
-                    description: `Credit invoice ${markPaidTarget.receiptNo} paid — ₵${markPaidTarget.netSales.toFixed(2)} via ${markPaidMethod} (${markPaidTarget.customerName})`,
-                  });
-                  setMarkPaidTarget(null);
+                  if (paymentSubmitRef.current) return;
+                  const amount = Math.min(markPaidTarget.balanceDue, Math.max(0, parseFloat(markPaidAmount) || 0));
+                  if (amount <= 0) return;
+                  const target = markPaidTarget;
+                  const previousPaid = target.amountPaid;
+                  try {
+                    paymentSubmitRef.current = true;
+                    setRecordingPayment(true);
+                    const payment = await recordCreditPayment(markPaidTarget.invoiceNo, amount, markPaidMethod);
+                    if (!payment) return;
+                    if (currentUser) writeLog(currentUser, {
+                      category: 'credit', action: 'edit',
+                      description: `Recorded ${fmt(amount)} payment for credit invoice ${target.invoiceNo} with receipt ${payment.receiptNo} via ${markPaidMethod} (${target.customerName})`,
+                    });
+                    setPaymentReceipt({
+                      receiptNo: payment.receiptNo,
+                      invoiceNo: target.invoiceNo,
+                      customerName: target.customerName,
+                      invoiceDate: target.date,
+                      paymentDate: new Date().toISOString(),
+                      paymentMethod: markPaidMethod,
+                      cashier: currentUser?.name ?? target.cashier,
+                      invoiceTotal: target.netSales,
+                      previousPaid,
+                      amountPaid: amount,
+                      totalPaid: previousPaid + amount,
+                      balanceLeft: payment.remainingBalance,
+                    });
+                    closePaymentModal(true);
+                  } finally {
+                    paymentSubmitRef.current = false;
+                    setRecordingPayment(false);
+                  }
                 }}
-                className="flex-1 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold cursor-pointer"
+                disabled={recordingPayment || !markPaidAmount || parseFloat(markPaidAmount) <= 0 || parseFloat(markPaidAmount) > markPaidTarget.balanceDue}
+                className="flex-1 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 text-white text-sm font-bold cursor-pointer disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
-                Confirm Paid
+                {recordingPayment && <i className="ri-loader-4-line animate-spin text-base"></i>}
+                {recordingPayment ? 'Recording...' : 'Record Payment'}
               </button>
             </div>
           </div>
@@ -439,7 +537,7 @@ export default function CreditPage() {
             <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
               <div>
                 <h2 className="text-slate-800 font-bold text-base">Return Items</h2>
-                <p className="text-indigo-600 text-xs font-bold font-mono mt-0.5">{returnInvoice.receiptNo} — {returnInvoice.customerName}</p>
+                <p className="text-indigo-600 text-xs font-bold font-mono mt-0.5">{returnInvoice.invoiceNo} — {returnInvoice.customerName}</p>
               </div>
               <button onClick={() => setReturnInvoice(null)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 cursor-pointer">
                 <i className="ri-close-line text-lg"></i>
@@ -493,8 +591,13 @@ export default function CreditPage() {
                     if (returns.length === 0) { setReturnInvoice(null); return; }
                     await processReturn(returnInvoice.invoiceNo, returns);
                     if (currentUser) writeLog(currentUser, {
-                      category: 'sales', action: 'refund',
-                      description: `Return processed on ${returnInvoice.receiptNo} for ${returnInvoice.customerName} — ${returns.length} item(s)`,
+                      category: 'credit', action: 'refund',
+                      description: `Return processed on ${returnInvoice.invoiceNo} for ${returnInvoice.customerName} — ${returns.length} item(s)`,
+                    });
+                    showFeedback({
+                      title: 'Return Recorded',
+                      message: `Return has been processed for ${returnInvoice.invoiceNo}.`,
+                      buttonLabel: 'Continue',
                     });
                     setReturnInvoice(null);
                     setReturnQtys({});
@@ -508,6 +611,13 @@ export default function CreditPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {paymentReceipt && (
+        <CreditPaymentReceiptModal
+          receipt={paymentReceipt}
+          onClose={() => setPaymentReceipt(null)}
+        />
       )}
     </AppLayout>
   );

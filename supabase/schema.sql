@@ -8,6 +8,9 @@
 
 create extension if not exists pgcrypto;
 
+alter table public.profiles
+add column if not exists updated_at timestamptz not null default now();
+
 -- Shared helpers
 create or replace function public.set_updated_at()
 returns trigger
@@ -98,15 +101,15 @@ $$;
 create table if not exists public.customers (
   id uuid primary key default gen_random_uuid(),
   full_name text not null,
-  customer_type text not null default 'Retail'
-    check (customer_type in ('Retail', 'Wholesale')),
   phone text not null check (btrim(phone) <> ''),
-  email text,
+  address text,
+  remarks text,
+  debt_limit numeric(12,2) not null default 0 check (debt_limit >= 0),
+  visiting_day text not null default 'Sunday'
+    check (visiting_day in ('Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday')),
   outstanding_balance numeric(12,2) not null default 0,
   status text not null default 'Active'
     check (status in ('Active', 'Inactive', 'Blocked')),
-  avatar_url text,
-  notes text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -150,9 +153,21 @@ create table if not exists public.inventory (
   supplier_name text,
   cost_price numeric(12,2) not null default 0 check (cost_price >= 0),
   selling_price numeric(12,2) not null default 0 check (selling_price >= 0),
+  wholesale_cost_price numeric(12,2) not null default 0 check (wholesale_cost_price >= 0),
+  single_cost_price numeric(12,2) not null default 0 check (single_cost_price >= 0),
+  wholesale_selling_price numeric(12,2) not null default 0 check (wholesale_selling_price >= 0),
+  half_selling_price numeric(12,2) not null default 0 check (half_selling_price >= 0),
+  quarter_selling_price numeric(12,2) not null default 0 check (quarter_selling_price >= 0),
+  single_selling_price numeric(12,2) not null default 0 check (single_selling_price >= 0),
   current_stock integer not null default 0 check (current_stock >= 0),
   reorder_level integer not null default 0 check (reorder_level >= 0),
+  wholesale_quantity numeric(12,2) not null default 0 check (wholesale_quantity >= 0),
+  single_quantity integer not null default 0 check (single_quantity >= 0),
+  quantity_per_box integer not null default 0 check (quantity_per_box >= 0),
+  stock_limit integer not null default 0 check (stock_limit >= 0),
   expiry_date date,
+  description text not null default '',
+  price_levels jsonb not null default '[]'::jsonb,
   image_url text,
   is_active boolean not null default true,
   created_at timestamptz not null default now(),
@@ -162,7 +177,8 @@ create table if not exists public.inventory (
 -- Sales (POS)
 create table if not exists public.sales (
   id uuid primary key default gen_random_uuid(),
-  receipt_number text not null unique,
+  invoice_number text not null unique,
+  receipt_number text unique,
   sale_date date not null default current_date,
   sale_time timestamptz not null default now(),
   customer_id uuid references public.customers(id) on delete set null,
@@ -175,9 +191,9 @@ create table if not exists public.sales (
   total_cost numeric(12,2) not null default 0,
   gross_margin numeric(12,2) not null default 0,
   payment_method text not null
-    check (payment_method in ('Cash', 'MoMo', 'Cheque', 'Bank Transfer')),
+    check (payment_method in ('Cash', 'MoMo', 'Cheque', 'Bank Transfer', 'Credit')),
   status text not null default 'completed'
-    check (status in ('completed', 'refunded', 'voided')),
+    check (status in ('completed', 'refunded', 'voided', 'credit')),
   cashier text,
   notes text,
   created_at timestamptz not null default now(),
@@ -205,7 +221,7 @@ create table if not exists public.sale_items (
 -- history can evolve without changing the accounting sale.
 create table if not exists public.receipts (
   id uuid primary key default gen_random_uuid(),
-  sale_id uuid not null unique references public.sales(id) on delete cascade,
+  sale_id uuid not null references public.sales(id) on delete cascade,
   receipt_number text not null unique,
   issued_at timestamptz not null default now(),
   customer_name text,
@@ -217,6 +233,19 @@ create table if not exists public.receipts (
   payment_method text,
   receipt_payload jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now()
+);
+
+create table if not exists public.credit_payments (
+  id uuid primary key default gen_random_uuid(),
+  customer_id uuid references public.customers(id) on delete cascade,
+  sale_id text,
+  invoice_number text,
+  receipt_id uuid references public.receipts(id) on delete set null,
+  amount numeric(12,2) not null check (amount > 0),
+  payment_method text not null
+    check (payment_method in ('Cash', 'MoMo', 'Cheque', 'Bank Transfer')),
+  notes text default '',
+  created_at timestamptz default now()
 );
 
 -- Purchases
@@ -270,6 +299,32 @@ create table if not exists public.expenses (
   updated_at timestamptz not null default now()
 );
 
+-- Bank Deposits
+create table if not exists public.banks (
+  id uuid primary key default gen_random_uuid(),
+  bank_name text not null check (btrim(bank_name) <> ''),
+  branch text not null check (btrim(branch) <> ''),
+  address text not null check (btrim(address) <> ''),
+  telephone text not null check (btrim(telephone) <> ''),
+  created_by text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (bank_name, branch)
+);
+
+create table if not exists public.bank_deposits (
+  id uuid primary key default gen_random_uuid(),
+  deposit_date date not null default current_date,
+  bank_id uuid references public.banks(id) on delete set null,
+  bank_name text not null check (btrim(bank_name) <> ''),
+  account_no text not null check (btrim(account_no) <> ''),
+  amount numeric(12,2) not null default 0 check (amount > 0),
+  remarks text,
+  created_by text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 -- Store Settings
 create table if not exists public.store_settings (
   id uuid primary key default gen_random_uuid(),
@@ -300,14 +355,26 @@ create index if not exists idx_inventory_category_id on public.inventory(categor
 create index if not exists idx_inventory_supplier_id on public.inventory(supplier_id);
 create index if not exists idx_sales_sale_date on public.sales(sale_date desc);
 create index if not exists idx_sales_customer_id on public.sales(customer_id);
+create index if not exists idx_sales_invoice_number on public.sales(invoice_number);
 create index if not exists idx_sale_items_sale_id on public.sale_items(sale_id);
 create index if not exists idx_receipts_sale_id on public.receipts(sale_id);
+create index if not exists idx_credit_payments_customer_id on public.credit_payments(customer_id);
+create index if not exists idx_credit_payments_invoice_number on public.credit_payments(invoice_number);
+create index if not exists idx_credit_payments_receipt_id on public.credit_payments(receipt_id);
 create index if not exists idx_purchases_supplier_id on public.purchases(supplier_id);
 create index if not exists idx_purchases_purchase_date on public.purchases(purchase_date desc);
 create index if not exists idx_purchase_items_purchase_id on public.purchase_items(purchase_id);
 create index if not exists idx_expenses_expense_date on public.expenses(expense_date desc);
+create index if not exists idx_banks_bank_name on public.banks(bank_name);
+create index if not exists idx_bank_deposits_deposit_date on public.bank_deposits(deposit_date desc);
+create index if not exists idx_bank_deposits_bank_id on public.bank_deposits(bank_id);
+create index if not exists idx_bank_deposits_bank_name on public.bank_deposits(bank_name);
 
 -- updated_at triggers
+drop trigger if exists set_profiles_updated_at on public.profiles;
+create trigger set_profiles_updated_at before update on public.profiles
+for each row execute function public.set_updated_at();
+
 drop trigger if exists set_customers_updated_at on public.customers;
 create trigger set_customers_updated_at before update on public.customers
 for each row execute function public.set_updated_at();
@@ -353,6 +420,22 @@ for each row execute function public.set_updated_at();
 
 drop trigger if exists set_expense_created_by on public.expenses;
 create trigger set_expense_created_by before insert on public.expenses
+for each row execute function public.set_expense_created_by();
+
+drop trigger if exists set_bank_deposits_updated_at on public.bank_deposits;
+create trigger set_bank_deposits_updated_at before update on public.bank_deposits
+for each row execute function public.set_updated_at();
+
+drop trigger if exists set_banks_updated_at on public.banks;
+create trigger set_banks_updated_at before update on public.banks
+for each row execute function public.set_updated_at();
+
+drop trigger if exists set_bank_created_by on public.banks;
+create trigger set_bank_created_by before insert on public.banks
+for each row execute function public.set_expense_created_by();
+
+drop trigger if exists set_bank_deposit_created_by on public.bank_deposits;
+create trigger set_bank_deposit_created_by before insert on public.bank_deposits
 for each row execute function public.set_expense_created_by();
 
 drop trigger if exists set_store_settings_updated_at on public.store_settings;
@@ -425,9 +508,12 @@ alter table public.inventory enable row level security;
 alter table public.sales enable row level security;
 alter table public.sale_items enable row level security;
 alter table public.receipts enable row level security;
+alter table public.credit_payments enable row level security;
 alter table public.purchases enable row level security;
 alter table public.purchase_items enable row level security;
 alter table public.expenses enable row level security;
+alter table public.banks enable row level security;
+alter table public.bank_deposits enable row level security;
 alter table public.store_settings enable row level security;
 
 alter table public.profiles force row level security;
@@ -438,9 +524,12 @@ alter table public.inventory force row level security;
 alter table public.sales force row level security;
 alter table public.sale_items force row level security;
 alter table public.receipts force row level security;
+alter table public.credit_payments force row level security;
 alter table public.purchases force row level security;
 alter table public.purchase_items force row level security;
 alter table public.expenses force row level security;
+alter table public.banks force row level security;
+alter table public.bank_deposits force row level security;
 alter table public.store_settings force row level security;
 
 revoke all on all tables in schema public from anon;
@@ -607,6 +696,31 @@ on public.receipts for delete
 to authenticated
 using (public.is_admin_user());
 
+drop policy if exists "credit_payments_select_active_users" on public.credit_payments;
+create policy "credit_payments_select_active_users"
+on public.credit_payments for select
+to authenticated
+using (public.is_active_app_user());
+
+drop policy if exists "credit_payments_insert_active_users" on public.credit_payments;
+create policy "credit_payments_insert_active_users"
+on public.credit_payments for insert
+to authenticated
+with check (public.is_active_app_user());
+
+drop policy if exists "credit_payments_update_backoffice" on public.credit_payments;
+create policy "credit_payments_update_backoffice"
+on public.credit_payments for update
+to authenticated
+using (public.is_backoffice_user())
+with check (public.is_backoffice_user());
+
+drop policy if exists "credit_payments_delete_admin" on public.credit_payments;
+create policy "credit_payments_delete_admin"
+on public.credit_payments for delete
+to authenticated
+using (public.is_admin_user());
+
 -- Back-office modules.
 drop policy if exists "suppliers_select_backoffice" on public.suppliers;
 create policy "suppliers_select_backoffice"
@@ -656,6 +770,32 @@ using (public.is_backoffice_user());
 drop policy if exists "expenses_manage_backoffice" on public.expenses;
 create policy "expenses_manage_backoffice"
 on public.expenses for all
+to authenticated
+using (public.is_backoffice_user())
+with check (public.is_backoffice_user());
+
+drop policy if exists "bank_deposits_select_backoffice" on public.bank_deposits;
+create policy "bank_deposits_select_backoffice"
+on public.bank_deposits for select
+to authenticated
+using (public.is_backoffice_user());
+
+drop policy if exists "banks_select_backoffice" on public.banks;
+create policy "banks_select_backoffice"
+on public.banks for select
+to authenticated
+using (public.is_backoffice_user());
+
+drop policy if exists "banks_manage_backoffice" on public.banks;
+create policy "banks_manage_backoffice"
+on public.banks for all
+to authenticated
+using (public.is_backoffice_user())
+with check (public.is_backoffice_user());
+
+drop policy if exists "bank_deposits_manage_backoffice" on public.bank_deposits;
+create policy "bank_deposits_manage_backoffice"
+on public.bank_deposits for all
 to authenticated
 using (public.is_backoffice_user())
 with check (public.is_backoffice_user());

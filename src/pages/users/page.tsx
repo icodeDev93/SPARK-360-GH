@@ -2,10 +2,11 @@ import { useState, useEffect } from 'react';
 import AppLayout from '@/components/feature/AppLayout';
 import type { UserRole, PermissionOverrides } from '@/hooks/useAuth';
 import { ROLE_LABELS, ALL_PERMISSIONS, useAuth } from '@/hooks/useAuth';
-import { supabase, supabaseAdmin } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase';
 import PasswordInput from '@/components/ui/PasswordInput';
 import { writeLog, diffFields } from '@/lib/activityLog';
-import { sanitizeText } from '@/lib/sanitize';
+import { sanitizeEmail, sanitizeText } from '@/lib/sanitize';
+import { useFeedbackModal } from '@/hooks/useFeedbackModal';
 
 interface AppUser {
   id: string;
@@ -17,11 +18,6 @@ interface AppUser {
   status: 'Active' | 'Inactive';
   permissionOverrides: PermissionOverrides;
 }
-
-const AVATAR_COLORS = [
-  'bg-indigo-600', 'bg-emerald-600', 'bg-amber-500',
-  'bg-rose-500', 'bg-violet-600', 'bg-cyan-600', 'bg-orange-500',
-];
 
 function getInitials(name: string) {
   return name.trim().split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase();
@@ -56,6 +52,7 @@ function hasCustomOverrides(o: PermissionOverrides) {
 
 export default function UsersPage() {
   const { rolePermissions, currentUser } = useAuth();
+  const { showFeedback } = useFeedbackModal();
   const [users, setUsers]           = useState<AppUser[]>([]);
   const [loading, setLoading]       = useState(true);
   const [saving, setSaving]         = useState(false);
@@ -152,26 +149,25 @@ export default function UsersPage() {
     try {
       if (editTarget) {
         const cleanName = sanitizeText(form.name);
+        const cleanEmail = sanitizeEmail(form.email);
         const initials = getInitials(cleanName);
         const overridesToSave = form.role === 'admin' ? EMPTY_OVERRIDES : form.overrides;
+
+        if (form.password) {
+          setFormError('Changing another user password needs a secure server-side admin endpoint. Service role keys cannot be used in the browser.');
+          return;
+        }
 
         const { error } = await supabase
           .from('profiles')
           .update({
-            name: cleanName, email: form.email, role: form.role,
+            name: cleanName, email: cleanEmail, role: form.role,
             status: form.status, initials,
             permission_overrides: overridesToSave,
           })
           .eq('id', editTarget.id);
 
         if (error) { setFormError(error.message); return; }
-
-        if (form.password) {
-          const { error: pwError } = await supabaseAdmin.auth.admin.updateUserById(
-            editTarget.id, { password: form.password },
-          );
-          if (pwError) { setFormError('Profile saved but password update failed: ' + pwError.message); return; }
-        }
 
         if (currentUser) {
           const changes = diffFields(
@@ -192,50 +188,17 @@ export default function UsersPage() {
 
         setUsers((prev) => prev.map((u) =>
           u.id === editTarget.id
-            ? { ...u, name: cleanName, email: form.email, role: form.role, status: form.status, initials, permissionOverrides: overridesToSave }
+            ? { ...u, name: cleanName, email: cleanEmail, role: form.role, status: form.status, initials, permissionOverrides: overridesToSave }
             : u
         ));
+        showFeedback({
+          title: 'User Updated',
+          message: `${cleanName} has been updated successfully.`,
+          buttonLabel: 'Continue',
+        });
       } else {
-        const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-          email: form.email.toLowerCase().trim(),
-          password: form.password,
-          email_confirm: true,
-        });
-
-        if (authError || !authData.user) {
-          setFormError(authError?.message ?? 'Failed to create auth account.');
-          return;
-        }
-
-        const newName     = sanitizeText(form.name);
-        const initials    = getInitials(newName);
-        const avatarColor = AVATAR_COLORS[users.length % AVATAR_COLORS.length];
-
-        const { error: profileError } = await supabase.from('profiles').insert({
-          id: authData.user.id, name: newName,
-          email: form.email.toLowerCase().trim(),
-          role: form.role, status: form.status, initials, avatar_color: avatarColor,
-          permission_overrides: EMPTY_OVERRIDES,
-        });
-
-        if (profileError) {
-          setFormError('Account created but profile setup failed: ' + profileError.message);
-          return;
-        }
-
-        const newUser: AppUser = {
-          id: authData.user.id, name: newName,
-          email: form.email.toLowerCase().trim(),
-          role: form.role, status: form.status, initials, avatarColor,
-          permissionOverrides: EMPTY_OVERRIDES,
-        };
-        setUsers((prev) => [...prev, newUser]);
-        if (currentUser) {
-          writeLog(currentUser, {
-            category: 'users', action: 'create',
-            description: `Created new user ${newName} (${ROLE_LABELS[form.role].label}) — ${form.email.toLowerCase().trim()}`,
-          });
-        }
+        setFormError('Creating sign-in accounts needs a secure server-side admin endpoint. Service role keys cannot be used in the browser.');
+        return;
       }
 
       closeForm();
@@ -255,6 +218,12 @@ export default function UsersPage() {
           description: `Removed user ${target.name} (${ROLE_LABELS[target.role].label})`,
         });
       }
+      showFeedback({
+        title: 'User Removed',
+        message: `${target?.name ?? 'The user'} has been removed successfully.`,
+        buttonLabel: 'Continue',
+        kind: 'deleted',
+      });
     }
     setDeleteTarget(null);
   };

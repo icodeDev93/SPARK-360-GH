@@ -24,6 +24,7 @@ interface ReceiptModalProps {
   customerName?: string;
   onClose: () => void;
   onNewSale: () => void;
+  newSaleLabel?: string;
 }
 
 const paymentLabels: Record<string, string> = {
@@ -52,6 +53,7 @@ export default function ReceiptModal({
   customerName,
   onClose,
   onNewSale,
+  newSaleLabel = 'New Sale',
 }: ReceiptModalProps) {
   const { settings } = useSettings();
   const receiptRef = useRef<HTMLDivElement>(null);
@@ -389,7 +391,7 @@ export default function ReceiptModal({
             <span className="w-5 h-5 flex items-center justify-center">
               <i className="ri-add-line text-base"></i>
             </span>
-            New Sale
+            {newSaleLabel}
           </button>
         </div>
       </div>

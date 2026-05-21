@@ -7,10 +7,12 @@ import { customerHistory } from '@/mocks/customers';
 import { useSalesLog } from '@/hooks/useSalesLog';
 import { useCustomers } from '@/hooks/useCustomers';
 import { getCustomerInvoices, searchCustomers } from '@/services/crmService';
-import type { Customer, CustomerType } from '@/types/erp';
+import type { Customer, CustomerStatus } from '@/types/erp';
 import { useAuth } from '@/hooks/useAuth';
 import { writeLog, diffFields } from '@/lib/activityLog';
-import { sanitizeText, sanitizeEmail, sanitizeMultiline, isValidEmail } from '@/lib/sanitize';
+import { sanitizeText, sanitizeMultiline } from '@/lib/sanitize';
+import { useFeedbackModal } from '@/hooks/useFeedbackModal';
+import CreditPaymentReceiptModal, { type CreditPaymentReceipt } from '@/pages/credit/components/CreditPaymentReceiptModal';
 
 const CASH_METHODS = ['Cash', 'MoMo', 'Cheque', 'Bank Transfer'] as const;
 type CashMethod = typeof CASH_METHODS[number];
@@ -20,10 +22,8 @@ const AVATAR_COLORS = [
   'bg-rose-500', 'bg-cyan-500', 'bg-pink-500', 'bg-teal-500',
 ];
 
-const TYPE_BADGE: Record<CustomerType, string> = {
-  Wholesale: 'bg-violet-100 text-violet-700',
-  Retail:    'bg-amber-100 text-amber-700',
-};
+const VISITING_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const;
+const CUSTOMER_STATUSES: CustomerStatus[] = ['Active', 'Inactive', 'Blocked'];
 
 function fmt(n: number) {
   return `₵${n.toLocaleString('en-GH', { minimumFractionDigits: 2 })}`;
@@ -37,11 +37,21 @@ function getInitials(name: string) {
   return name.split(' ').slice(0, 2).map((w) => w[0]).join('').toUpperCase();
 }
 
-const EMPTY_FORM = { fullName: '', phone: '', email: '', customerType: 'Retail' as CustomerType };
+const EMPTY_FORM = {
+  fullName: '',
+  phone: '',
+  address: '',
+  remarks: '',
+  debtLimit: '0.00',
+  visitingDay: 'Sunday',
+  statusFlag: 'Active' as CustomerStatus,
+  outstandingBalance: '0.00',
+};
 
 export default function CustomersPage() {
-  const { customers, addCustomer: dbAddCustomer, updateCustomer, deleteCustomer, recordPayment } = useCustomers();
+  const { customers, addCustomer: dbAddCustomer, updateCustomer, deleteCustomer } = useCustomers();
   const { currentUser } = useAuth();
+  const { showFeedback } = useFeedbackModal();
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
 
@@ -55,9 +65,11 @@ export default function CustomersPage() {
   const [payingCustomer, setPayingCustomer] = useState<Customer | null>(null);
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<CashMethod>('Cash');
+  const [paymentInvoiceNo, setPaymentInvoiceNo] = useState('');
   const [paymentNotes, setPaymentNotes] = useState('');
   const [paymentSaving, setPaymentSaving] = useState(false);
-  const { invoices } = useSalesLog();
+  const [paymentReceipt, setPaymentReceipt] = useState<CreditPaymentReceipt | null>(null);
+  const { invoices, recordCreditPayment } = useSalesLog();
 
   const today = new Date().toISOString().split('T')[0];
 
@@ -92,44 +104,93 @@ export default function CustomersPage() {
 
   const addCustomer = () => {
     if (!form.fullName.trim() || !form.phone.trim()) return;
-    if (form.email.trim() && !isValidEmail(form.email.trim())) return;
+    const cleanName = sanitizeText(form.fullName);
+    const balance = Math.max(0, parseFloat(form.outstandingBalance) || 0);
+    const debtLimit = Math.max(0, parseFloat(form.debtLimit) || 0);
     dbAddCustomer({
-      fullName:     sanitizeText(form.fullName),
+      fullName:     cleanName,
       phone:        sanitizeText(form.phone),
-      email:        sanitizeEmail(form.email),
-      customerType: form.customerType,
-      statusFlag:   'Active',
-      avatar:       getInitials(form.fullName.trim()),
+      email:        '',
+      customerType: 'Retail',
+      address:      sanitizeText(form.address),
+      remarks:      sanitizeMultiline(form.remarks),
+      debtLimit,
+      visitingDay:  form.visitingDay,
+      outstandingBalance: balance,
+      statusFlag:   form.statusFlag,
+      avatar:       getInitials(cleanName),
     });
     if (currentUser) writeLog(currentUser, {
       category: 'customers', action: 'create',
-      description: `Added new customer ${form.fullName.trim()} (${form.customerType})`,
+      description: `Added new customer ${form.fullName.trim()}`,
     });
     setShowAddForm(false);
     setForm(EMPTY_FORM);
+    showFeedback({
+      title: 'Customer Added',
+      message: `${cleanName} has been added successfully.`,
+      buttonLabel: 'Continue',
+    });
   };
 
   const openEdit = (c: Customer) => {
     setEditingCustomer(c);
-    setEditForm({ fullName: c.fullName, phone: c.phone, email: c.email, customerType: c.customerType });
+    setEditForm({
+      fullName: c.fullName,
+      phone: c.phone,
+      address: c.address,
+      remarks: c.remarks,
+      debtLimit: c.debtLimit.toFixed(2),
+      visitingDay: c.visitingDay,
+      statusFlag: c.statusFlag,
+      outstandingBalance: c.outstandingBalance.toFixed(2),
+    });
   };
 
   const saveEdit = () => {
     if (!editingCustomer || !editForm.fullName.trim() || !editForm.phone.trim()) return;
-    if (editForm.email.trim() && !isValidEmail(editForm.email.trim())) return;
     const cleanName  = sanitizeText(editForm.fullName);
     const cleanPhone = sanitizeText(editForm.phone);
-    const cleanEmail = sanitizeEmail(editForm.email);
+    const cleanAddress = sanitizeText(editForm.address);
+    const cleanRemarks = sanitizeMultiline(editForm.remarks);
+    const debtLimit = Math.max(0, parseFloat(editForm.debtLimit) || 0);
     const changes = diffFields(
-      { fullName: editingCustomer.fullName, phone: editingCustomer.phone, email: editingCustomer.email, customerType: editingCustomer.customerType },
-      { fullName: cleanName, phone: cleanPhone, email: cleanEmail, customerType: editForm.customerType },
-      { fullName: 'Full Name', phone: 'Phone', email: 'Email', customerType: 'Customer Type' },
+      {
+        fullName: editingCustomer.fullName,
+        phone: editingCustomer.phone,
+        address: editingCustomer.address,
+        remarks: editingCustomer.remarks,
+        debtLimit: editingCustomer.debtLimit,
+        visitingDay: editingCustomer.visitingDay,
+        statusFlag: editingCustomer.statusFlag,
+      },
+      {
+        fullName: cleanName,
+        phone: cleanPhone,
+        address: cleanAddress,
+        remarks: cleanRemarks,
+        debtLimit,
+        visitingDay: editForm.visitingDay,
+        statusFlag: editForm.statusFlag,
+      },
+      {
+        fullName: 'Name',
+        phone: 'Telephone',
+        address: 'Address',
+        remarks: 'Remarks',
+        debtLimit: 'Debt Limit',
+        visitingDay: 'Visiting Day',
+        statusFlag: 'Status',
+      },
     );
     updateCustomer(editingCustomer.customerId, {
       fullName:     cleanName,
       phone:        cleanPhone,
-      email:        cleanEmail,
-      customerType: editForm.customerType,
+      address:      cleanAddress,
+      remarks:      cleanRemarks,
+      debtLimit,
+      visitingDay:  editForm.visitingDay,
+      statusFlag:   editForm.statusFlag,
       avatar:       getInitials(cleanName),
     });
     if (currentUser) writeLog(currentUser, {
@@ -139,7 +200,30 @@ export default function CustomersPage() {
     });
     setEditingCustomer(null);
     setEditForm(EMPTY_FORM);
+    showFeedback({
+      title: 'Customer Updated',
+      message: `${cleanName} has been updated successfully.`,
+      buttonLabel: 'Continue',
+    });
   };
+
+  const creditInvoicesForCustomer = (customer: Customer) =>
+    invoices.filter((inv) =>
+      inv.status === 'credit' &&
+      (inv.customerId === customer.customerId || inv.customerName === customer.fullName)
+    );
+
+  const openPayment = (customer: Customer) => {
+    const firstInvoice = creditInvoicesForCustomer(customer)[0];
+    setPayingCustomer(customer);
+    setPaymentInvoiceNo(firstInvoice?.invoiceNo ?? '');
+    setPaymentAmount(firstInvoice ? firstInvoice.balanceDue.toFixed(2) : '');
+    setPaymentMethod('Cash');
+    setPaymentNotes('');
+  };
+
+  const paymentInvoices = payingCustomer ? creditInvoicesForCustomer(payingCustomer) : [];
+  const selectedPaymentInvoice = paymentInvoices.find((inv) => inv.invoiceNo === paymentInvoiceNo) ?? paymentInvoices[0] ?? null;
 
   return (
     <AppLayout>
@@ -190,7 +274,7 @@ export default function CustomersPage() {
           <table className="w-full">
             <thead className="bg-slate-50 border-b border-slate-100">
               <tr>
-                {['Customer', 'Phone', 'Type', 'Purchases', 'Total Spent', 'Outstanding', 'Last Visit', 'Actions'].map((h) => (
+                {['Customer', 'Telephone', 'Visiting Day', 'Status', 'Debt Limit', 'Balance', 'Last Visit', 'Actions'].map((h) => (
                   <th key={h} className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide px-5 py-3.5 whitespace-nowrap">
                     {h}
                   </th>
@@ -223,19 +307,19 @@ export default function CustomersPage() {
                     <td className="px-5 py-3.5">
                       <span className="text-slate-500 text-sm">{c.phone}</span>
                     </td>
+                    <td className="px-5 py-3.5"><span className="text-slate-500 text-sm">{c.visitingDay}</span></td>
                     <td className="px-5 py-3.5">
-                      <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${TYPE_BADGE[c.customerType]}`}>
-                        {c.customerType}
+                      <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
+                        c.statusFlag === 'Active'
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : c.statusFlag === 'Blocked'
+                          ? 'bg-red-100 text-red-600'
+                          : 'bg-slate-100 text-slate-600'
+                      }`}>
+                        {c.statusFlag}
                       </span>
                     </td>
-                    <td className="px-5 py-3.5">
-                      <span className="text-slate-700 text-sm font-semibold">
-                        {invoiceCountByCustomer[c.customerId] ?? invoiceCountByCustomer[c.fullName] ?? 0}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <span className="text-slate-800 text-sm font-bold font-mono">{fmt(totalSpentByCustomer[c.customerId] ?? totalSpentByCustomer[c.fullName] ?? 0)}</span>
-                    </td>
+                    <td className="px-5 py-3.5"><span className="text-slate-600 text-sm font-mono">{fmt(c.debtLimit)}</span></td>
                     <td className="px-5 py-3.5">
                       {c.outstandingBalance > 0 ? (
                         <span className="text-amber-700 text-sm font-bold font-mono bg-amber-50 px-2 py-0.5 rounded-full">
@@ -259,7 +343,7 @@ export default function CustomersPage() {
                         </button>
                         {c.outstandingBalance > 0 && (
                           <button
-                            onClick={() => { setPayingCustomer(c); setPaymentAmount(''); setPaymentMethod('Cash'); setPaymentNotes(''); }}
+                            onClick={() => openPayment(c)}
                             className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-emerald-50 text-slate-400 hover:text-emerald-600 transition-all cursor-pointer"
                             title="Record payment"
                           >
@@ -320,7 +404,7 @@ export default function CustomersPage() {
 
               <div className="flex-1 overflow-y-auto px-6 py-4">
                 {/* Summary */}
-                <div className="grid grid-cols-3 gap-4 mb-5">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
                   <div className="bg-indigo-50 rounded-lg p-3 text-center">
                     <p className="text-indigo-700 font-bold text-lg">{invoiceCountByCustomer[selectedCustomer.customerId] ?? invoiceCountByCustomer[selectedCustomer.fullName] ?? 0}</p>
                     <p className="text-indigo-500 text-xs">Total Orders</p>
@@ -339,15 +423,16 @@ export default function CustomersPage() {
                   <table className="w-full">
                     <thead className="bg-slate-50">
                       <tr>
-                        {['Receipt No.', 'Date', 'Items', 'Net Sales', 'Margin', 'Method'].map((h) => (
+                        {['Invoice No.', 'Receipt No.', 'Date', 'Items', 'Net Sales', 'Margin', 'Method'].map((h) => (
                           <th key={h} className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3">{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
                       {custInvoices.map((inv) => (
-                        <tr key={inv.receiptNo} className="border-b border-slate-50 hover:bg-slate-50 transition-all">
-                          <td className="px-4 py-3"><span className="text-indigo-600 text-sm font-semibold font-mono">{inv.receiptNo}</span></td>
+                        <tr key={inv.invoiceNo} className="border-b border-slate-50 hover:bg-slate-50 transition-all">
+                          <td className="px-4 py-3"><span className="text-indigo-600 text-sm font-semibold font-mono">{inv.invoiceNo}</span></td>
+                          <td className="px-4 py-3"><span className="text-slate-600 text-sm font-semibold font-mono">{inv.receiptNo ?? 'Pending'}</span></td>
                           <td className="px-4 py-3"><span className="text-slate-500 text-sm">{formatDate(inv.date)}</span></td>
                           <td className="px-4 py-3"><span className="text-slate-600 text-sm">{inv.items.length}</span></td>
                           <td className="px-4 py-3"><span className="text-slate-800 text-sm font-bold font-mono">{fmt(inv.netSales)}</span></td>
@@ -391,40 +476,55 @@ export default function CustomersPage() {
       {/* Add Customer Modal */}
       {showAddForm && (
         <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl w-full max-w-md shadow-xl">
+          <div className="bg-white rounded-xl w-full max-w-md shadow-xl max-h-[92vh] flex flex-col overflow-hidden">
             <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
               <h2 className="text-slate-800 font-bold text-lg">Add Customer</h2>
               <button onClick={() => { setShowAddForm(false); setForm(EMPTY_FORM); }} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 cursor-pointer">
                 <i className="ri-close-line text-lg"></i>
               </button>
             </div>
-            <div className="px-6 py-5 space-y-4">
-              {[
-                { label: 'Full Name *',     key: 'fullName',    placeholder: 'e.g. Kwame Asante' },
-                { label: 'Phone Number *',  key: 'phone',       placeholder: 'Phone number' },
-                { label: 'Email Address',   key: 'email',       placeholder: 'email@example.com' },
-              ].map((f) => (
-                <div key={f.key}>
-                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">{f.label}</label>
-                  <input
-                    value={form[f.key as keyof typeof form]}
-                    onChange={(e) => setForm((p) => ({ ...p, [f.key]: e.target.value }))}
-                    required={f.key === 'fullName' || f.key === 'phone'}
-                    className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 transition-all"
-                    placeholder={f.placeholder}
-                  />
+            <div className="px-6 py-5 space-y-4 overflow-y-auto">
+              <div className="grid grid-cols-1 sm:grid-cols-[110px_1fr] sm:items-center gap-2 sm:gap-3">
+                <label className="text-sm font-semibold text-slate-700">Name:</label>
+                <input value={form.fullName} onChange={(e) => setForm((p) => ({ ...p, fullName: e.target.value }))} className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400" />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-[110px_1fr] sm:items-center gap-2 sm:gap-3">
+                <label className="text-sm font-semibold text-slate-700">Telephone:</label>
+                <input value={form.phone} onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))} className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400" />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-[110px_1fr] sm:items-center gap-2 sm:gap-3">
+                <label className="text-sm font-semibold text-slate-700">Address:</label>
+                <input value={form.address} onChange={(e) => setForm((p) => ({ ...p, address: e.target.value }))} className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400" />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-[110px_1fr] sm:items-center gap-2 sm:gap-3">
+                <label className="text-sm font-semibold text-slate-700">Remarks:</label>
+                <input value={form.remarks} onChange={(e) => setForm((p) => ({ ...p, remarks: e.target.value }))} className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400" />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-[110px_1fr] sm:items-start gap-2 sm:gap-3">
+                <label className="text-sm font-semibold text-slate-700 sm:pt-2.5">Debt Limit:</label>
+                <div>
+                  <input type="number" min="0" step="0.01" value={form.debtLimit} onChange={(e) => setForm((p) => ({ ...p, debtLimit: e.target.value }))} className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 font-mono" />
+                  <p className="text-xs text-slate-500 mt-1">0 means UNLIMITED.</p>
                 </div>
-              ))}
-              <div>
-                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Customer Type</label>
-                <select
-                  value={form.customerType}
-                  onChange={(e) => setForm((p) => ({ ...p, customerType: e.target.value as CustomerType }))}
-                  className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 bg-white cursor-pointer"
-                >
-                  <option value="Wholesale">Wholesale</option>
-                  <option value="Retail">Retail</option>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-[110px_1fr] sm:items-center gap-2 sm:gap-3">
+                <label className="text-sm font-semibold text-slate-700">Visiting Day:</label>
+                <select value={form.visitingDay} onChange={(e) => setForm((p) => ({ ...p, visitingDay: e.target.value }))} className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 bg-white cursor-pointer">
+                  {VISITING_DAYS.map((day) => <option key={day} value={day}>{day}</option>)}
                 </select>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-[110px_1fr] sm:items-center gap-2 sm:gap-3">
+                <label className="text-sm font-semibold text-slate-700">Status:</label>
+                <select value={form.statusFlag} onChange={(e) => setForm((p) => ({ ...p, statusFlag: e.target.value as CustomerStatus }))} className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 bg-white cursor-pointer">
+                  {CUSTOMER_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
+                </select>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-[110px_1fr] sm:items-start gap-2 sm:gap-3">
+                <label className="text-sm font-semibold text-slate-700 sm:pt-2.5">Balance:</label>
+                <div>
+                  <input type="number" min="0" step="0.01" value={form.outstandingBalance} onChange={(e) => setForm((p) => ({ ...p, outstandingBalance: e.target.value }))} className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 font-mono" />
+                  <p className="text-xs text-slate-500 mt-1">This is not editable after saving.</p>
+                </div>
               </div>
             </div>
             <div className="flex gap-3 px-6 py-4 border-t border-slate-100">
@@ -466,7 +566,13 @@ export default function CustomersPage() {
                   deleteCustomer(deleteTarget.customerId);
                   if (currentUser) writeLog(currentUser, {
                     category: 'customers', action: 'delete',
-                    description: `Deleted customer ${deleteTarget.fullName} (${deleteTarget.customerType})`,
+                    description: `Deleted customer ${deleteTarget.fullName}`,
+                  });
+                  showFeedback({
+                    title: 'Customer Deleted',
+                    message: `${deleteTarget.fullName} has been removed successfully.`,
+                    buttonLabel: 'Continue',
+                    kind: 'deleted',
                   });
                   setDeleteTarget(null);
                 }}
@@ -482,7 +588,7 @@ export default function CustomersPage() {
       {/* Record Payment Modal */}
       {payingCustomer && (
         <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl w-full max-w-md shadow-xl">
+          <div className="bg-white rounded-xl w-full max-w-md shadow-xl max-h-[92vh] flex flex-col overflow-hidden">
             <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
               <div>
                 <h2 className="text-slate-800 font-bold text-lg">Record Payment</h2>
@@ -494,18 +600,43 @@ export default function CustomersPage() {
             </div>
             <div className="px-6 py-5 space-y-4">
               <div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Credit Invoice</label>
+                {paymentInvoices.length > 0 ? (
+                  <select
+                    value={selectedPaymentInvoice?.invoiceNo ?? ''}
+                    onChange={(e) => {
+                      const inv = paymentInvoices.find((invoice) => invoice.invoiceNo === e.target.value);
+                      setPaymentInvoiceNo(e.target.value);
+                      setPaymentAmount(inv ? inv.balanceDue.toFixed(2) : '');
+                    }}
+                    className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 bg-white"
+                  >
+                    {paymentInvoices.map((inv) => (
+                      <option key={inv.invoiceNo} value={inv.invoiceNo}>
+                        {inv.invoiceNo} - Due {fmt(inv.balanceDue)} - {formatDate(inv.date)}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+                    No unpaid invoices found for this customer.
+                  </div>
+                )}
+              </div>
+              <div>
                 <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Amount (₵)</label>
                 <input
                   type="number"
                   min="0.01"
                   step="0.01"
-                  max={payingCustomer.outstandingBalance}
+                  max={selectedPaymentInvoice?.balanceDue ?? payingCustomer.outstandingBalance}
                   value={paymentAmount}
                   onChange={(e) => setPaymentAmount(e.target.value)}
-                  placeholder={`Max: ${fmt(payingCustomer.outstandingBalance)}`}
+                  placeholder={selectedPaymentInvoice ? `Max: ${fmt(selectedPaymentInvoice.balanceDue)}` : `Max: ${fmt(payingCustomer.outstandingBalance)}`}
                   className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 font-mono"
                   autoFocus
                 />
+                <p className="text-slate-400 text-xs mt-1">Enter any amount up to the invoice balance. Each payment generates its own receipt.</p>
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Payment Method</label>
@@ -547,18 +678,40 @@ export default function CustomersPage() {
               </button>
               <button
                 onClick={async () => {
-                  const amt = parseFloat(paymentAmount);
-                  if (!amt || amt <= 0) return;
+                  if (!selectedPaymentInvoice) return;
+                  const amt = Math.min(selectedPaymentInvoice.balanceDue, Math.max(0, parseFloat(paymentAmount) || 0));
+                  if (amt <= 0) return;
+                  const targetInvoice = selectedPaymentInvoice;
+                  const targetCustomer = payingCustomer;
+                  const previousPaid = targetInvoice.amountPaid;
                   setPaymentSaving(true);
-                  await recordPayment(payingCustomer.customerId, amt, paymentMethod, undefined, sanitizeMultiline(paymentNotes));
-                  if (currentUser) writeLog(currentUser, {
-                    category: 'customers', action: 'edit',
-                    description: `Recorded ${fmt(amt)} payment from ${payingCustomer.fullName} via ${paymentMethod}`,
-                  });
-                  setPaymentSaving(false);
-                  setPayingCustomer(null);
+                  try {
+                    const payment = await recordCreditPayment(targetInvoice.invoiceNo, amt, paymentMethod, sanitizeMultiline(paymentNotes));
+                    if (!payment) return;
+                    if (currentUser) writeLog(currentUser, {
+                      category: 'credit', action: 'edit',
+                      description: `Recorded ${fmt(amt)} payment for invoice ${targetInvoice.invoiceNo} with receipt ${payment.receiptNo} from ${targetCustomer.fullName} via ${paymentMethod}${paymentNotes ? ` - ${sanitizeMultiline(paymentNotes)}` : ''}`,
+                    });
+                    setPaymentReceipt({
+                      receiptNo: payment.receiptNo,
+                      invoiceNo: targetInvoice.invoiceNo,
+                      customerName: targetCustomer.fullName,
+                      invoiceDate: targetInvoice.date,
+                      paymentDate: new Date().toISOString(),
+                      paymentMethod,
+                      cashier: currentUser?.name ?? targetInvoice.cashier,
+                      invoiceTotal: targetInvoice.netSales,
+                      previousPaid,
+                      amountPaid: amt,
+                      totalPaid: previousPaid + amt,
+                      balanceLeft: payment.remainingBalance,
+                    });
+                    setPayingCustomer(null);
+                  } finally {
+                    setPaymentSaving(false);
+                  }
                 }}
-                disabled={!paymentAmount || parseFloat(paymentAmount) <= 0 || paymentSaving}
+                disabled={!selectedPaymentInvoice || !paymentAmount || parseFloat(paymentAmount) <= 0 || parseFloat(paymentAmount) > (selectedPaymentInvoice?.balanceDue ?? 0) || paymentSaving}
                 className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 text-white rounded-lg text-sm font-semibold cursor-pointer"
               >
                 {paymentSaving ? 'Saving…' : 'Confirm Payment'}
@@ -566,6 +719,13 @@ export default function CustomersPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {paymentReceipt && (
+        <CreditPaymentReceiptModal
+          receipt={paymentReceipt}
+          onClose={() => setPaymentReceipt(null)}
+        />
       )}
 
       {/* Edit Customer Modal */}
@@ -578,32 +738,48 @@ export default function CustomersPage() {
                 <i className="ri-close-line text-lg"></i>
               </button>
             </div>
-            <div className="px-6 py-5 space-y-4">
-              {[
-                { label: 'Full Name *',    key: 'fullName', placeholder: 'e.g. Kwame Asante' },
-                { label: 'Phone Number *', key: 'phone',    placeholder: 'Phone number' },
-                { label: 'Email Address',  key: 'email',    placeholder: 'email@example.com' },
-              ].map((f) => (
-                <div key={f.key}>
-                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">{f.label}</label>
-                  <input
-                    value={editForm[f.key as keyof typeof editForm]}
-                    onChange={(e) => setEditForm((p) => ({ ...p, [f.key]: e.target.value }))}
-                    className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 transition-all"
-                    placeholder={f.placeholder}
-                  />
+            <div className="px-6 py-5 space-y-4 overflow-y-auto">
+              <div className="grid grid-cols-1 sm:grid-cols-[110px_1fr] sm:items-center gap-2 sm:gap-3">
+                <label className="text-sm font-semibold text-slate-700">Name:</label>
+                <input value={editForm.fullName} onChange={(e) => setEditForm((p) => ({ ...p, fullName: e.target.value }))} className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400" />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-[110px_1fr] sm:items-center gap-2 sm:gap-3">
+                <label className="text-sm font-semibold text-slate-700">Telephone:</label>
+                <input value={editForm.phone} onChange={(e) => setEditForm((p) => ({ ...p, phone: e.target.value }))} className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400" />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-[110px_1fr] sm:items-center gap-2 sm:gap-3">
+                <label className="text-sm font-semibold text-slate-700">Address:</label>
+                <input value={editForm.address} onChange={(e) => setEditForm((p) => ({ ...p, address: e.target.value }))} className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400" />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-[110px_1fr] sm:items-center gap-2 sm:gap-3">
+                <label className="text-sm font-semibold text-slate-700">Remarks:</label>
+                <input value={editForm.remarks} onChange={(e) => setEditForm((p) => ({ ...p, remarks: e.target.value }))} className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400" />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-[110px_1fr] sm:items-start gap-2 sm:gap-3">
+                <label className="text-sm font-semibold text-slate-700 sm:pt-2.5">Debt Limit:</label>
+                <div>
+                  <input type="number" min="0" step="0.01" value={editForm.debtLimit} onChange={(e) => setEditForm((p) => ({ ...p, debtLimit: e.target.value }))} className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 font-mono" />
+                  <p className="text-xs text-slate-500 mt-1">0 means UNLIMITED.</p>
                 </div>
-              ))}
-              <div>
-                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Customer Type</label>
-                <select
-                  value={editForm.customerType}
-                  onChange={(e) => setEditForm((p) => ({ ...p, customerType: e.target.value as CustomerType }))}
-                  className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 bg-white cursor-pointer"
-                >
-                  <option value="Wholesale">Wholesale</option>
-                  <option value="Retail">Retail</option>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-[110px_1fr] sm:items-center gap-2 sm:gap-3">
+                <label className="text-sm font-semibold text-slate-700">Visiting Day:</label>
+                <select value={editForm.visitingDay} onChange={(e) => setEditForm((p) => ({ ...p, visitingDay: e.target.value }))} className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 bg-white cursor-pointer">
+                  {VISITING_DAYS.map((day) => <option key={day} value={day}>{day}</option>)}
                 </select>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-[110px_1fr] sm:items-center gap-2 sm:gap-3">
+                <label className="text-sm font-semibold text-slate-700">Status:</label>
+                <select value={editForm.statusFlag} onChange={(e) => setEditForm((p) => ({ ...p, statusFlag: e.target.value as CustomerStatus }))} className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 bg-white cursor-pointer">
+                  {CUSTOMER_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
+                </select>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-[110px_1fr] sm:items-start gap-2 sm:gap-3">
+                <label className="text-sm font-semibold text-slate-700 sm:pt-2.5">Balance:</label>
+                <div>
+                  <input type="number" value={editForm.outstandingBalance} disabled className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-500 outline-none bg-slate-50 font-mono" />
+                  <p className="text-xs text-slate-500 mt-1">This is not editable after saving.</p>
+                </div>
               </div>
             </div>
             <div className="flex gap-3 px-6 py-4 border-t border-slate-100">

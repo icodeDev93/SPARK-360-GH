@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import { sanitizeEmail, sanitizeMultiline, sanitizeText, sanitizeUrl } from '@/lib/sanitize';
 
 export interface StoreSettings {
   storeName: string; storeAddress: string; storePhone: string; storeEmail: string;
@@ -40,6 +41,20 @@ const toSettings = (r: Row): StoreSettings => ({
   invoiceDueDays: r.invoice_due_days ?? 30,
 });
 
+const cleanSettings = (settings: StoreSettings): StoreSettings => ({
+  ...settings,
+  storeName: sanitizeText(settings.storeName),
+  storeAddress: sanitizeMultiline(settings.storeAddress),
+  storePhone: sanitizeText(settings.storePhone),
+  storeEmail: sanitizeEmail(settings.storeEmail),
+  storeLogo: sanitizeUrl(settings.storeLogo),
+  currency: sanitizeText(settings.currency),
+  currencySymbol: sanitizeText(settings.currencySymbol),
+  taxLabel: sanitizeText(settings.taxLabel),
+  receiptFooter: sanitizeMultiline(settings.receiptFooter),
+  timezone: sanitizeText(settings.timezone),
+});
+
 export function useSettings() {
   const [settings, setSettings] = useState<StoreSettings>(DEFAULT_SETTINGS);
 
@@ -58,7 +73,7 @@ export function useSettings() {
   }, []);
 
   const updateSettings = async (updates: Partial<StoreSettings>) => {
-    const next = { ...settings, ...updates };
+    const next = cleanSettings({ ...settings, ...updates });
     setSettings(next);
     const row: Partial<Row> = {
       store_name: next.storeName, store_address: next.storeAddress, store_phone: next.storePhone,

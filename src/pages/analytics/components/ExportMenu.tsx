@@ -8,6 +8,7 @@ import {
   exportInventoryCSV,
   exportExpensesCSV,
   exportProfitCSV,
+  exportCustomerReceivablesCSV,
   printAnalyticsPDF,
 } from '../utils/exportUtils';
 import type { AnalyticsFilter } from '@/hooks/useAnalyticsFilter';
@@ -23,7 +24,7 @@ export default function ExportMenu({ activeTab, filter }: Props) {
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState<ExportStatus>('idle');
   const ref = useRef<HTMLDivElement>(null);
-  const { sales } = useSalesLog();
+  const { sales, invoices } = useSalesLog();
   const { expenses } = useExpenses();
   const { items } = useInventory();
 
@@ -36,10 +37,13 @@ export default function ExportMenu({ activeTab, filter }: Props) {
   }, []);
 
   const filteredSales = sales.filter((s) => filter.isInRange(s.date));
+  const filteredCreditInvoices = invoices.filter((inv) => inv.status === 'credit' && filter.isInRange(inv.date));
   const filteredExpenses = expenses.filter((e) => filter.isInRange(e.date));
   const rangeLabel = filter.label.toLowerCase().replace(/\s+/g, '-');
   const exportCountLabel = activeTab === 'inventory' || activeTab === 'stock-report'
     ? `${items.length} items`
+    : activeTab === 'customer-receivables'
+    ? `${filteredCreditInvoices.length} credit invoices`
     : `${filteredSales.length} sales`;
 
   function flash() {
@@ -69,6 +73,9 @@ export default function ExportMenu({ activeTab, filter }: Props) {
       case 'customer-report':
         exportSalesCSV(filteredSales, rangeLabel);
         break;
+      case 'customer-receivables':
+        exportCustomerReceivablesCSV(filteredCreditInvoices, rangeLabel);
+        break;
       case 'profit':
         exportProfitCSV(filteredSales, filteredExpenses, rangeLabel);
         break;
@@ -90,7 +97,7 @@ export default function ExportMenu({ activeTab, filter }: Props) {
       .split('-')
       .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
       .join(' ');
-    printAnalyticsPDF(tabLabel, activeTab, filter.label, filteredSales, filteredExpenses, items);
+    printAnalyticsPDF(tabLabel, activeTab, filter.label, filteredSales, filteredExpenses, items, filteredCreditInvoices);
   }
 
   const btnClass = status === 'done'
@@ -146,6 +153,8 @@ export default function ExportMenu({ activeTab, filter }: Props) {
                     ? 'Stock Report'
                     : activeTab === 'top-customers' || activeTab === 'customer-report'
                     ? 'Customers Report'
+                    : activeTab === 'customer-receivables'
+                    ? 'Customer Receivables Report'
                     : 'Sales Report'}
                 </p>
                 <p className="text-slate-400 text-xs">Download as .csv ({exportCountLabel})</p>

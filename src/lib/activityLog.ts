@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import type { AuthUser } from '@/hooks/useAuth';
+import { sanitizeText } from '@/lib/sanitize';
 
 export interface LogChange {
   field: string;
@@ -9,7 +10,8 @@ export interface LogChange {
 
 export type LogCategory =
   | 'sales' | 'inventory' | 'expenses' | 'customers'
-  | 'purchases' | 'users' | 'settings' | 'auth';
+  | 'credit' | 'bank-deposit' | 'purchases' | 'suppliers'
+  | 'users' | 'settings' | 'auth';
 
 export type LogAction =
   | 'create' | 'edit' | 'delete' | 'login' | 'logout' | 'refund' | 'complete';
@@ -25,12 +27,16 @@ export async function writeLog(user: AuthUser, entry: LogEntry): Promise<void> {
   try {
     await supabase.from('user_logs').insert({
       user_id:     user.id,
-      user_name:   user.name,
+      user_name:   sanitizeText(user.name),
       user_role:   user.role,
       category:    entry.category,
       action:      entry.action,
-      description: entry.description,
-      changes:     entry.changes?.length ? entry.changes : null,
+      description: sanitizeText(entry.description),
+      changes:     entry.changes?.length ? entry.changes.map((change) => ({
+        field: sanitizeText(change.field),
+        old: sanitizeText(change.old),
+        new: sanitizeText(change.new),
+      })) : null,
     });
   } catch {
     // Logging failures never block the main action

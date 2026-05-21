@@ -9,6 +9,18 @@ export interface InventoryItem {
   supplier: string;
   costPrice: number;      // GHS
   sellingPrice: number;   // GHS
+  wholesaleCostPrice: number;
+  singleCostPrice: number;
+  wholesaleSellingPrice: number;
+  halfSellingPrice: number;
+  quarterSellingPrice: number;
+  singleSellingPrice: number;
+  wholesaleQuantity: number;
+  singleQuantity: number;
+  quantityPerBox: number;
+  stockLimit: number;
+  description: string;
+  priceLevels: { label: string; price: number }[];
   currentStock: number;
   reorderLevel: number;
   expiryDate: string;
@@ -21,6 +33,7 @@ export interface InventoryItem {
 // ─── Sales ────────────────────────────────────────────────────────────────────
 
 export type PaymentMethod = 'Cash' | 'MoMo' | 'Cheque' | 'Bank Transfer' | 'Credit';
+export type ExpensePaymentMethod = Exclude<PaymentMethod, 'Credit'>;
 
 export interface SaleLineItem {
   productId: string;
@@ -37,7 +50,7 @@ export interface SaleLineItem {
 
 export interface InvoiceRecord {
   invoiceNo: string;
-  receiptNo: string;
+  receiptNo: string | null;
   date: string;
   customerId: string;
   customerName: string;
@@ -45,6 +58,8 @@ export interface InvoiceRecord {
   netSales: number;          // sum of item netSales
   totalCost: number;         // sum of item totalCost
   grossMargin: number;       // netSales - totalCost
+  amountPaid: number;
+  balanceDue: number;
   paymentMethod: PaymentMethod;
   status: 'completed' | 'refunded' | 'credit';
   cashier: string;
@@ -69,9 +84,31 @@ export interface ExpenseRecord {
   category: ExpenseCategory;
   description: string;
   amountGHS: number;
-  paidBy: PaymentMethod;
+  paidBy: ExpensePaymentMethod;
   notes: string;
   proofUrl: string | null;
+}
+
+export interface BankDepositRecord {
+  depositId: string;
+  date: string;
+  bankId: string | null;
+  bank: string;
+  accountNo: string;
+  amountGHS: number;
+  remarks: string;
+  createdBy: string;
+  createdAt: string;
+}
+
+export interface BankRecord {
+  bankId: string;
+  bankName: string;
+  branch: string;
+  address: string;
+  telephone: string;
+  createdBy: string;
+  createdAt: string;
 }
 
 // ─── CRM ──────────────────────────────────────────────────────────────────────
@@ -85,6 +122,10 @@ export interface Customer {
   customerType: CustomerType;
   phone: string;
   email: string;
+  address: string;
+  remarks: string;
+  debtLimit: number;
+  visitingDay: string;
   totalPurchases: number;      // total GHS spent
   outstandingBalance: number;  // GHS owed
   statusFlag: CustomerStatus;
@@ -149,6 +190,9 @@ export interface CreditPayment {
   id: string;
   customerId: string;
   saleId?: string;
+  invoiceNo?: string;
+  receiptNo?: string | null;
+  receiptId?: string | null;
   amount: number;
   paymentMethod: Exclude<PaymentMethod, 'Credit'>;
   notes: string;

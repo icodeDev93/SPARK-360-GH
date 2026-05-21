@@ -11,8 +11,10 @@ export function generateNextInvoiceNo(existingInvoices: InvoiceRecord[]): string
 }
 
 export function generateReceiptNo(): string {
-  const ts = Date.now().toString().slice(-6);
-  return `RCP-${ts}`;
+  const now = new Date();
+  const day = now.toISOString().slice(2, 10).replace(/-/g, '');
+  const ms = Date.now().toString().slice(-6);
+  return `RCP-${day}-${ms}`;
 }
 
 export function loadInvoiceById(
@@ -64,7 +66,7 @@ export function calcInvoiceTotals(items: SaleLineItem[]): {
 
 export function buildInvoice(
   invoiceNo: string,
-  receiptNo: string,
+  receiptNo: string | null,
   customerId: string,
   customerName: string,
   items: SaleLineItem[],
@@ -82,6 +84,8 @@ export function buildInvoice(
     customerName,
     items,
     ...totals,
+    amountPaid: status === 'credit' ? 0 : totals.netSales,
+    balanceDue: status === 'credit' ? totals.netSales : 0,
     paymentMethod,
     status,
     cashier,

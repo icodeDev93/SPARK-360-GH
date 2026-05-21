@@ -1,30 +1,77 @@
 import { useState, useEffect } from 'react';
 import type { Customer, CustomerType, CustomerStatus } from '@/types/erp';
 import { supabase } from '@/lib/supabase';
+import { sanitizeText, sanitizeEmail, sanitizeMultiline, sanitizeUrl } from '@/lib/sanitize';
 
 type Row = {
-  id: string; full_name: string;
-  customer_type: string; phone: string | null; email: string | null;
-  outstanding_balance: number | null; status: string; avatar_url: string | null;
-  notes: string | null;
+  id: string;
+  full_name: string;
+  phone: string | null;
+  address?: string | null;
+  remarks?: string | null;
+  debt_limit?: number | null;
+  visiting_day?: string | null;
+  outstanding_balance: number | null;
+  status: string;
+  customer_type?: string | null;
+  email?: string | null;
+  avatar_url?: string | null;
+  notes?: string | null;
   created_at?: string;
 };
 
 const toCustomer = (r: Row): Customer => ({
   customerId: r.id, fullName: r.full_name,
-  customerType: r.customer_type as CustomerType, phone: r.phone ?? '', email: r.email ?? '',
+  customerType: (r.customer_type as CustomerType | null) ?? 'Retail',
+  phone: r.phone ?? '',
+  email: r.email ?? '',
+  address: r.address ?? '',
+  remarks: r.remarks ?? r.notes ?? '',
+  debtLimit: r.debt_limit ?? 0,
+  visitingDay: r.visiting_day ?? 'Sunday',
   totalPurchases: 0, outstandingBalance: r.outstanding_balance ?? 0,
-  statusFlag: r.status as CustomerStatus, avatar: r.avatar_url ?? '',
+  statusFlag: r.status as CustomerStatus,
+  avatar: r.avatar_url ?? r.full_name.split(' ').slice(0, 2).map((w) => w[0]).join('').toUpperCase(),
   lastOrderDate: r.created_at?.split('T')[0] ?? '',
-  notes: r.notes ?? undefined,
+  notes: r.remarks ?? r.notes ?? undefined,
 });
 
-const toRow = (c: Customer): Omit<Row, 'id'> => ({
-  full_name: c.fullName,
-  customer_type: c.customerType, phone: c.phone, email: c.email,
-  outstanding_balance: c.outstandingBalance, status: c.statusFlag, avatar_url: c.avatar,
-  notes: c.notes ?? null,
+const cleanCustomer = (c: Customer): Customer => ({
+  ...c,
+  fullName: sanitizeText(c.fullName),
+  phone: sanitizeText(c.phone),
+  email: sanitizeEmail(c.email),
+  address: sanitizeText(c.address),
+  remarks: sanitizeMultiline(c.remarks),
+  visitingDay: sanitizeText(c.visitingDay),
+  avatar: sanitizeUrl(c.avatar) || sanitizeText(c.avatar),
+  notes: c.notes ? sanitizeMultiline(c.notes) : undefined,
 });
+
+const cleanCustomerPatch = (data: Partial<Customer>): Partial<Customer> => ({
+  ...data,
+  ...(data.fullName !== undefined ? { fullName: sanitizeText(data.fullName) } : {}),
+  ...(data.phone !== undefined ? { phone: sanitizeText(data.phone) } : {}),
+  ...(data.email !== undefined ? { email: sanitizeEmail(data.email) } : {}),
+  ...(data.address !== undefined ? { address: sanitizeText(data.address) } : {}),
+  ...(data.remarks !== undefined ? { remarks: sanitizeMultiline(data.remarks) } : {}),
+  ...(data.visitingDay !== undefined ? { visitingDay: sanitizeText(data.visitingDay) } : {}),
+  ...(data.avatar !== undefined ? { avatar: sanitizeUrl(data.avatar) || sanitizeText(data.avatar) } : {}),
+  ...(data.notes !== undefined ? { notes: sanitizeMultiline(data.notes) } : {}),
+});
+
+const toRow = (customer: Customer) => {
+  const c = cleanCustomer(customer);
+  return ({
+  full_name: c.fullName,
+  phone: c.phone,
+  address: c.address || null,
+  remarks: c.remarks || c.notes || null,
+  debt_limit: c.debtLimit,
+  visiting_day: c.visitingDay,
+  outstanding_balance: c.outstandingBalance,
+  status: c.statusFlag,
+})};
 
 export function useCustomers() {
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -49,10 +96,11 @@ export function useCustomers() {
     return () => { supabase.removeChannel(channel); };
   }, []);
 
-  const addCustomer = async (data: Omit<Customer, 'customerId' | 'totalPurchases' | 'outstandingBalance' | 'lastOrderDate'>) => {
+  const addCustomer = async (data: Omit<Customer, 'customerId' | 'totalPurchases' | 'lastOrderDate'>) => {
     const newCustomer: Customer = {
-      ...data, customerId: `C${Date.now()}`,
-      totalPurchases: 0, outstandingBalance: 0,
+      ...cleanCustomer(data as Customer),
+      customerId: `C${Date.now()}`,
+      totalPurchases: 0,
       lastOrderDate: new Date().toISOString().split('T')[0],
     };
     setCustomers((prev) => [...prev, newCustomer]);
@@ -69,11 +117,12 @@ export function useCustomers() {
   };
 
   const updateCustomer = async (customerId: string, data: Partial<Customer>) => {
-    setCustomers((prev) => prev.map((c) => c.customerId === customerId ? { ...c, ...data } : c));
+    const cleanData = cleanCustomerPatch(data);
+    setCustomers((prev) => prev.map((c) => c.customerId === customerId ? { ...c, ...cleanData } : c));
     const updated = customers.find((c) => c.customerId === customerId);
     if (!updated) return;
     const { error } = await supabase.from('customers')
-      .update(toRow({ ...updated, ...data })).eq('id', customerId);
+      .update(toRow({ ...updated, ...cleanData })).eq('id', customerId);
     if (error) console.error(error);
   };
 
@@ -101,7 +150,7 @@ export function useCustomers() {
       sale_id: saleId ?? null,
       amount,
       payment_method: paymentMethod,
-      notes,
+      notes: sanitizeMultiline(notes),
     }).then(({ error: e }) => { if (e) console.error(e); });
     const { error } = await supabase.from('customers')
       .update({ outstanding_balance: newBalance }).eq('id', customerId);

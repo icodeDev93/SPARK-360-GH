@@ -9,6 +9,7 @@ import CustomersTab from './components/CustomersTab';
 import ProfitTab from './components/ProfitTab';
 import SalesReport from '@/pages/reports/components/SalesReport';
 import InventoryReport from '@/pages/reports/components/InventoryReport';
+import CustomerReceivablesReport from '@/pages/reports/components/CustomerReceivablesReport';
 
 type AnalyticsTab =
   | 'overview'
@@ -17,6 +18,7 @@ type AnalyticsTab =
   | 'top-customers'
   | 'product-report'
   | 'customer-report'
+  | 'customer-receivables'
   | 'stock-report'
   | 'profit';
 
@@ -27,6 +29,7 @@ const TAB_CONFIG = [
   { key: 'top-customers', label: 'Top Customers', icon: 'ri-group-fill' },
   { key: 'product-report', label: 'Product Report', icon: 'ri-archive-2-fill' },
   { key: 'customer-report', label: 'Customer Report', icon: 'ri-user-search-fill' },
+  { key: 'customer-receivables', label: 'Customer Receivables Report', icon: 'ri-hand-coin-fill' },
   { key: 'stock-report', label: 'Stock Report', icon: 'ri-archive-drawer-fill' },
   { key: 'profit', label: 'Profit Loss Report', icon: 'ri-line-chart-fill' },
 ];
@@ -87,6 +90,7 @@ export default function AnalyticsPage() {
       {tab === 'top-customers' && <CustomersTab filter={filter} variant="top" />}
       {tab === 'product-report' && <ProductsTab filter={filter} />}
       {tab === 'customer-report' && <CustomersTab filter={filter} />}
+      {tab === 'customer-receivables' && <CustomerReceivablesReport filter={filter} />}
       {tab === 'stock-report' && <InventoryReport />}
       {tab === 'profit' && <ProfitTab filter={filter} />}
     </AppLayout>

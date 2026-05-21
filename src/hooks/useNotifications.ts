@@ -66,7 +66,7 @@ export function useNotifications() {
           .select('purchase_number,supplier_name,expected_date,status,payment_status,total_amount,purchase_date'),
         supabase
           .from('sales')
-          .select('id,receipt_number,sale_date,customer_name,total_amount,status,cashier,receipts(receipt_number)')
+          .select('id,invoice_number,receipt_number,sale_date,customer_name,total_amount,status,cashier,receipts(receipt_number)')
           .gte('sale_date', since7d)
           .order('sale_date', { ascending: false }),
       ]);
@@ -148,11 +148,12 @@ export function useNotifications() {
         });
       }
 
-      // Helper: prefer the RCP- number from the receipts join, fall back to the sale's own field
-      type SaleRow = { receipt_number: string; receipts: { receipt_number: string } | { receipt_number: string }[] | null };
-      const getReceiptNo = (s: SaleRow) => {
-        if (Array.isArray(s.receipts)) return s.receipts[0]?.receipt_number ?? s.receipt_number;
-        return (s.receipts as { receipt_number: string } | null)?.receipt_number ?? s.receipt_number;
+      // Helper: prefer the RCP- number from the receipts join, then the sale receipt field, then invoice.
+      type SaleRow = { invoice_number?: string | null; receipt_number: string | null; receipts: { receipt_number: string } | { receipt_number: string }[] | null };
+      const getSaleDocumentNo = (s: SaleRow) => {
+        if (s.receipt_number) return s.receipt_number;
+        if (Array.isArray(s.receipts)) return s.receipts[0]?.receipt_number ?? s.invoice_number ?? '';
+        return (s.receipts as { receipt_number: string } | null)?.receipt_number ?? s.invoice_number ?? '';
       };
 
       // ── Today's sales transactions ──────────────────────────────────────────
@@ -165,7 +166,7 @@ export function useNotifications() {
           id:         `sale-${s.id}`,
           category:   'Sales',
           severity:   'info',
-          title:      getReceiptNo(s),
+          title:      getSaleDocumentNo(s),
           subtitle:   `${s.customer_name} · ${fmtGHS(s.total_amount ?? 0)}${s.cashier ? ' · ' + s.cashier : ''}`,
           badge:      'Completed',
           badgeColor: 'bg-emerald-100 text-emerald-700',
@@ -183,7 +184,7 @@ export function useNotifications() {
           id:         `refund-${s.id}`,
           category:   'Sales',
           severity:   'warning',
-          title:      `Refund: ${getReceiptNo(s)}`,
+          title:      `Refund: ${getSaleDocumentNo(s)}`,
           subtitle:   `${s.customer_name} · ${fmtGHS(s.total_amount ?? 0)} · ${s.sale_date}`,
           badge:      'Refunded',
           badgeColor: 'bg-red-100 text-red-600',

@@ -7,6 +7,7 @@ import CustomersPage from '@/pages/customers/page';
 import AnalyticsPage from '@/pages/analytics/page';
 import SettingsPage from '@/pages/settings/page';
 import ExpensesPage from '@/pages/expenses/page';
+import BankDepositPage from '@/pages/bank-deposit/page';
 import SalesHistoryPage from '@/pages/sales-history/page';
 import SuppliersPage from '@/pages/suppliers/page';
 import CreditPage from '@/pages/credit/page';
@@ -25,8 +26,9 @@ const routes: RouteObject[] = [
   { path: '/purchases',     element: <ProtectedRoute permission="purchases"><PurchasesPage /></ProtectedRoute> },
   { path: '/suppliers',     element: <ProtectedRoute permission="purchases"><SuppliersPage /></ProtectedRoute> },
   { path: '/customers',     element: <ProtectedRoute permission="customers"><CustomersPage /></ProtectedRoute> },
-  { path: '/credit',        element: <ProtectedRoute permission="customers"><CreditPage /></ProtectedRoute> },
+  { path: '/credit',        element: <ProtectedRoute permission="credit"><CreditPage /></ProtectedRoute> },
   { path: '/expenses',      element: <ProtectedRoute permission="expenses"><ExpensesPage /></ProtectedRoute> },
+  { path: '/bank-deposit',  element: <ProtectedRoute permission="bank-deposit"><BankDepositPage /></ProtectedRoute> },
   { path: '/reports',       element: <ProtectedRoute permission="reports"><Navigate to="/analytics" replace /></ProtectedRoute> },
   { path: '/analytics',     element: <ProtectedRoute permission="reports"><AnalyticsPage /></ProtectedRoute> },
   { path: '/settings',      element: <ProtectedRoute permission="settings"><SettingsPage /></ProtectedRoute> },

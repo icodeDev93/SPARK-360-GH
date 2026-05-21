@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import PasswordInput from '@/components/ui/PasswordInput';
+import { sanitizeEmail } from '@/lib/sanitize';
 
 export default function LoginPage() {
   const { login, authLoading } = useAuth();
@@ -20,7 +21,7 @@ export default function LoginPage() {
       return;
     }
 
-    const result = await login(email, password);
+    const result = await login(sanitizeEmail(email), password);
     if (result.success) {
       navigate('/', { replace: true });
     } else {
@@ -95,7 +96,7 @@ export default function LoginPage() {
             <span className="text-slate-800 font-bold text-xl tracking-tight">SPark360</span>
           </div>
 
-          <h1 className="text-slate-800 font-bold text-3xl mb-2">Welcome back</h1>
+          <h1 className="text-slate-800 font-bold text-3xl mb-2">Welcome back!</h1>
           <p className="text-slate-500 text-base mb-10">Sign in to your account to continue.</p>
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-6">

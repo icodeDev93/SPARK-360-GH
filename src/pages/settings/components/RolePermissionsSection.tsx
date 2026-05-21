@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAuth, ALL_PERMISSIONS, type DynamicPermissions } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
 import { writeLog } from '@/lib/activityLog';
+import { useFeedbackModal } from '@/hooks/useFeedbackModal';
 
 type ConfigRole = 'manager' | 'cashier';
 
@@ -24,6 +25,7 @@ const ROLE_META: Record<ConfigRole, { label: string; color: string; bg: string; 
 
 export default function RolePermissionsSection() {
   const { rolePermissions, currentUser } = useAuth();
+  const { showFeedback } = useFeedbackModal();
   const [activeRole, setActiveRole]   = useState<ConfigRole>('manager');
   const [localPerms, setLocalPerms]   = useState<DynamicPermissions>(rolePermissions);
   const [saving, setSaving]           = useState(false);
@@ -77,6 +79,11 @@ export default function RolePermissionsSection() {
         });
       }
       setSaved(true);
+      showFeedback({
+        title: 'Permissions Saved',
+        message: 'Role permissions have been updated successfully.',
+        buttonLabel: 'Continue',
+      });
       setTimeout(() => setSaved(false), 2500);
     } finally {
       setSaving(false);
