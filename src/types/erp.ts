@@ -26,7 +26,6 @@ export interface InventoryItem {
   expiryDate: string;
   stockStatus: StockStatus;
   marginPerUnit: number;  // sellingPrice - costPrice
-  sku: string;
   image: string;
 }
 

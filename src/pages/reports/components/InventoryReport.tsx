@@ -44,7 +44,7 @@ export default function InventoryReport() {
   // Filtered table
   const filtered = items.filter((item) => {
     const q = search.toLowerCase();
-    const matchSearch = item.productName.toLowerCase().includes(q) || item.sku.toLowerCase().includes(q);
+    const matchSearch = item.productName.toLowerCase().includes(q) || item.itemId.toLowerCase().includes(q);
     const matchCat    = catFilter === 'All' || item.category === catFilter;
     const matchStock  = stockFilter === 'All' || item.stockStatus === stockFilter;
     return matchSearch && matchCat && matchStock;
@@ -58,7 +58,7 @@ export default function InventoryReport() {
       {/* Summary Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: 'Total SKUs',      value: String(totalItems), sub: `${categories.length} categories`, icon: 'ri-archive-drawer-line', color: 'bg-indigo-50 text-indigo-600' },
+          { label: 'Total Products',  value: String(totalItems), sub: `${categories.length} categories`, icon: 'ri-archive-drawer-line', color: 'bg-indigo-50 text-indigo-600' },
           { label: 'Stock Value (Cost)',  value: fmtK(totalStockVal),  sub: 'at cost price',  icon: 'ri-safe-line',          color: 'bg-emerald-50 text-emerald-600' },
           { label: 'Retail Value',    value: fmtK(totalRetailVal), sub: 'at selling price', icon: 'ri-price-tag-3-line',   color: 'bg-violet-50 text-violet-600' },
           { label: 'Alerts',          value: `${lowCount + outCount}`, sub: `${outCount} out · ${lowCount} low`, icon: 'ri-alert-line', color: 'bg-amber-50 text-amber-600' },
@@ -87,7 +87,7 @@ export default function InventoryReport() {
                   <div className="flex items-center gap-2">
                     <span className={`w-2.5 h-2.5 rounded-full ${CAT_COLORS[i % CAT_COLORS.length]}`}></span>
                     <span className="text-slate-700 text-sm font-medium">{c.cat}</span>
-                    <span className="text-slate-400 text-xs">({c.count} SKUs)</span>
+                    <span className="text-slate-400 text-xs">({c.count} products)</span>
                   </div>
                   <span className="text-slate-700 text-sm font-bold font-mono">{fmtK(c.value)}</span>
                 </div>
@@ -161,7 +161,7 @@ export default function InventoryReport() {
           <i className="ri-search-line text-slate-400 text-sm"></i>
           <input
             type="text"
-            placeholder="Search product or SKU..."
+            placeholder="Search product or code..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="bg-transparent text-sm text-slate-600 placeholder-slate-400 outline-none flex-1"
@@ -193,7 +193,7 @@ export default function InventoryReport() {
           <table className="w-full">
             <thead className="bg-slate-50 border-b border-slate-100">
               <tr>
-                {['Product', 'SKU', 'Category', 'Stock', 'Reorder', 'Cost (₵)', 'Price (₵)', 'Stock Value', 'Margin', 'Status'].map((h) => (
+                {['Product', 'Product Code', 'Category', 'Stock', 'Reorder', 'Cost (₵)', 'Price (₵)', 'Stock Value', 'Margin', 'Status'].map((h) => (
                   <th key={h} className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5 whitespace-nowrap">{h}</th>
                 ))}
               </tr>
@@ -219,7 +219,7 @@ export default function InventoryReport() {
                         <p className="text-slate-800 text-sm font-semibold">{item.productName}</p>
                       </td>
                       <td className="px-4 py-3.5">
-                        <span className="text-slate-400 text-xs font-mono">{item.sku}</span>
+                        <span className="text-slate-400 text-xs font-mono">{item.itemId}</span>
                       </td>
                       <td className="px-4 py-3.5">
                         <span className="bg-slate-100 text-slate-600 text-xs font-semibold px-2.5 py-1 rounded-full">{item.category}</span>

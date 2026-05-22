@@ -125,7 +125,7 @@ export function exportProductsCSV(sales: SaleRecord[], label: string): void {
 export function exportInventoryCSV(items: InventoryItem[], label: string): void {
   const headers = [
     'Product',
-    'SKU',
+    'Product Code',
     'Category',
     'Supplier',
     'Current Stock',
@@ -143,7 +143,7 @@ export function exportInventoryCSV(items: InventoryItem[], label: string): void 
       : 0;
     return [
       item.productName,
-      item.sku,
+      item.itemId,
       item.category,
       item.supplier,
       item.currentStock,
@@ -787,7 +787,7 @@ export function printAnalyticsPDF(
 
     body += `
     <div style="display:flex;gap:12px;margin-bottom:22px;flex-wrap:wrap;">
-      ${kpi('Total SKUs',    `${invItems.length}`, 'Products tracked',     '#4f46e5')}
+      ${kpi('Total Products', `${invItems.length}`, 'Products tracked',     '#4f46e5')}
       ${kpi('Stock Value',   fmt(totalValue),      'At cost price',         '#059669')}
       ${kpi('Low Stock',     `${lowStock}`,         'At or below reorder',  '#d97706')}
       ${kpi('Out of Stock',  `${outOfStock}`,       'Zero units remaining', '#e11d48')}
@@ -810,7 +810,7 @@ export function printAnalyticsPDF(
       </div>
       <table style="width:100%;border-collapse:collapse;">
         <thead><tr>
-          <th style="${TH}">Product</th><th style="${TH}">SKU</th><th style="${TH}">Category</th>
+          <th style="${TH}">Product</th><th style="${TH}">Product Code</th><th style="${TH}">Category</th>
           <th style="${THR}">Stock</th><th style="${THR}">Reorder</th>
           <th style="${THR}">Cost</th><th style="${THR}">Price</th><th style="${THR}">Value</th>
           <th style="${THC}">Status</th>
@@ -821,7 +821,7 @@ export function printAnalyticsPDF(
             return `
             <tr style="background:${i % 2 ? '#fafafa' : '#fff'};">
               <td style="${TD}font-weight:600;color:#1e293b;">${item.productName}</td>
-              <td style="${TD}font-family:'Courier New',monospace;color:#64748b;font-size:11px;">${item.sku}</td>
+              <td style="${TD}font-family:'Courier New',monospace;color:#64748b;font-size:11px;">${item.itemId}</td>
               <td style="${TD}color:#64748b;">${item.category}</td>
               <td style="${TDR}font-weight:700;">${item.currentStock}</td>
               <td style="${TDR}color:#64748b;">${item.reorderLevel}</td>

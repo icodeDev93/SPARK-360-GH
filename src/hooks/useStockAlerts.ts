@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import { useBusiness } from '@/contexts/BusinessContext';
 
 export interface StockAlertItem {
-  id: string; name: string; sku: string; category: string;
+  id: string; name: string; productCode: string; category: string;
   stock: number; reorder: number; image: string;
   severity: 'critical' | 'low' | 'warning';
 }
@@ -26,21 +27,27 @@ function loadDismissed(): Set<string> {
 }
 
 export function useStockAlerts() {
+  const { activeBusinessId } = useBusiness();
   const [allAlerts, setAllAlerts] = useState<StockAlertItem[]>([]);
   const [dismissed, setDismissed] = useState<Set<string>>(loadDismissed);
 
   useEffect(() => {
     (async () => {
+      if (!activeBusinessId) {
+        setAllAlerts([]);
+        return;
+      }
       const { data: items, error } = await supabase
         .from('inventory')
-        .select('product_code, product_name, sku, category_name, current_stock, reorder_level, image_url');
+        .select('product_code, product_name, category_name, current_stock, reorder_level, image_url')
+        .eq('business_id', activeBusinessId);
 
       if (error) return;
 
       const alerts: StockAlertItem[] = (items ?? [])
         .filter((i) => i.current_stock <= i.reorder_level)
         .map((i) => ({
-          id: i.product_code, name: i.product_name, sku: i.sku ?? '',
+          id: i.product_code, name: i.product_name, productCode: i.product_code,
           category: i.category_name ?? '', stock: i.current_stock,
           reorder: i.reorder_level, image: i.image_url ?? '',
           severity: getSeverity(i.current_stock, i.reorder_level),
@@ -52,7 +59,7 @@ export function useStockAlerts() {
 
       setAllAlerts(alerts);
     })();
-  }, []);
+  }, [activeBusinessId]);
 
   const activeAlerts = allAlerts.filter((a) => !dismissed.has(a.id));
 

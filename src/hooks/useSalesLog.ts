@@ -4,6 +4,7 @@ import { generateNextInvoiceNo, generateReceiptNo, buildInvoice, refundInvoice, 
 import { supabase } from '@/lib/supabase';
 import { sanitizeMultiline, sanitizeText } from '@/lib/sanitize';
 import { loadLocalCollection, queueLocalMutation, saveLocalCollection } from '@/lib/localCache';
+import { useBusiness } from '@/contexts/BusinessContext';
 
 export type { InvoiceRecord, SaleLineItem, PaymentMethod };
 
@@ -180,22 +181,25 @@ const toCreditPayment = (payment: CreditPaymentRow): CreditPayment => ({
   createdAt: payment.created_at ?? '',
 });
 
-const fetchCreditPayments = async (): Promise<CreditPaymentRow[]> => {
+const fetchCreditPayments = async (businessId: string): Promise<CreditPaymentRow[]> => {
   const fullResult = await supabase
     .from('credit_payments')
-    .select('id,customer_id,sale_id,invoice_number,receipt_id,amount,payment_method,notes,created_at,receipts(receipt_number)');
+    .select('id,customer_id,sale_id,invoice_number,receipt_id,amount,payment_method,notes,created_at,receipts(receipt_number)')
+    .eq('business_id', businessId);
 
   if (!fullResult.error) return (fullResult.data ?? []) as CreditPaymentRow[];
 
   const metadataResult = await supabase
     .from('credit_payments')
-    .select('id,customer_id,sale_id,invoice_number,receipt_id,amount,payment_method,notes,created_at');
+    .select('id,customer_id,sale_id,invoice_number,receipt_id,amount,payment_method,notes,created_at')
+    .eq('business_id', businessId);
 
   if (!metadataResult.error) return (metadataResult.data ?? []) as CreditPaymentRow[];
 
   const totalsResult = await supabase
     .from('credit_payments')
-    .select('sale_id,invoice_number,amount');
+    .select('sale_id,invoice_number,amount')
+    .eq('business_id', businessId);
 
   if (totalsResult.error) {
     console.error(fullResult.error);
@@ -228,9 +232,10 @@ const cleanInvoice = (inv: InvoiceRecord): InvoiceRecord => ({
   items: inv.items.map(cleanLineItem),
 });
 
-const saleRow = (invoice: InvoiceRecord) => {
+const saleRow = (invoice: InvoiceRecord, businessId: string) => {
   const inv = cleanInvoice(invoice);
   return ({
+  business_id: businessId,
   invoice_number: inv.invoiceNo,
   receipt_number: inv.receiptNo,
   sale_date: inv.date,
@@ -246,23 +251,24 @@ const saleRow = (invoice: InvoiceRecord) => {
   cashier: inv.cashier,
 })};
 
-const insertSale = async (inv: InvoiceRecord) => {
-  const result = await supabase.from('sales').insert(saleRow(inv)).select('id').single();
+const insertSale = async (inv: InvoiceRecord, businessId: string) => {
+  const result = await supabase.from('sales').insert(saleRow(inv, businessId)).select('id').single();
   if (result.error?.code === '42703') {
-    const { items: _items, customer_id: _cid, invoice_number: _invoiceNo, ...safeRow } = saleRow(inv) as Record<string, unknown>;
+    const { items: _items, customer_id: _cid, invoice_number: _invoiceNo, business_id: _bid, ...safeRow } = saleRow(inv, businessId) as Record<string, unknown>;
     return supabase.from('sales').insert({ ...safeRow, receipt_number: inv.invoiceNo }).select('id').single();
   }
   return result;
 };
 
-const insertSaleItems = async (saleId: string, items: SaleLineItem[]) => {
-  const rows = saleItemRows(saleId, items);
+const insertSaleItems = async (saleId: string, items: SaleLineItem[], businessId: string) => {
+  const rows = saleItemRows(saleId, items, businessId);
   const { error } = await supabase.from('sale_items').insert(rows);
   if (error) console.error(error);
 };
 
 // net_quantity is a generated column (quantity - returned_quantity) — never write it
-const saleItemRows = (saleId: string, items: SaleLineItem[]) => items.map((it) => ({
+const saleItemRows = (saleId: string, items: SaleLineItem[], businessId: string) => items.map((it) => ({
+  business_id: businessId,
   sale_id: saleId,
   product_code: sanitizeText(it.productId),
   product_name: sanitizeText(it.productName),
@@ -280,8 +286,10 @@ const receiptRow = (
   inv: InvoiceRecord,
   receiptNo: string,
   paymentMethod: Exclude<PaymentMethod, 'Credit'> | PaymentMethod = inv.paymentMethod,
-  paymentAmount = inv.netSales
+  paymentAmount = inv.netSales,
+  businessId?: string | null
 ) => ({
+  business_id: businessId,
   sale_id: saleId,
   receipt_number: sanitizeText(receiptNo),
   customer_name: sanitizeText(inv.customerName),
@@ -318,10 +326,11 @@ const toSaleRecord = (inv: InvoiceRecord): SaleRecord => ({
   status: inv.status,
 });
 
-const findSaleByInvoiceNo = async (invoiceNo: string): Promise<{ id: string } | null> => {
+const findSaleByInvoiceNo = async (invoiceNo: string, businessId: string): Promise<{ id: string } | null> => {
   const byInvoice = await supabase
     .from('sales')
     .select('id')
+    .eq('business_id', businessId)
     .eq('invoice_number', invoiceNo)
     .maybeSingle();
 
@@ -333,6 +342,7 @@ const findSaleByInvoiceNo = async (invoiceNo: string): Promise<{ id: string } | 
   const byLegacyReceipt = await supabase
     .from('sales')
     .select('id')
+    .eq('business_id', businessId)
     .eq('receipt_number', invoiceNo)
     .maybeSingle();
 
@@ -343,6 +353,7 @@ const findSaleByInvoiceNo = async (invoiceNo: string): Promise<{ id: string } | 
 };
 
 export function useSalesLog() {
+  const { activeBusinessId } = useBusiness();
   const [invoices, setInvoices] = useState<InvoiceRecord[]>([]);
   const [creditPayments, setCreditPayments] = useState<CreditPayment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -350,6 +361,12 @@ export function useSalesLog() {
 
   useEffect(() => {
     const fetchSales = async () => {
+      if (!activeBusinessId) {
+        setInvoices([]);
+        setCreditPayments([]);
+        setLoading(false);
+        return;
+      }
       const [cachedInvoices, cachedPayments] = await Promise.all([
         loadLocalCollection<InvoiceRecord>('sales_invoices'),
         loadLocalCollection<CreditPayment>('credit_payments'),
@@ -360,10 +377,11 @@ export function useSalesLog() {
       const { data, error } = await supabase
         .from('sales')
         .select('*, sale_items(*), receipts(receipt_number)')
+        .eq('business_id', activeBusinessId)
         .order('sale_date', { ascending: false });
       if (error) { console.error(error); setLoading(false); return; }
       const paymentTotals = new Map<string, number>();
-      const payments = await fetchCreditPayments();
+      const payments = await fetchCreditPayments(activeBusinessId);
       payments.forEach((payment) => {
         [payment.invoice_number, payment.sale_id].forEach((key) => {
           if (!key) return;
@@ -390,12 +408,13 @@ export function useSalesLog() {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, []);
+  }, [activeBusinessId]);
 
   const addInvoice = (
     data: Omit<InvoiceRecord, 'invoiceNo' | 'receiptNo' | 'date' | 'status' | 'netSales' | 'totalCost' | 'grossMargin' | 'amountPaid' | 'balanceDue'>
       & { receiptNo?: string | null; status?: InvoiceRecord['status'] }
   ): InvoiceRecord => {
+    if (!activeBusinessId) throw new Error('Select a business before recording sales.');
     const invoiceNo = generateNextInvoiceNo(invoices);
     const status = data.status ?? 'completed';
     const receiptNo = status === 'credit' ? null : data.receiptNo ? sanitizeText(data.receiptNo) : generateReceiptNo();
@@ -416,7 +435,7 @@ export function useSalesLog() {
     setInvoices(nextInvoices);
     saveLocalCollection('sales_invoices', nextInvoices);
     // Background save
-    insertSale(newInvoice).then(async ({ data: sale, error }) => {
+    insertSale(newInvoice, activeBusinessId).then(async ({ data: sale, error }) => {
       if (error) {
         console.error(error);
         queueLocalMutation('sales', newInvoice.invoiceNo, 'create', newInvoice);
@@ -424,21 +443,21 @@ export function useSalesLog() {
       }
       if (!sale) return;
       if (newInvoice.items.length > 0) {
-        insertSaleItems(sale.id, newInvoice.items);
+        insertSaleItems(sale.id, newInvoice.items, activeBusinessId);
       }
       if (newInvoice.receiptNo) {
-        supabase.from('receipts').insert(receiptRow(sale.id, newInvoice, newInvoice.receiptNo))
+        supabase.from('receipts').insert(receiptRow(sale.id, newInvoice, newInvoice.receiptNo, newInvoice.paymentMethod, newInvoice.netSales, activeBusinessId))
           .then(({ error: e }) => { if (e) console.error(e); });
       }
       // Stock deduction is handled by the DB trigger on sale_items INSERT
       // For credit sales, increase the customer's outstanding balance
       if (status === 'credit' && newInvoice.customerId && newInvoice.customerId !== 'walk-in') {
         const { data: cust } = await supabase
-          .from('customers').select('outstanding_balance').eq('id', newInvoice.customerId).single();
+          .from('customers').select('outstanding_balance').eq('business_id', activeBusinessId).eq('id', newInvoice.customerId).single();
         if (cust) {
           await supabase.from('customers').update({
             outstanding_balance: (cust.outstanding_balance ?? 0) + newInvoice.netSales,
-          }).eq('id', newInvoice.customerId);
+          }).eq('business_id', activeBusinessId).eq('id', newInvoice.customerId);
         }
       }
     });
@@ -451,7 +470,8 @@ export function useSalesLog() {
     );
     setInvoices(nextInvoices);
     saveLocalCollection('sales_invoices', nextInvoices);
-    const sale = await findSaleByInvoiceNo(invoiceNo);
+    if (!activeBusinessId) return;
+    const sale = await findSaleByInvoiceNo(invoiceNo, activeBusinessId);
     if (!sale) {
       queueLocalMutation('sales', invoiceNo, 'update', nextInvoices.find((inv) => inv.invoiceNo === invoiceNo));
       return;
@@ -468,14 +488,15 @@ export function useSalesLog() {
     const nextInvoices = invoices.filter((inv) => inv.invoiceNo !== invoiceNo);
     setInvoices(nextInvoices);
     saveLocalCollection('sales_invoices', nextInvoices);
-    const sale = await findSaleByInvoiceNo(invoiceNo);
+    if (!activeBusinessId) return;
+    const sale = await findSaleByInvoiceNo(invoiceNo, activeBusinessId);
     if (sale) {
       await supabase.from('sale_items').delete().eq('sale_id', sale.id);
       await supabase.from('receipts').delete().eq('sale_id', sale.id);
     }
     const { error } = sale
       ? await supabase.from('sales').delete().eq('id', sale.id)
-      : await supabase.from('sales').delete().eq('receipt_number', invoiceNo);
+      : await supabase.from('sales').delete().eq('business_id', activeBusinessId).eq('receipt_number', invoiceNo);
     if (error) {
       console.error(error);
       queueLocalMutation('sales', invoiceNo, 'delete', { invoiceNo });
@@ -489,6 +510,7 @@ export function useSalesLog() {
     notes = ''
   ): Promise<{ receiptNo: string; remainingBalance: number } | null> => {
     const cleanInvoiceNo = sanitizeText(invoiceNo);
+    if (!activeBusinessId) return null;
     if (creditPaymentsInFlight.current.has(cleanInvoiceNo)) return null;
 
     const inv = invoices.find((i) => i.invoiceNo === cleanInvoiceNo);
@@ -518,7 +540,7 @@ export function useSalesLog() {
       setInvoices(nextInvoices);
       saveLocalCollection('sales_invoices', nextInvoices);
 
-      const sale = await findSaleByInvoiceNo(cleanInvoiceNo);
+      const sale = await findSaleByInvoiceNo(cleanInvoiceNo, activeBusinessId);
       if (!sale) {
         queueLocalMutation('credit_payments', `${cleanInvoiceNo}-${receiptNo}`, 'create', {
           invoiceNo: cleanInvoiceNo,
@@ -531,7 +553,7 @@ export function useSalesLog() {
       }
 
       const { error } = await supabase.from('sales')
-        .update({ status: nextStatus, receipt_number: receiptNo }).eq('id', sale.id);
+        .update({ status: nextStatus, receipt_number: receiptNo }).eq('business_id', activeBusinessId).eq('id', sale.id);
       if (error) {
         console.error(error);
         queueLocalMutation('credit_payments', `${cleanInvoiceNo}-${receiptNo}`, 'create', {
@@ -546,22 +568,23 @@ export function useSalesLog() {
 
       if (inv.customerId && inv.customerId !== 'walk-in') {
         const { data: cust } = await supabase
-          .from('customers').select('outstanding_balance').eq('id', inv.customerId).single();
+          .from('customers').select('outstanding_balance').eq('business_id', activeBusinessId).eq('id', inv.customerId).single();
         if (cust) {
           await supabase.from('customers').update({
             outstanding_balance: Math.max(0, (cust.outstanding_balance ?? 0) - paymentAmount),
-          }).eq('id', inv.customerId);
+          }).eq('business_id', activeBusinessId).eq('id', inv.customerId);
         }
       }
 
       const { data: receipt, error: receiptError } = await supabase
         .from('receipts')
-        .insert(receiptRow(sale.id, updatedInvoice, receiptNo, paymentMethod, paymentAmount))
+        .insert(receiptRow(sale.id, updatedInvoice, receiptNo, paymentMethod, paymentAmount, activeBusinessId))
         .select('id')
         .single();
       if (receiptError) console.error(receiptError);
 
       const paymentPayload = {
+        business_id: activeBusinessId,
         customer_id: inv.customerId || null,
         sale_id: sale.id,
         invoice_number: cleanInvoiceNo,
@@ -634,7 +657,8 @@ export function useSalesLog() {
     setInvoices(nextInvoices);
     saveLocalCollection('sales_invoices', nextInvoices);
 
-    const sale = await findSaleByInvoiceNo(invoiceNo);
+    if (!activeBusinessId) return;
+    const sale = await findSaleByInvoiceNo(invoiceNo, activeBusinessId);
     if (!sale) {
       queueLocalMutation('sales', invoiceNo, 'update', nextInvoices.find((i) => i.invoiceNo === invoiceNo));
       return;
@@ -665,7 +689,7 @@ export function useSalesLog() {
       total_cost: newTotals.totalCost,
       gross_margin: newTotals.grossMargin,
       status: nextStatus,
-    }).eq('id', sale.id);
+    }).eq('business_id', activeBusinessId).eq('id', sale.id);
 
     // For credit sales, reduce the customer's outstanding balance by the returned value
     if (inv.status === 'credit' && inv.customerId && inv.customerId !== 'walk-in') {
@@ -676,11 +700,11 @@ export function useSalesLog() {
       const outstandingReduction = Math.min(inv.balanceDue, returnedValue);
       if (outstandingReduction > 0) {
         const { data: cust } = await supabase
-          .from('customers').select('outstanding_balance').eq('id', inv.customerId).single();
+          .from('customers').select('outstanding_balance').eq('business_id', activeBusinessId).eq('id', inv.customerId).single();
         if (cust) {
           await supabase.from('customers').update({
             outstanding_balance: Math.max(0, (cust.outstanding_balance ?? 0) - outstandingReduction),
-          }).eq('id', inv.customerId);
+          }).eq('business_id', activeBusinessId).eq('id', inv.customerId);
         }
       }
     }

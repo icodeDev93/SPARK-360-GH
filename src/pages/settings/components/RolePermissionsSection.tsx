@@ -32,7 +32,7 @@ export default function RolePermissionsSection() {
   const [saved, setSaved]             = useState(false);
   const [error, setError]             = useState('');
 
-  // Sync local state when real-time updates arrive from another admin
+  // Sync local state when real-time updates arrive from another owner
   useEffect(() => {
     setLocalPerms(rolePermissions);
   }, [rolePermissions]);
@@ -180,7 +180,7 @@ export default function RolePermissionsSection() {
       <div className="flex items-start gap-2 bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 mb-6 text-xs text-slate-400">
         <i className="ri-shield-check-line text-indigo-400 text-sm mt-0.5"></i>
         <span>
-          <strong className="text-slate-500">Administrator</strong> always has full access to all features and cannot be restricted.
+          <strong className="text-slate-500">Owner</strong> always has full access to all features and cannot be restricted.
         </span>
       </div>
 

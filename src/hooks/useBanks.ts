@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase';
 import type { BankRecord } from '@/types/erp';
 import { sanitizeText } from '@/lib/sanitize';
 import { createLocalId, loadLocalCollection, queueLocalMutation, saveLocalCollection } from '@/lib/localCache';
+import { useBusiness } from '@/contexts/BusinessContext';
 
 type Row = {
   id: string;
@@ -42,16 +43,23 @@ const toRow = (rawBank: Omit<BankRecord, 'bankId' | 'createdBy' | 'createdAt'>) 
 })};
 
 export function useBanks() {
+  const { activeBusinessId } = useBusiness();
   const [banks, setBanks] = useState<BankRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchBanks = async () => {
+      if (!activeBusinessId) {
+        setBanks([]);
+        setLoading(false);
+        return;
+      }
       const cached = await loadLocalCollection<BankRecord>('banks');
       if (cached.length) setBanks(cached);
       const { data, error } = await supabase
         .from('banks')
         .select('*')
+        .eq('business_id', activeBusinessId)
         .order('bank_name', { ascending: true })
         .order('branch', { ascending: true });
 
@@ -75,9 +83,10 @@ export function useBanks() {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, []);
+  }, [activeBusinessId]);
 
   const addBank = async (data: Omit<BankRecord, 'bankId' | 'createdBy' | 'createdAt'>) => {
+    if (!activeBusinessId) return;
     const temp: BankRecord = {
       ...cleanBank(data),
       bankId: createLocalId(),
@@ -90,7 +99,7 @@ export function useBanks() {
 
     const { data: inserted, error } = await supabase
       .from('banks')
-      .insert({ id: temp.bankId, ...toRow(data) })
+      .insert({ id: temp.bankId, business_id: activeBusinessId, ...toRow(data) })
       .select('*')
       .single();
 
@@ -121,7 +130,7 @@ export function useBanks() {
     const { data: updated, error } = await supabase
       .from('banks')
       .update(toRow(data))
-      .eq('id', bankId)
+      .eq('business_id', activeBusinessId).eq('id', bankId)
       .select('*')
       .single();
 
@@ -150,7 +159,7 @@ export function useBanks() {
     const { error } = await supabase
       .from('banks')
       .delete()
-      .eq('id', bankId);
+      .eq('business_id', activeBusinessId).eq('id', bankId);
 
     if (error) {
       console.error(error);

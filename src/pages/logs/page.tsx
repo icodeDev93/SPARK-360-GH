@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { ROLE_LABELS } from '@/hooks/useAuth';
 import type { LogCategory, LogAction, LogChange } from '@/lib/activityLog';
 import { loadLocalCollection, saveLocalCollection } from '@/lib/localCache';
+import { useBusiness } from '@/contexts/BusinessContext';
 
 interface LogRow {
   id: string;
@@ -87,6 +88,7 @@ function avatarColor(name: string) {
 }
 
 export default function LogsPage() {
+  const { activeBusinessId } = useBusiness();
   const [logs, setLogs]               = useState<LogRow[]>([]);
   const [loading, setLoading]         = useState(true);
   const [expandedId, setExpandedId]   = useState<string | null>(null);
@@ -98,11 +100,17 @@ export default function LogsPage() {
 
   useEffect(() => {
     (async () => {
+      if (!activeBusinessId) {
+        setLogs([]);
+        setLoading(false);
+        return;
+      }
       const cached = await loadLocalCollection<LogRow>('user_logs');
       if (cached.length) setLogs(cached);
       const { data, error } = await supabase
         .from('user_logs')
         .select('*')
+        .eq('business_id', activeBusinessId)
         .order('created_at', { ascending: false })
         .limit(500);
       if (!error && data) {
@@ -120,7 +128,7 @@ export default function LogsPage() {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, []);
+  }, [activeBusinessId]);
 
   const filtered = logs.filter((log) => {
     if (catFilter !== 'all' && log.category !== catFilter) return false;

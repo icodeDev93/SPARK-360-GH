@@ -92,7 +92,7 @@ export default function UsersPage() {
 
   // Toggle a permission override for the user being edited
   function togglePermission(key: string) {
-    const rolePerms = form.role === 'admin'
+    const rolePerms = form.role === 'owner'
       ? (ALL_PERMISSIONS.map((p) => p.key) as string[])
       : (rolePermissions[form.role as 'manager' | 'cashier'] ?? []);
     const roleHas = rolePerms.includes(key);
@@ -114,7 +114,7 @@ export default function UsersPage() {
   }
 
   function getPermState(key: string): 'role' | 'custom' | 'revoked' | 'none' {
-    if (form.role === 'admin') return 'role';
+    if (form.role === 'owner') return 'role';
     const rolePerms = rolePermissions[form.role as 'manager' | 'cashier'] ?? [];
     const { granted, revoked } = form.overrides;
     if (revoked.includes(key)) return 'revoked';
@@ -151,10 +151,10 @@ export default function UsersPage() {
         const cleanName = sanitizeText(form.name);
         const cleanEmail = sanitizeEmail(form.email);
         const initials = getInitials(cleanName);
-        const overridesToSave = form.role === 'admin' ? EMPTY_OVERRIDES : form.overrides;
+        const overridesToSave = form.role === 'owner' ? EMPTY_OVERRIDES : form.overrides;
 
         if (form.password) {
-          setFormError('Changing another user password needs a secure server-side admin endpoint. Service role keys cannot be used in the browser.');
+          setFormError('Changing another user password needs a secure server-side owner endpoint. Service role keys cannot be used in the browser.');
           return;
         }
 
@@ -197,7 +197,7 @@ export default function UsersPage() {
           buttonLabel: 'Continue',
         });
       } else {
-        setFormError('Creating sign-in accounts needs a secure server-side admin endpoint. Service role keys cannot be used in the browser.');
+        setFormError('Creating sign-in accounts needs a secure server-side owner endpoint. Service role keys cannot be used in the browser.');
         return;
       }
 
@@ -236,7 +236,7 @@ export default function UsersPage() {
   });
 
   const counts = {
-    admin:   users.filter((u) => u.role === 'admin').length,
+    owner:   users.filter((u) => u.role === 'owner').length,
     manager: users.filter((u) => u.role === 'manager').length,
     cashier: users.filter((u) => u.role === 'cashier').length,
   };
@@ -262,7 +262,7 @@ export default function UsersPage() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         {[
           { label: 'Total Users',    value: users.length,   icon: 'ri-team-line',        color: 'bg-indigo-50 text-indigo-600' },
-          { label: 'Administrators', value: counts.admin,   icon: 'ri-shield-user-line', color: 'bg-violet-50 text-violet-600' },
+          { label: 'Owners', value: counts.owner,   icon: 'ri-shield-user-line', color: 'bg-violet-50 text-violet-600' },
           { label: 'Managers',       value: counts.manager, icon: 'ri-user-star-line',   color: 'bg-emerald-50 text-emerald-600' },
           { label: 'Attendants',     value: counts.cashier, icon: 'ri-user-line',        color: 'bg-amber-50 text-amber-600' },
         ].map((s) => (
@@ -291,7 +291,7 @@ export default function UsersPage() {
           />
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          {(['All', 'admin', 'manager', 'cashier'] as const).map((r) => (
+          {(['All', 'owner', 'manager', 'cashier'] as const).map((r) => (
             <button
               key={r}
               onClick={() => setRoleFilter(r)}
@@ -338,7 +338,7 @@ export default function UsersPage() {
               ) : (
                 filtered.map((u, i) => {
                   const role = ROLE_LABELS[u.role];
-                  const customised = u.role !== 'admin' && hasCustomOverrides(u.permissionOverrides);
+                  const customised = u.role !== 'owner' && hasCustomOverrides(u.permissionOverrides);
                   return (
                     <tr key={u.id} className={`border-b border-slate-50 hover:bg-slate-50 transition-all ${i % 2 === 1 ? 'bg-slate-50/30' : ''}`}>
                       <td className="px-5 py-3.5">
@@ -448,7 +448,7 @@ export default function UsersPage() {
                     onChange={(e) => handleRoleChange(e.target.value as UserRole)}
                     className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 bg-white cursor-pointer"
                   >
-                    <option value="admin">Administrator</option>
+                    <option value="owner">Owner</option>
                     <option value="manager">Manager</option>
                     <option value="cashier">Attendant</option>
                   </select>
@@ -470,7 +470,7 @@ export default function UsersPage() {
               <div className="border-t border-slate-100 pt-4">
                 <div className="flex items-center justify-between mb-3">
                   <p className="text-sm font-semibold text-slate-700">Access Permissions</p>
-                  {form.role !== 'admin' && hasCustomOverrides(form.overrides) && (
+                  {form.role !== 'owner' && hasCustomOverrides(form.overrides) && (
                     <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-violet-100 text-violet-600">
                       <i className="ri-equalizer-line text-xs"></i>
                       Customised
@@ -478,10 +478,10 @@ export default function UsersPage() {
                   )}
                 </div>
 
-                {form.role === 'admin' ? (
+                {form.role === 'owner' ? (
                   <div className="flex items-start gap-2 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2.5 text-xs text-indigo-700">
                     <i className="ri-shield-check-fill text-sm mt-0.5"></i>
-                    <span>Administrator has full access to all features and cannot be restricted.</span>
+                    <span>Owner has full access to all features and cannot be restricted.</span>
                   </div>
                 ) : (
                   <>

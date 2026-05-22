@@ -15,10 +15,13 @@ import UsersPage from '@/pages/users/page';
 import NotFound from '@/pages/NotFound';
 import LoginPage from '@/pages/login/page';
 import LogsPage from '@/pages/logs/page';
+import BusinessSelectPage from '@/pages/business-select/page';
+import StockTransferPage from '@/pages/stock-transfer/page';
 import ProtectedRoute from '@/components/feature/ProtectedRoute';
 
 const routes: RouteObject[] = [
   { path: '/login', element: <LoginPage /> },
+  { path: '/businesses', element: <BusinessSelectPage /> },
   { path: '/',              element: <ProtectedRoute permission="dashboard"><DashboardPage /></ProtectedRoute> },
   { path: '/pos',           element: <ProtectedRoute permission="pos"><POSPage /></ProtectedRoute> },
   { path: '/sales-history', element: <ProtectedRoute permission="sales-history"><SalesHistoryPage /></ProtectedRoute> },
@@ -29,6 +32,7 @@ const routes: RouteObject[] = [
   { path: '/credit',        element: <ProtectedRoute permission="credit"><CreditPage /></ProtectedRoute> },
   { path: '/expenses',      element: <ProtectedRoute permission="expenses"><ExpensesPage /></ProtectedRoute> },
   { path: '/bank-deposit',  element: <ProtectedRoute permission="bank-deposit"><BankDepositPage /></ProtectedRoute> },
+  { path: '/stock-transfer', element: <ProtectedRoute permission="stock-transfer"><StockTransferPage /></ProtectedRoute> },
   { path: '/reports',       element: <ProtectedRoute permission="reports"><Navigate to="/analytics" replace /></ProtectedRoute> },
   { path: '/analytics',     element: <ProtectedRoute permission="reports"><AnalyticsPage /></ProtectedRoute> },
   { path: '/settings',      element: <ProtectedRoute permission="settings"><SettingsPage /></ProtectedRoute> },

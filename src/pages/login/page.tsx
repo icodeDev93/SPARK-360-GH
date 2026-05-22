@@ -157,7 +157,7 @@ export default function LoginPage() {
             </button>
 
             <p className="text-center text-slate-400 text-sm leading-relaxed">
-              Don&apos;t have an account or forgotten your password, please contact the Administrator. Thank you.
+              Don&apos;t have an account or forgotten your password, please contact the Owner. Thank you.
             </p>
           </form>
         </div>

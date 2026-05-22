@@ -3,6 +3,7 @@ import { Supplier, PurchaseOrder } from '@/mocks/suppliers';
 import { supabase } from '@/lib/supabase';
 import { sanitizeEmail, sanitizeMultiline, sanitizeText } from '@/lib/sanitize';
 import { loadLocalCollection, queueLocalMutation, saveLocalCollection } from '@/lib/localCache';
+import { useBusiness } from '@/contexts/BusinessContext';
 
 const toDateValue = (value: string) => {
   if (!value || value === 'TBD') return null;
@@ -98,12 +99,19 @@ const cleanOrder = (order: Omit<PurchaseOrder, 'id'>): Omit<PurchaseOrder, 'id'>
 });
 
 export function useSuppliers() {
+  const { activeBusinessId } = useBusiness();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchAll = async () => {
+      if (!activeBusinessId) {
+        setSuppliers([]);
+        setOrders([]);
+        setLoading(false);
+        return;
+      }
       const [cachedSuppliers, cachedOrders] = await Promise.all([
         loadLocalCollection<Supplier>('suppliers'),
         loadLocalCollection<PurchaseOrder>('purchases'),
@@ -111,8 +119,8 @@ export function useSuppliers() {
       if (cachedSuppliers.length) setSuppliers(cachedSuppliers);
       if (cachedOrders.length) setOrders(cachedOrders);
       const [supRes, ordRes] = await Promise.all([
-        supabase.from('suppliers').select('*').order('name'),
-        supabase.from('purchases').select('*').order('purchase_date', { ascending: false }),
+        supabase.from('suppliers').select('*').eq('business_id', activeBusinessId).order('name'),
+        supabase.from('purchases').select('*').eq('business_id', activeBusinessId).order('purchase_date', { ascending: false }),
       ]);
       if (supRes.error) console.error(supRes.error);
       if (ordRes.error) console.error(ordRes.error);
@@ -138,16 +146,17 @@ export function useSuppliers() {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, []);
+  }, [activeBusinessId]);
 
   const addSupplier = async (data: Omit<Supplier, 'id' | 'totalOrders' | 'totalSpent'>) => {
+    if (!activeBusinessId) return;
     const cleanData = cleanSupplier(data);
     const newSup: Supplier = { ...cleanData, id: `SUP${Date.now()}`, totalOrders: 0, totalSpent: 0 };
     const nextSuppliers = [newSup, ...suppliers];
     setSuppliers(nextSuppliers);
     saveLocalCollection('suppliers', nextSuppliers);
     const { data: inserted, error } = await supabase.from('suppliers').insert({
-      supplier_code: newSup.id, name: newSup.name, contact_name: newSup.contact, phone: newSup.phone,
+      business_id: activeBusinessId, supplier_code: newSup.id, name: newSup.name, contact_name: newSup.contact, phone: newSup.phone,
       email: newSup.email, address: newSup.address, category: newSup.category,
       status: newSup.status, joined_date: toDateValue(newSup.joinedDate), notes: newSup.notes,
     }).select('*').single();
@@ -172,7 +181,7 @@ export function useSuppliers() {
       name: cleanData.name, contact_name: cleanData.contact, phone: cleanData.phone, email: cleanData.email,
       address: cleanData.address, category: cleanData.category, status: cleanData.status,
       joined_date: cleanData.joinedDate ? toDateValue(cleanData.joinedDate) : undefined, notes: cleanData.notes,
-    }).eq('supplier_code', id);
+    }).eq('business_id', activeBusinessId).eq('supplier_code', id);
     if (error) {
       console.error(error);
       queueLocalMutation('suppliers', id, 'update', nextSuppliers.find((supplier) => supplier.id === id));
@@ -183,7 +192,7 @@ export function useSuppliers() {
     const nextSuppliers = suppliers.filter((s) => s.id !== id);
     setSuppliers(nextSuppliers);
     saveLocalCollection('suppliers', nextSuppliers);
-    const { error } = await supabase.from('suppliers').delete().eq('supplier_code', id);
+    const { error } = await supabase.from('suppliers').delete().eq('business_id', activeBusinessId).eq('supplier_code', id);
     if (error) {
       console.error(error);
       queueLocalMutation('suppliers', id, 'delete', { id });
@@ -191,6 +200,7 @@ export function useSuppliers() {
   };
 
   const addOrder = async (data: Omit<PurchaseOrder, 'id'>) => {
+    if (!activeBusinessId) return;
     const cleanData = cleanOrder(data);
     const newOrder: PurchaseOrder = { ...cleanData, id: `PUR${Date.now()}` };
     const nextOrders = [newOrder, ...orders];
@@ -204,6 +214,7 @@ export function useSuppliers() {
     saveLocalCollection('purchases', nextOrders);
     saveLocalCollection('suppliers', nextSuppliers);
     const { data: inserted, error } = await supabase.from('purchases').insert({
+      business_id: activeBusinessId,
       purchase_number: newOrder.id,
       supplier_code: newOrder.supplierId,
       supplier_name: newOrder.supplierName, purchase_date: toDateValue(newOrder.date),
@@ -227,7 +238,7 @@ export function useSuppliers() {
     const nextOrders = orders.filter((o) => o.id !== id);
     setOrders(nextOrders);
     saveLocalCollection('purchases', nextOrders);
-    const { error } = await supabase.from('purchases').delete().eq('purchase_number', id);
+    const { error } = await supabase.from('purchases').delete().eq('business_id', activeBusinessId).eq('purchase_number', id);
     if (error) {
       console.error(error);
       queueLocalMutation('purchases', id, 'delete', { id });
@@ -239,7 +250,7 @@ export function useSuppliers() {
     setOrders(nextOrders);
     saveLocalCollection('purchases', nextOrders);
     const { error } = await supabase.from('purchases')
-      .update({ status, payment_status: paymentStatus }).eq('purchase_number', id);
+      .update({ status, payment_status: paymentStatus }).eq('business_id', activeBusinessId).eq('purchase_number', id);
     if (error) {
       console.error(error);
       queueLocalMutation('purchases', id, 'update', nextOrders.find((order) => order.id === id));

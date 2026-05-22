@@ -93,7 +93,7 @@ export default function InventoryPage() {
 
   const filtered = items.filter((item) => {
     const q           = search.toLowerCase();
-    const matchSearch = item.productName.toLowerCase().includes(q) || item.sku.toLowerCase().includes(q);
+    const matchSearch = item.productName.toLowerCase().includes(q) || item.itemId.toLowerCase().includes(q);
     const matchCat    = categoryFilter === 'All' || item.category === categoryFilter;
     const matchStock  =
       stockFilter === 'All'     ? true
@@ -192,7 +192,7 @@ export default function InventoryPage() {
                   type="text"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search items or SKU..."
+                  placeholder="Search items or product code..."
                   className="bg-transparent text-sm text-slate-700 placeholder-slate-400 outline-none flex-1"
                 />
               </div>
@@ -250,7 +250,7 @@ export default function InventoryPage() {
                 <thead className="bg-slate-50 border-b border-slate-100">
                   <tr>
                     <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide px-5 py-3.5">Item</th>
-                    <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">SKU</th>
+                    <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">Product Code</th>
                     <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">Category</th>
                     <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">Stock</th>
                     <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">Expiry</th>
@@ -283,7 +283,7 @@ export default function InventoryPage() {
                             <span className="text-slate-800 text-sm font-semibold">{item.productName}</span>
                           </div>
                         </td>
-                        <td className="px-4 py-3.5"><span className="text-slate-400 text-xs font-mono">{item.sku}</span></td>
+                        <td className="px-4 py-3.5"><span className="text-slate-400 text-xs font-mono">{item.itemId}</span></td>
                         <td className="px-4 py-3.5">
                           <span className="bg-slate-100 text-slate-600 text-xs font-semibold px-2.5 py-1 rounded-full">{item.category}</span>
                         </td>

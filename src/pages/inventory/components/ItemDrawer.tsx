@@ -22,7 +22,6 @@ const today = new Date().toISOString().split('T')[0];
 const EMPTY: FormState = {
   itemId: '',
   productName: '',
-  sku: '',
   category: 'Beverages',
   supplier: '',
   costPrice: 0,
@@ -144,7 +143,7 @@ export default function ItemDrawer({ open, item, categories, suppliers, onClose,
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (saving || !form.productName.trim() || !form.category.trim() || !form.expiryDate.trim()) return;
+    if (saving || !form.itemId.trim() || !form.productName.trim() || !form.category.trim() || !form.expiryDate.trim()) return;
 
     const typedSupplier = supplierSearch.trim();
     let itemToSave = form;
@@ -177,6 +176,7 @@ export default function ItemDrawer({ open, item, categories, suppliers, onClose,
 
       await onSave({
         ...itemToSave,
+        itemId: sanitizeText(itemToSave.itemId).toUpperCase(),
         productName: sanitizeText(itemToSave.productName),
         description: sanitizeMultiline(itemToSave.description),
         image,
@@ -225,6 +225,19 @@ export default function ItemDrawer({ open, item, categories, suppliers, onClose,
 
         <form id="inventory-item-form" onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
           <div>
+            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Product Code <RequiredMark /></label>
+            <input
+              required
+              value={form.itemId}
+              onChange={(e) => set('itemId', e.target.value.toUpperCase())}
+              readOnly={!!item}
+              className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 transition-all font-mono read-only:bg-slate-50 read-only:text-slate-500"
+              placeholder="e.g. COKE500"
+              maxLength={60}
+            />
+          </div>
+
+          <div>
             <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Product Name <RequiredMark /></label>
             <input
               required
@@ -236,17 +249,7 @@ export default function ItemDrawer({ open, item, categories, suppliers, onClose,
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">SKU</label>
-              <input
-                value={form.sku}
-                readOnly
-                className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-500 outline-none bg-slate-50 font-mono"
-                placeholder="Auto-generated"
-              />
-            </div>
-            <div>
+          <div>
               <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Category <RequiredMark /></label>
               <select
                 required
@@ -258,7 +261,6 @@ export default function ItemDrawer({ open, item, categories, suppliers, onClose,
                   <option key={category} value={category}>{category}</option>
                 ))}
               </select>
-            </div>
           </div>
 
           <div className="relative">

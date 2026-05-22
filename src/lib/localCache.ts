@@ -7,9 +7,18 @@ import {
 } from './offlineStore';
 
 const COLLECTION_ID = '__collection__';
+const ACTIVE_BUSINESS_KEY = 'spark360:active-business-id';
+
+function activeBusinessScope() {
+  return localStorage.getItem(ACTIVE_BUSINESS_KEY) || 'platform';
+}
 
 function storageKey(entity: string) {
-  return `spark360:${entity}`;
+  return `spark360:${activeBusinessScope()}:${entity}`;
+}
+
+function scopedEntity(entity: string) {
+  return `${activeBusinessScope()}:${entity}`;
 }
 
 export function createLocalId(prefix = '') {
@@ -22,7 +31,7 @@ export function createLocalId(prefix = '') {
 export async function loadLocalCollection<T>(entity: string): Promise<T[]> {
   try {
     if (isOfflineStoreAvailable()) {
-      const records = await listLocalRecords<T[]>(entity);
+      const records = await listLocalRecords<T[]>(scopedEntity(entity));
       const collection = records.find((record) => record.recordId === COLLECTION_ID);
       return Array.isArray(collection?.payload) ? collection.payload : [];
     }
@@ -42,7 +51,7 @@ export async function saveLocalCollection<T>(entity: string, records: T[]) {
   localStorage.setItem(storageKey(entity), JSON.stringify(records));
   try {
     if (isOfflineStoreAvailable()) {
-      await upsertLocalRecord(entity, COLLECTION_ID, records);
+      await upsertLocalRecord(scopedEntity(entity), COLLECTION_ID, records);
     }
   } catch (error) {
     console.warn(`Unable to write desktop cache for ${entity}`, error);

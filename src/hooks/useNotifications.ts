@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import { useBusiness } from '@/contexts/BusinessContext';
 
 export type NotifSeverity = 'critical' | 'warning' | 'info';
 export type NotifCategory  = 'Stock' | 'Orders' | 'Sales';
@@ -48,25 +49,34 @@ function fmtGHS(n: number) {
 const SEV_ORDER: Record<NotifSeverity, number> = { critical: 0, warning: 1, info: 2 };
 
 export function useNotifications() {
+  const { activeBusinessId } = useBusiness();
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [dismissed, setDismissed]         = useState<Set<string>>(loadDismissed);
   const [loading, setLoading]             = useState(true);
 
   useEffect(() => {
     (async () => {
+      if (!activeBusinessId) {
+        setNotifications([]);
+        setLoading(false);
+        return;
+      }
       const today   = new Date().toISOString().split('T')[0];
       const since7d = new Date(Date.now() - 7 * 86_400_000).toISOString().split('T')[0];
 
       const [invRes, poRes, salesRes] = await Promise.all([
         supabase
           .from('inventory')
-          .select('product_code,product_name,sku,category_name,current_stock,reorder_level,expiry_date,image_url'),
+          .select('product_code,product_name,category_name,current_stock,reorder_level,expiry_date,image_url')
+          .eq('business_id', activeBusinessId),
         supabase
           .from('purchases')
-          .select('purchase_number,supplier_name,expected_date,status,payment_status,total_amount,purchase_date'),
+          .select('purchase_number,supplier_name,expected_date,status,payment_status,total_amount,purchase_date')
+          .eq('business_id', activeBusinessId),
         supabase
           .from('sales')
           .select('id,invoice_number,receipt_number,sale_date,customer_name,total_amount,status,cashier,receipts(receipt_number)')
+          .eq('business_id', activeBusinessId)
           .gte('sale_date', since7d)
           .order('sale_date', { ascending: false }),
       ]);
@@ -84,7 +94,7 @@ export function useNotifications() {
           category:   'Stock',
           severity:   sev,
           title:      i.product_name,
-          subtitle:   `${i.sku} · ${i.category_name ?? ''} · ${i.current_stock} / ${i.reorder_level} units`,
+          subtitle:   `${i.product_code} · ${i.category_name ?? ''} · ${i.current_stock} / ${i.reorder_level} units`,
           image:      i.image_url ?? '',
           initials:   initials(i.product_name),
           badge:      i.current_stock === 0 ? 'Out of Stock' : 'Low Stock',
@@ -196,7 +206,7 @@ export function useNotifications() {
       setNotifications(items);
       setLoading(false);
     })();
-  }, []);
+  }, [activeBusinessId]);
 
   const active = notifications.filter((n) => !dismissed.has(n.id));
 

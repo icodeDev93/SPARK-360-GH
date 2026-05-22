@@ -4,9 +4,12 @@ import type { BankDepositRecord, BankRecord, Customer, ExpenseRecord, InventoryI
 import type { StoreSettings } from '@/hooks/useSettings';
 import type { PurchaseOrder, Supplier } from '@/mocks/suppliers';
 
+const ACTIVE_BUSINESS_KEY = 'spark360:active-business-id';
+const activeBusinessId = () => localStorage.getItem(ACTIVE_BUSINESS_KEY);
+
 const itemRow = (item: InventoryItem) => ({
-  product_code: item.itemId || undefined,
-  sku: item.sku || undefined,
+  business_id: activeBusinessId(),
+  product_code: item.itemId ? item.itemId.toUpperCase() : undefined,
   product_name: item.productName,
   category_name: item.category,
   supplier_name: item.supplier,
@@ -31,6 +34,7 @@ const itemRow = (item: InventoryItem) => ({
 });
 
 const customerRow = (customer: Customer) => ({
+  business_id: activeBusinessId(),
   full_name: customer.fullName,
   phone: customer.phone,
   customer_type: customer.customerType,
@@ -44,6 +48,7 @@ const customerRow = (customer: Customer) => ({
 });
 
 const expenseRow = (expense: ExpenseRecord) => ({
+  business_id: activeBusinessId(),
   expense_date: expense.date,
   category: expense.category,
   description: expense.description,
@@ -54,6 +59,7 @@ const expenseRow = (expense: ExpenseRecord) => ({
 });
 
 const bankRow = (bank: BankRecord) => ({
+  business_id: activeBusinessId(),
   bank_name: bank.bankName,
   branch: bank.branch,
   address: bank.address,
@@ -61,6 +67,7 @@ const bankRow = (bank: BankRecord) => ({
 });
 
 const depositRow = (deposit: BankDepositRecord) => ({
+  business_id: activeBusinessId(),
   deposit_date: deposit.date,
   bank_id: deposit.bankId,
   bank_name: deposit.bank,
@@ -70,6 +77,7 @@ const depositRow = (deposit: BankDepositRecord) => ({
 });
 
 const supplierRow = (supplier: Supplier) => ({
+  business_id: activeBusinessId(),
   supplier_code: supplier.id,
   name: supplier.name,
   contact_name: supplier.contact,
@@ -83,6 +91,7 @@ const supplierRow = (supplier: Supplier) => ({
 });
 
 const purchaseRow = (order: PurchaseOrder) => ({
+  business_id: activeBusinessId(),
   purchase_number: order.id,
   supplier_code: order.supplierId,
   supplier_name: order.supplierName,
@@ -100,6 +109,7 @@ const saleItemsText = (invoice: InvoiceRecord) =>
   invoice.items.map((item) => `${item.productName} [${item.netQty} pcs]`).join(', ');
 
 const saleRow = (invoice: InvoiceRecord) => ({
+  business_id: activeBusinessId(),
   invoice_number: invoice.invoiceNo,
   receipt_number: invoice.receiptNo,
   sale_date: invoice.date,

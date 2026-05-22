@@ -2,8 +2,8 @@ import type { InventoryItem, StockStatus } from '@/types/erp';
 
 type InventoryItemDraft = Pick<
   InventoryItem,
-  'itemId' | 'sku' | 'productName' | 'category' | 'supplier' | 'costPrice' | 'sellingPrice' | 'currentStock' | 'reorderLevel' | 'image'
-> & Partial<Omit<InventoryItem, 'itemId' | 'sku' | 'productName' | 'category' | 'supplier' | 'costPrice' | 'sellingPrice' | 'currentStock' | 'reorderLevel' | 'image' | 'stockStatus' | 'marginPerUnit'>>;
+  'itemId' | 'productName' | 'category' | 'supplier' | 'costPrice' | 'sellingPrice' | 'currentStock' | 'reorderLevel' | 'image'
+> & Partial<Omit<InventoryItem, 'itemId' | 'productName' | 'category' | 'supplier' | 'costPrice' | 'sellingPrice' | 'currentStock' | 'reorderLevel' | 'image' | 'stockStatus' | 'marginPerUnit'>>;
 
 export function getStockStatus(currentStock: number, reorderLevel: number): StockStatus {
   if (currentStock === 0) return 'OUT OF STOCK';

@@ -26,7 +26,7 @@ export default function ProductGrid({ onAddToCart }: ProductGridProps) {
   const filtered = items.filter((p) => {
     const q = search.toLowerCase();
     const matchCat = activeCategory === 'All' || p.category === activeCategory;
-    const matchSearch = p.productName.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q);
+    const matchSearch = p.productName.toLowerCase().includes(q) || p.itemId.toLowerCase().includes(q);
     return matchCat && matchSearch;
   });
 
@@ -41,7 +41,7 @@ export default function ProductGrid({ onAddToCart }: ProductGridProps) {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search products or SKU..."
+            placeholder="Search products or code..."
             className="bg-transparent text-sm text-slate-700 placeholder-slate-400 outline-none flex-1"
           />
           {search && (
@@ -116,7 +116,7 @@ export default function ProductGrid({ onAddToCart }: ProductGridProps) {
                 </div>
                 <div className="p-3">
                   <p className="text-slate-800 text-sm font-semibold leading-tight line-clamp-2 mb-1">{product.productName}</p>
-                  <p className="text-slate-400 text-xs font-mono mb-1">{product.sku}</p>
+                  <p className="text-slate-400 text-xs font-mono mb-1">{product.itemId}</p>
                   <p className="text-indigo-600 text-base font-bold font-mono">{settings.currencySymbol}{product.sellingPrice.toFixed(2)}</p>
                   <button
                     onClick={() => onAddToCart({

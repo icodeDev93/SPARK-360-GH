@@ -3,6 +3,7 @@ import type { Customer, CustomerType, CustomerStatus } from '@/types/erp';
 import { supabase } from '@/lib/supabase';
 import { sanitizeText, sanitizeEmail, sanitizeMultiline, sanitizeUrl } from '@/lib/sanitize';
 import { createLocalId, loadLocalCollection, queueLocalMutation, saveLocalCollection } from '@/lib/localCache';
+import { useBusiness } from '@/contexts/BusinessContext';
 
 type Row = {
   id: string;
@@ -75,15 +76,21 @@ const toRow = (customer: Customer) => {
 })};
 
 export function useCustomers() {
+  const { activeBusinessId } = useBusiness();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchCustomers = async () => {
+      if (!activeBusinessId) {
+        setCustomers([]);
+        setLoading(false);
+        return;
+      }
       const cached = await loadLocalCollection<Customer>('customers');
       if (cached.length) setCustomers(cached);
       const { data, error } = await supabase
-        .from('customers').select('*').order('full_name');
+        .from('customers').select('*').eq('business_id', activeBusinessId).order('full_name');
       if (error) { console.error(error); setLoading(false); return; }
       const nextCustomers = data ? data.map(toCustomer) : [];
       setCustomers(nextCustomers);
@@ -99,9 +106,10 @@ export function useCustomers() {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, []);
+  }, [activeBusinessId]);
 
   const addCustomer = async (data: Omit<Customer, 'customerId' | 'totalPurchases' | 'lastOrderDate'>) => {
+    if (!activeBusinessId) return data as Customer;
     const newCustomer: Customer = {
       ...cleanCustomer(data as Customer),
       customerId: createLocalId(),
@@ -112,7 +120,7 @@ export function useCustomers() {
     saveLocalCollection('customers', [...customers, newCustomer]);
     const { data: inserted, error } = await supabase
       .from('customers')
-      .insert({ id: newCustomer.customerId, ...toRow(newCustomer) })
+      .insert({ id: newCustomer.customerId, business_id: activeBusinessId, ...toRow(newCustomer) })
       .select('*')
       .single();
     if (error) {
@@ -136,7 +144,7 @@ export function useCustomers() {
     const updated = customers.find((c) => c.customerId === customerId);
     if (!updated) return;
     const { error } = await supabase.from('customers')
-      .update(toRow({ ...updated, ...cleanData })).eq('id', customerId);
+      .update(toRow({ ...updated, ...cleanData })).eq('business_id', activeBusinessId).eq('id', customerId);
     if (error) {
       console.error(error);
       queueLocalMutation('customers', customerId, 'update', { ...updated, ...cleanData });
@@ -147,7 +155,7 @@ export function useCustomers() {
     const nextCustomers = customers.filter((c) => c.customerId !== customerId);
     setCustomers(nextCustomers);
     saveLocalCollection('customers', nextCustomers);
-    const { error } = await supabase.from('customers').delete().eq('id', customerId);
+    const { error } = await supabase.from('customers').delete().eq('business_id', activeBusinessId).eq('id', customerId);
     if (error) {
       console.error(error);
       queueLocalMutation('customers', customerId, 'delete', { customerId });
@@ -161,6 +169,7 @@ export function useCustomers() {
     saleId?: string,
     notes = ''
   ) => {
+    if (!activeBusinessId) return;
     const customer = customers.find((c) => c.customerId === customerId);
     if (!customer) return;
     const newBalance = Math.max(0, customer.outstandingBalance - amount);
@@ -170,6 +179,7 @@ export function useCustomers() {
     setCustomers(nextCustomers);
     saveLocalCollection('customers', nextCustomers);
     await supabase.from('credit_payments').insert({
+      business_id: activeBusinessId,
       customer_id: customerId,
       sale_id: saleId ?? null,
       amount,
@@ -177,7 +187,7 @@ export function useCustomers() {
       notes: sanitizeMultiline(notes),
     }).then(({ error: e }) => { if (e) console.error(e); });
     const { error } = await supabase.from('customers')
-      .update({ outstanding_balance: newBalance }).eq('id', customerId);
+      .update({ outstanding_balance: newBalance }).eq('business_id', activeBusinessId).eq('id', customerId);
     if (error) {
       console.error(error);
       queueLocalMutation('customers', customerId, 'update', { ...customer, outstandingBalance: newBalance });

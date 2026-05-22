@@ -3,8 +3,9 @@ import { supabase } from '@/lib/supabase';
 import { writeLog } from '@/lib/activityLog';
 import { sanitizeUrl } from '@/lib/sanitize';
 import { isNetworkError } from '@/lib/localCache';
+import { setStoredActiveBusinessId } from '@/lib/businessScope';
 
-export type UserRole = 'cashier' | 'manager' | 'admin';
+export type UserRole = 'cashier' | 'manager' | 'owner';
 
 export interface PermissionOverrides {
   granted: string[];
@@ -19,24 +20,26 @@ export interface AuthUser {
   initials: string;
   avatarColor: string;
   avatarUrl: string | null;
+  primaryBusinessId: string | null;
+  businessAccess: 'all' | 'assigned';
   permissionOverrides: PermissionOverrides;
 }
 
 const ADMIN_PERMISSIONS = [
   'dashboard', 'pos', 'sales-history', 'customers', 'credit',
   'purchases', 'inventory', 'expenses', 'bank-deposit',
-  'reports', 'settings', 'users',
+  'stock-transfer', 'reports', 'settings', 'users',
 ];
 
 // Static fallback used while Supabase loads (and for display in users/page.tsx)
 export const ROLE_PERMISSIONS: Record<UserRole, string[]> = {
-  admin:   ADMIN_PERMISSIONS,
-  manager: ['dashboard', 'pos', 'sales-history', 'customers', 'credit', 'purchases', 'inventory', 'expenses', 'bank-deposit', 'reports'],
+  owner:   ADMIN_PERMISSIONS,
+  manager: ['dashboard', 'pos', 'sales-history', 'customers', 'credit', 'purchases', 'inventory', 'expenses', 'bank-deposit', 'stock-transfer', 'reports'],
   cashier: ['pos', 'sales-history', 'customers', 'credit'],
 };
 
 export const ROLE_LABELS: Record<UserRole, { label: string; color: string; bg: string }> = {
-  admin:   { label: 'Administrator', color: 'text-indigo-700',  bg: 'bg-indigo-100' },
+  owner:   { label: 'Owner', color: 'text-indigo-700',  bg: 'bg-indigo-100' },
   manager: { label: 'Manager',       color: 'text-emerald-700', bg: 'bg-emerald-100' },
   cashier: { label: 'Attendant',     color: 'text-amber-700',   bg: 'bg-amber-100' },
 };
@@ -52,6 +55,7 @@ export const ALL_PERMISSIONS = [
   { key: 'inventory',     label: 'Inventory',            icon: 'ri-archive-drawer-line' },
   { key: 'expenses',      label: 'Expenses',             icon: 'ri-wallet-3-line' },
   { key: 'bank-deposit',  label: 'Bank Deposit',         icon: 'ri-bank-card-line' },
+  { key: 'stock-transfer', label: 'Stock Transfer',       icon: 'ri-arrow-left-right-line' },
   { key: 'reports',       label: 'Analytics & Reports',  icon: 'ri-pie-chart-2-line' },
   { key: 'users',         label: 'User Management',      icon: 'ri-user-settings-line' },
   { key: 'settings',      label: 'Settings',             icon: 'ri-settings-3-line' },
@@ -72,10 +76,12 @@ function mapRow(r: Record<string, unknown>): AuthUser {
     id:                  r.id as string,
     name:                r.name as string,
     email:               r.email as string,
-    role:                r.role as UserRole,
+    role:                (r.role === 'admin' ? 'owner' : r.role) as UserRole,
     initials:            r.initials as string,
     avatarColor:         r.avatar_color as string,
     avatarUrl:           (r.avatar_url as string | null | undefined) ?? null,
+    primaryBusinessId:   (r.primary_business_id as string | null | undefined) ?? null,
+    businessAccess:      ((r.business_access as string | null | undefined) === 'all' ? 'all' : 'assigned'),
     permissionOverrides: { granted: raw?.granted ?? [], revoked: raw?.revoked ?? [] },
   };
 }
@@ -153,7 +159,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => { supabase.removeChannel(channel); };
   }, []);
 
-  // Subscribe to own profile changes (e.g. admin updates permission overrides)
+  // Subscribe to own profile changes (e.g. owner updates permission overrides)
   useEffect(() => {
     if (!currentUser?.id) return;
     const channel = supabase
@@ -204,6 +210,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (error && !isNetworkError(error) && navigator.onLine) return null;
       setCurrentUser(cachedUser);
       cacheAuthUser(cachedUser);
+      if (cachedUser.role !== 'cashier') setStoredActiveBusinessId(null);
       writeLog(cachedUser, {
         category: 'auth',
         action: 'login',
@@ -224,7 +231,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const offlineResult = tryOfflineLogin(authError);
         if (offlineResult) return offlineResult;
         if (msg.toLowerCase().includes('not confirmed') || msg.toLowerCase().includes('email_not_confirmed')) {
-          return { success: false, error: 'Your account is not confirmed. Ask your administrator to confirm it in Supabase.' };
+          return { success: false, error: 'Your account is not confirmed. Ask the owner to confirm it in Supabase.' };
         }
         return { success: false, error: msg || 'Invalid email or password.' };
       }
@@ -237,12 +244,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (profileError || !profile) {
         await supabase.auth.signOut();
-        return { success: false, error: 'No profile found for this account. Ask your administrator to create one in the profiles table.' };
+        return { success: false, error: 'No profile found for this account. Ask the owner to create one in the profiles table.' };
       }
 
       const user = mapRow(profile);
       setCurrentUser(user);
       cacheAuthUser(user);
+      if (user.role !== 'cashier') setStoredActiveBusinessId(null);
       writeLog(user, { category: 'auth', action: 'login', description: `${user.name} (${ROLE_LABELS[user.role].label}) logged in` });
       return { success: true };
     } catch (error) {
@@ -262,6 +270,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.warn('Unable to sign out from Supabase. Local session was cleared.', error);
     });
     localStorage.setItem(AUTH_SIGNED_OUT_KEY, 'true');
+    setStoredActiveBusinessId(null);
     setCurrentUser(null);
   };
 
@@ -308,7 +317,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const hasPermission = (permission: string): boolean => {
     if (!currentUser) return false;
-    if (currentUser.role === 'admin') return true;
+    if (currentUser.role === 'owner') return true;
     const { granted, revoked } = currentUser.permissionOverrides;
     if (revoked.includes(permission)) return false;
     if (granted.includes(permission)) return true;

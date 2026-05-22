@@ -23,8 +23,8 @@ export default function SettingsPage() {
   const { settings, updateSettings, resetSettings } = useSettings();
   const { currentUser } = useAuth();
   const { showFeedback } = useFeedbackModal();
-  const isAdmin = currentUser?.role === 'admin';
-  const tabs = isAdmin ? BASE_TABS : BASE_TABS.filter((t) => !t.adminOnly);
+  const isOwner = currentUser?.role === 'owner';
+  const tabs = isOwner ? BASE_TABS : BASE_TABS.filter((t) => !t.adminOnly);
   const [activeTab, setActiveTab] = useState<Tab>('store');
   const [saved, setSaved] = useState(false);
   const [showReset, setShowReset] = useState(false);
@@ -130,10 +130,10 @@ export default function SettingsPage() {
               {activeTab === 'receipt' && (
                 <ReceiptSection settings={settings} onChange={updateSettings} />
               )}
-              {activeTab === 'credit' && isAdmin && (
+              {activeTab === 'credit' && isOwner && (
                 <CreditSection settings={settings} onChange={updateSettings} />
               )}
-              {activeTab === 'permissions' && isAdmin && (
+              {activeTab === 'permissions' && isOwner && (
                 <RolePermissionsSection />
               )}
             </div>

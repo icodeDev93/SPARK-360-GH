@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { useSidebar } from '@/contexts/SidebarContext';
+import { useBusiness } from '@/contexts/BusinessContext';
 
 const ALL_NAV_ITEMS = [
   { path: '/', label: 'Dashboard', icon: 'ri-dashboard-3-line', exact: true, permission: 'dashboard' },
@@ -12,6 +13,7 @@ const ALL_NAV_ITEMS = [
   { path: '/inventory', label: 'Inventory', icon: 'ri-archive-drawer-line', permission: 'inventory' },
   { path: '/expenses', label: 'Expenses', icon: 'ri-wallet-3-line', permission: 'expenses' },
   { path: '/bank-deposit', label: 'Bank Deposit', icon: 'ri-bank-card-line', permission: 'bank-deposit' },
+  { path: '/stock-transfer', label: 'Stock Transfer', icon: 'ri-arrow-left-right-line', permission: 'stock-transfer' },
   { path: '/analytics', label: 'Analytics & Reports', icon: 'ri-pie-chart-2-line', permission: 'reports' },
 ];
 
@@ -26,8 +28,9 @@ const ADMIN_ONLY_ITEMS = [
 
 export default function Sidebar() {
   const { hasPermission, currentUser } = useAuth();
+  const { businesses, activeBusinessId, activeBusiness, selectBusiness } = useBusiness();
   const { isOpen, close } = useSidebar();
-  const isAdmin = currentUser?.role === 'admin';
+  const isOwner = currentUser?.role === 'owner';
 
   const visibleNav    = ALL_NAV_ITEMS.filter((item) => hasPermission(item.permission));
   const visibleBottom = BOTTOM_ITEMS.filter((item) => hasPermission(item.permission));
@@ -93,11 +96,11 @@ export default function Sidebar() {
             ))}
           </ul>
 
-          {(visibleBottom.length > 0 || isAdmin) && (
+          {(visibleBottom.length > 0 || isOwner) && (
             <div className="mt-6 pt-4 border-t border-slate-700/50">
               <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest px-3 mb-3">System</p>
               <ul className="space-y-0.5">
-                {[...visibleBottom, ...(isAdmin ? ADMIN_ONLY_ITEMS : [])].map((item) => (
+                {[...visibleBottom, ...(isOwner ? ADMIN_ONLY_ITEMS : [])].map((item) => (
                   <li key={item.path}>
                     <NavLink
                       to={item.path}
@@ -125,6 +128,27 @@ export default function Sidebar() {
             </div>
           )}
         </nav>
+
+        {currentUser && currentUser.role !== 'cashier' && (
+          <div className="px-3 py-4 border-t border-slate-700/50">
+            <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest px-3 mb-2">Business</p>
+            <div className="relative">
+              <select
+                value={activeBusinessId ?? ''}
+                onChange={(event) => selectBusiness(event.target.value)}
+                className="w-full appearance-none bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 pr-8 text-sm font-semibold text-white outline-none focus:border-indigo-400"
+              >
+                {businesses.map((business) => (
+                  <option key={business.id} value={business.id}>{business.businessName}</option>
+                ))}
+              </select>
+              <i className="ri-arrow-down-s-line absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"></i>
+            </div>
+            {activeBusiness && (
+              <p className="text-slate-500 text-xs mt-2 px-1 truncate">{activeBusiness.address || 'No address set'}</p>
+            )}
+          </div>
+        )}
 
       </aside>
     </>

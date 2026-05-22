@@ -4,9 +4,10 @@ import { enrichInventoryItem } from '@/services/inventoryService';
 import { supabase } from '@/lib/supabase';
 import { sanitizeMultiline, sanitizeText, sanitizeUrl } from '@/lib/sanitize';
 import { loadLocalCollection, queueLocalMutation, saveLocalCollection } from '@/lib/localCache';
+import { useBusiness } from '@/contexts/BusinessContext';
 
 type Row = {
-  id?: string; product_code: string; product_name: string; sku: string;
+  id?: string; business_id?: string | null; product_code: string; product_name: string;
   category_name: string | null; supplier_name: string | null;
   cost_price: number; selling_price: number; current_stock: number;
   reorder_level: number; expiry_date: string | null; image_url: string | null;
@@ -19,7 +20,7 @@ type Row = {
 };
 
 const toItem = (r: Row): InventoryItem => enrichInventoryItem({
-  itemId: r.product_code, productName: r.product_name, sku: r.sku,
+  itemId: r.product_code, productName: r.product_name,
   category: r.category_name ?? '', supplier: r.supplier_name ?? '',
   costPrice: r.cost_price, sellingPrice: r.selling_price,
   wholesaleCostPrice: r.wholesale_cost_price ?? r.cost_price,
@@ -42,7 +43,6 @@ const cleanItem = (item: InventoryItem): InventoryItem => ({
   ...item,
   itemId: sanitizeText(item.itemId),
   productName: sanitizeText(item.productName),
-  sku: sanitizeText(item.sku),
   category: sanitizeText(item.category),
   supplier: sanitizeText(item.supplier),
   description: sanitizeMultiline(item.description),
@@ -54,9 +54,13 @@ const cleanItem = (item: InventoryItem): InventoryItem => ({
   })),
 });
 
-const toRow = (item: InventoryItem): Omit<Row, 'id' | 'product_code' | 'sku'> => {
+const normalizeProductCode = (value: string) => sanitizeText(value).toUpperCase();
+
+const toRow = (item: InventoryItem, businessId: string): Omit<Row, 'id'> => {
   const i = cleanItem(item);
   return ({
+  business_id: businessId,
+  product_code: normalizeProductCode(i.itemId),
   product_name: i.productName,
   category_name: i.category, supplier_name: i.supplier,
   cost_price: i.costPrice, selling_price: i.sellingPrice,
@@ -77,12 +81,19 @@ const toRow = (item: InventoryItem): Omit<Row, 'id' | 'product_code' | 'sku'> =>
 })};
 
 export function useInventory() {
+  const { activeBusinessId } = useBusiness();
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchInventory = async () => {
+      if (!activeBusinessId) {
+        setItems([]);
+        setCategories([]);
+        setLoading(false);
+        return;
+      }
       const [cachedItems, cachedCategories] = await Promise.all([
         loadLocalCollection<InventoryItem>('inventory'),
         loadLocalCollection<string>('inventory_categories'),
@@ -91,8 +102,8 @@ export function useInventory() {
       if (cachedCategories.length) setCategories(cachedCategories);
 
       const [itemsRes, catsRes] = await Promise.all([
-        supabase.from('inventory').select('*').order('product_name'),
-        supabase.from('inventory_categories').select('name').order('name'),
+        supabase.from('inventory').select('*').eq('business_id', activeBusinessId).order('product_name'),
+        supabase.from('inventory_categories').select('name').eq('business_id', activeBusinessId).order('name'),
       ]);
       if (itemsRes.error) console.error(itemsRes.error);
       if (catsRes.error) console.error(catsRes.error);
@@ -118,10 +129,11 @@ export function useInventory() {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, []);
+  }, [activeBusinessId]);
 
   const saveItem = async (item: InventoryItem) => {
-    const enriched = enrichInventoryItem(cleanItem(item));
+    if (!activeBusinessId) return;
+    const enriched = enrichInventoryItem({ ...cleanItem(item), itemId: normalizeProductCode(item.itemId) });
     const existing = items.find((i) => i.itemId === enriched.itemId);
     const optimisticItems = existing
       ? items.map((i) => i.itemId === enriched.itemId ? enriched : i)
@@ -129,8 +141,8 @@ export function useInventory() {
     setItems(optimisticItems);
     saveLocalCollection('inventory', optimisticItems);
     const request = existing
-      ? supabase.from('inventory').update(toRow(enriched)).eq('product_code', enriched.itemId).select('*').single()
-      : supabase.from('inventory').insert(toRow(enriched)).select('*').single();
+      ? supabase.from('inventory').update(toRow(enriched, activeBusinessId)).eq('business_id', activeBusinessId).eq('product_code', enriched.itemId).select('*').single()
+      : supabase.from('inventory').insert(toRow(enriched, activeBusinessId)).select('*').single();
 
     const { data, error } = await request;
     if (error) {
@@ -146,10 +158,11 @@ export function useInventory() {
   };
 
   const deleteItem = async (itemId: string) => {
+    if (!activeBusinessId) return;
     const nextItems = items.filter((i) => i.itemId !== itemId);
     setItems(nextItems);
     saveLocalCollection('inventory', nextItems);
-    const { error } = await supabase.from('inventory').delete().eq('product_code', itemId);
+    const { error } = await supabase.from('inventory').delete().eq('business_id', activeBusinessId).eq('product_code', itemId);
     if (error) {
       console.error(error);
       queueLocalMutation('inventory', itemId, 'delete', { itemId });
@@ -157,12 +170,13 @@ export function useInventory() {
   };
 
   const addCategory = async (name: string) => {
+    if (!activeBusinessId) return;
     const cleanName = sanitizeText(name);
     if (!cleanName || categories.includes(cleanName)) return;
     const nextCategories = [...categories, cleanName];
     setCategories(nextCategories);
     saveLocalCollection('inventory_categories', nextCategories);
-    const { error } = await supabase.from('inventory_categories').insert({ name: cleanName });
+    const { error } = await supabase.from('inventory_categories').insert({ business_id: activeBusinessId, name: cleanName });
     if (error) {
       console.error(error);
       queueLocalMutation('inventory_categories', cleanName, 'create', { name: cleanName });
@@ -170,6 +184,7 @@ export function useInventory() {
   };
 
   const renameCategory = async (original: string, newName: string) => {
+    if (!activeBusinessId) return;
     const cleanOriginal = sanitizeText(original);
     const cleanNewName = sanitizeText(newName);
     if (!cleanNewName) return;
@@ -182,18 +197,19 @@ export function useInventory() {
     saveLocalCollection('inventory_categories', nextCategories);
     saveLocalCollection('inventory', nextItems);
     await supabase.from('inventory_categories')
-      .update({ name: cleanNewName }).eq('name', cleanOriginal);
+      .update({ name: cleanNewName }).eq('business_id', activeBusinessId).eq('name', cleanOriginal);
     const { error } = await supabase.from('inventory')
-      .update({ category_name: cleanNewName }).eq('category_name', cleanOriginal);
+      .update({ category_name: cleanNewName }).eq('business_id', activeBusinessId).eq('category_name', cleanOriginal);
     if (error) queueLocalMutation('inventory_categories', cleanOriginal, 'update', { original: cleanOriginal, name: cleanNewName });
   };
 
   const deleteCategory = async (name: string) => {
+    if (!activeBusinessId) return;
     const cleanName = sanitizeText(name);
     const nextCategories = categories.filter((c) => c !== cleanName);
     setCategories(nextCategories);
     saveLocalCollection('inventory_categories', nextCategories);
-    const { error } = await supabase.from('inventory_categories').delete().eq('name', cleanName);
+    const { error } = await supabase.from('inventory_categories').delete().eq('business_id', activeBusinessId).eq('name', cleanName);
     if (error) {
       console.error(error);
       queueLocalMutation('inventory_categories', cleanName, 'delete', { name: cleanName });

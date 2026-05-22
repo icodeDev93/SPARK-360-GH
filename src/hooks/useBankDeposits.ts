@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase';
 import type { BankDepositRecord } from '@/types/erp';
 import { sanitizeMultiline, sanitizeText } from '@/lib/sanitize';
 import { createLocalId, loadLocalCollection, queueLocalMutation, saveLocalCollection } from '@/lib/localCache';
+import { useBusiness } from '@/contexts/BusinessContext';
 
 type Row = {
   id: string;
@@ -49,16 +50,23 @@ const toRow = (rawDeposit: Omit<BankDepositRecord, 'depositId' | 'createdBy' | '
 })};
 
 export function useBankDeposits() {
+  const { activeBusinessId } = useBusiness();
   const [deposits, setDeposits] = useState<BankDepositRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchDeposits = async () => {
+      if (!activeBusinessId) {
+        setDeposits([]);
+        setLoading(false);
+        return;
+      }
       const cached = await loadLocalCollection<BankDepositRecord>('bank_deposits');
       if (cached.length) setDeposits(cached);
       const { data, error } = await supabase
         .from('bank_deposits')
         .select('*')
+        .eq('business_id', activeBusinessId)
         .order('deposit_date', { ascending: false })
         .order('created_at', { ascending: false });
 
@@ -82,9 +90,10 @@ export function useBankDeposits() {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, []);
+  }, [activeBusinessId]);
 
   const addDeposit = async (data: Omit<BankDepositRecord, 'depositId' | 'createdBy' | 'createdAt'>) => {
+    if (!activeBusinessId) return;
     const temp: BankDepositRecord = {
       ...cleanDeposit(data),
       depositId: createLocalId(),
@@ -97,7 +106,7 @@ export function useBankDeposits() {
 
     const { data: inserted, error } = await supabase
       .from('bank_deposits')
-      .insert({ id: temp.depositId, ...toRow(data) })
+      .insert({ id: temp.depositId, business_id: activeBusinessId, ...toRow(data) })
       .select('*')
       .single();
 
@@ -128,7 +137,7 @@ export function useBankDeposits() {
     const { data: updated, error } = await supabase
       .from('bank_deposits')
       .update(toRow(data))
-      .eq('id', depositId)
+      .eq('business_id', activeBusinessId).eq('id', depositId)
       .select('*')
       .single();
 
@@ -157,7 +166,7 @@ export function useBankDeposits() {
     const { error } = await supabase
       .from('bank_deposits')
       .delete()
-      .eq('id', depositId);
+      .eq('business_id', activeBusinessId).eq('id', depositId);
 
     if (error) {
       console.error(error);

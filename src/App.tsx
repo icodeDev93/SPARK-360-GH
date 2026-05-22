@@ -5,6 +5,7 @@ import i18n from "./i18n";
 import { AuthProvider } from "./hooks/useAuth";
 import { SidebarProvider } from "./contexts/SidebarContext";
 import { FeedbackModalProvider } from "./contexts/FeedbackModalContext";
+import { BusinessProvider } from "./contexts/BusinessContext";
 import { useEffect } from "react";
 import { initOfflineStore } from "./lib/offlineStore";
 import { syncPendingChanges } from "./lib/syncEngine";
@@ -37,11 +38,13 @@ function App() {
     <I18nextProvider i18n={i18n}>
       <BrowserRouter basename={__BASE_PATH__}>
         <AuthProvider>
-          <SidebarProvider>
-            <FeedbackModalProvider>
-              <AppRoutes />
-            </FeedbackModalProvider>
-          </SidebarProvider>
+          <BusinessProvider>
+            <SidebarProvider>
+              <FeedbackModalProvider>
+                <AppRoutes />
+              </FeedbackModalProvider>
+            </SidebarProvider>
+          </BusinessProvider>
         </AuthProvider>
       </BrowserRouter>
     </I18nextProvider>

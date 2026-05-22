@@ -1,6 +1,7 @@
 import { type ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { ROLE_PERMISSIONS, type UserRole, useAuth } from '@/hooks/useAuth';
+import { useBusiness } from '@/contexts/BusinessContext';
 
 const PERMISSION_HOME: Record<string, string> = {
   dashboard: '/',
@@ -32,9 +33,10 @@ export default function ProtectedRoute({
   adminOnly?: boolean;
 }) {
   const { currentUser, isAuthenticated, sessionLoading, hasPermission } = useAuth();
+  const { activeBusinessId, loading: businessLoading } = useBusiness();
   const location = useLocation();
 
-  if (sessionLoading) {
+  if (sessionLoading || (isAuthenticated && businessLoading)) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="flex flex-col items-center gap-3">
@@ -51,8 +53,12 @@ export default function ProtectedRoute({
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  if (adminOnly && currentUser?.role !== 'admin') {
+  if (adminOnly && currentUser?.role !== 'owner') {
     return <Navigate to={defaultPathForRole(currentUser!.role)} replace />;
+  }
+
+  if (!activeBusinessId) {
+    return <Navigate to="/businesses" state={{ from: location }} replace />;
   }
 
   if (permission && currentUser && !hasPermission(permission)) {

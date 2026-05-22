@@ -113,7 +113,7 @@ export default function GlobalSearch() {
     // Products / Inventory
     items.filter(i =>
       i.productName.toLowerCase().includes(q) ||
-      i.sku.toLowerCase().includes(q) ||
+      i.itemId.toLowerCase().includes(q) ||
       i.category.toLowerCase().includes(q) ||
       i.supplier.toLowerCase().includes(q)
     ).slice(0, 5).forEach(i => out.push({
@@ -123,7 +123,7 @@ export default function GlobalSearch() {
       iconBg:     'bg-emerald-50',
       iconColor:  'text-emerald-600',
       title:      i.productName,
-      subtitle:   `${i.category} · SKU ${i.sku} · Stock: ${i.currentStock}`,
+      subtitle:   `${i.category} · ${i.itemId} · Stock: ${i.currentStock}`,
       badge:      i.stockStatus,
       route:      '/inventory',
     }));

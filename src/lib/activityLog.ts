@@ -3,6 +3,8 @@ import type { AuthUser } from '@/hooks/useAuth';
 import { sanitizeText } from '@/lib/sanitize';
 import { loadLocalCollection, queueLocalMutation, saveLocalCollection } from './localCache';
 
+const ACTIVE_BUSINESS_KEY = 'spark360:active-business-id';
+
 export interface LogChange {
   field: string;
   old: string;
@@ -27,6 +29,7 @@ export interface LogEntry {
 export async function writeLog(user: AuthUser, entry: LogEntry): Promise<void> {
   const localLog = {
     id: `LOG${Date.now()}`,
+    business_id: localStorage.getItem(ACTIVE_BUSINESS_KEY),
     user_id: user.id,
     user_name: sanitizeText(user.name),
     user_role: user.role,

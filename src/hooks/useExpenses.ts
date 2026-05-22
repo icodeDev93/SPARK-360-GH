@@ -4,6 +4,7 @@ import { totalByCategory, grandTotalGHS } from '@/services/expenseService';
 import { supabase } from '@/lib/supabase';
 import { sanitizeMultiline, sanitizeText, sanitizeUrl } from '@/lib/sanitize';
 import { createLocalId, loadLocalCollection, queueLocalMutation, saveLocalCollection } from '@/lib/localCache';
+import { useBusiness } from '@/contexts/BusinessContext';
 
 export type { ExpenseRecord };
 
@@ -41,15 +42,21 @@ const toRow = (expense: ExpenseRecord): Omit<Row, 'id' | 'created_by'> => {
 })};
 
 export function useExpenses() {
+  const { activeBusinessId } = useBusiness();
   const [expenses, setExpenses] = useState<ExpenseRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchExpenses = async () => {
+      if (!activeBusinessId) {
+        setExpenses([]);
+        setLoading(false);
+        return;
+      }
       const cached = await loadLocalCollection<ExpenseRecord>('expenses');
       if (cached.length) setExpenses(cached);
       const { data, error } = await supabase
-        .from('expenses').select('*').order('expense_date', { ascending: false });
+        .from('expenses').select('*').eq('business_id', activeBusinessId).order('expense_date', { ascending: false });
       if (error) { console.error(error); setLoading(false); return; }
       const nextExpenses = data ? data.map(toRecord) : [];
       setExpenses(nextExpenses);
@@ -65,16 +72,17 @@ export function useExpenses() {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, []);
+  }, [activeBusinessId]);
 
   const addExpense = async (data: Omit<ExpenseRecord, 'expenseId'>) => {
+    if (!activeBusinessId) return;
     const rec: ExpenseRecord = cleanExpense({ ...data, expenseId: createLocalId() });
     const nextExpenses = [rec, ...expenses];
     setExpenses(nextExpenses);
     saveLocalCollection('expenses', nextExpenses);
     const { data: inserted, error } = await supabase
       .from('expenses')
-      .insert({ id: rec.expenseId, ...toRow(rec) })
+      .insert({ id: rec.expenseId, business_id: activeBusinessId, ...toRow(rec) })
       .select('*')
       .single();
     if (error) {
@@ -106,7 +114,7 @@ export function useExpenses() {
       expense_date: cleanData.date, category: cleanData.category, description: cleanData.description,
       amount: cleanData.amountGHS, paid_by: cleanData.paidBy, notes: cleanData.notes,
       proof_url: cleanData.proofUrl ?? null,
-    }).eq('id', expenseId);
+    }).eq('business_id', activeBusinessId).eq('id', expenseId);
     if (error) {
       console.error(error);
       queueLocalMutation('expenses', expenseId, 'update', nextExpenses.find((e) => e.expenseId === expenseId));
@@ -117,7 +125,7 @@ export function useExpenses() {
     const nextExpenses = expenses.filter((e) => e.expenseId !== expenseId);
     setExpenses(nextExpenses);
     saveLocalCollection('expenses', nextExpenses);
-    const { error } = await supabase.from('expenses').delete().eq('id', expenseId);
+    const { error } = await supabase.from('expenses').delete().eq('business_id', activeBusinessId).eq('id', expenseId);
     if (error) {
       console.error(error);
       queueLocalMutation('expenses', expenseId, 'delete', { expenseId });
