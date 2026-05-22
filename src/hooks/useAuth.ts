@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, useRef, createElement, 
 import { supabase } from '@/lib/supabase';
 import { writeLog } from '@/lib/activityLog';
 import { sanitizeUrl } from '@/lib/sanitize';
+import { isNetworkError } from '@/lib/localCache';
 
 export type UserRole = 'cashier' | 'manager' | 'admin';
 
@@ -94,6 +95,21 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 const AUTH_CACHE_KEY = 'spark360:auth-user';
+const AUTH_SIGNED_OUT_KEY = 'spark360:auth-signed-out';
+
+function getCachedAuthUser(): AuthUser | null {
+  try {
+    const cached = localStorage.getItem(AUTH_CACHE_KEY);
+    return cached ? JSON.parse(cached) as AuthUser : null;
+  } catch {
+    return null;
+  }
+}
+
+function cacheAuthUser(user: AuthUser) {
+  localStorage.setItem(AUTH_CACHE_KEY, JSON.stringify(user));
+  localStorage.removeItem(AUTH_SIGNED_OUT_KEY);
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser]       = useState<AuthUser | null>(null);
@@ -103,17 +119,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Load dynamic permissions from Supabase + subscribe to real-time changes
   useEffect(() => {
-    supabase.from('role_permissions').select('role, permissions').then(({ data }) => {
-      if (data?.length) {
-        const perms = { ...DEFAULT_DYNAMIC };
-        data.forEach((row: { role: string; permissions: string[] }) => {
-          if (row.role === 'manager' || row.role === 'cashier') {
-            perms[row.role] = row.permissions;
-          }
-        });
-        setRolePermissions(perms);
+    (async () => {
+      try {
+        const { data } = await supabase.from('role_permissions').select('role, permissions');
+        if (data?.length) {
+          const perms = { ...DEFAULT_DYNAMIC };
+          data.forEach((row: { role: string; permissions: string[] }) => {
+            if (row.role === 'manager' || row.role === 'cashier') {
+              perms[row.role] = row.permissions;
+            }
+          });
+          setRolePermissions(perms);
+        }
+      } catch (error) {
+        console.warn('Unable to load role permissions from Supabase.', error);
       }
-    });
+    })();
 
     const channel = supabase
       .channel('role_permissions_rt')
@@ -150,8 +171,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     (async () => {
       try {
-        const cached = localStorage.getItem(AUTH_CACHE_KEY);
-        if (cached) setCurrentUser(JSON.parse(cached));
+        const cached = getCachedAuthUser();
+        const signedOut = localStorage.getItem(AUTH_SIGNED_OUT_KEY) === 'true';
+        if (cached && !signedOut) setCurrentUser(cached);
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user?.id) {
           const { data: profile } = await supabase
@@ -162,7 +184,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (profile) {
             const user = mapRow(profile);
             setCurrentUser(user);
-            localStorage.setItem(AUTH_CACHE_KEY, JSON.stringify(user));
+            cacheAuthUser(user);
           }
         }
       } catch (error) {
@@ -174,15 +196,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
+    const normalizedEmail = email.toLowerCase().trim();
+    const cachedUser = getCachedAuthUser();
+    const tryOfflineLogin = (error?: unknown) => {
+      if (!cachedUser || cachedUser.email.toLowerCase() !== normalizedEmail) return null;
+      if (!password) return null;
+      if (error && !isNetworkError(error) && navigator.onLine) return null;
+      setCurrentUser(cachedUser);
+      cacheAuthUser(cachedUser);
+      writeLog(cachedUser, {
+        category: 'auth',
+        action: 'login',
+        description: `${cachedUser.name} (${ROLE_LABELS[cachedUser.role].label}) logged in offline`,
+      });
+      return { success: true };
+    };
+
     setAuthLoading(true);
     try {
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        email: email.toLowerCase().trim(),
+        email: normalizedEmail,
         password,
       });
 
       if (authError || !authData.user) {
         const msg = authError?.message ?? '';
+        const offlineResult = tryOfflineLogin(authError);
+        if (offlineResult) return offlineResult;
         if (msg.toLowerCase().includes('not confirmed') || msg.toLowerCase().includes('email_not_confirmed')) {
           return { success: false, error: 'Your account is not confirmed. Ask your administrator to confirm it in Supabase.' };
         }
@@ -202,9 +242,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const user = mapRow(profile);
       setCurrentUser(user);
-      localStorage.setItem(AUTH_CACHE_KEY, JSON.stringify(user));
+      cacheAuthUser(user);
       writeLog(user, { category: 'auth', action: 'login', description: `${user.name} (${ROLE_LABELS[user.role].label}) logged in` });
       return { success: true };
+    } catch (error) {
+      const offlineResult = tryOfflineLogin(error);
+      if (offlineResult) return offlineResult;
+      return { success: false, error: isNetworkError(error) ? 'No internet connection. Sign in online once on this device before using offline login.' : error instanceof Error ? error.message : 'Login failed.' };
     } finally {
       setAuthLoading(false);
     }
@@ -214,8 +258,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (currentUser) {
       await writeLog(currentUser, { category: 'auth', action: 'logout', description: `${currentUser.name} (${ROLE_LABELS[currentUser.role].label}) logged out` });
     }
-    await supabase.auth.signOut();
-    localStorage.removeItem(AUTH_CACHE_KEY);
+    await supabase.auth.signOut().catch((error) => {
+      console.warn('Unable to sign out from Supabase. Local session was cleared.', error);
+    });
+    localStorage.setItem(AUTH_SIGNED_OUT_KEY, 'true');
     setCurrentUser(null);
   };
 
@@ -248,7 +294,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (data) {
       const user = mapRow(data as Record<string, unknown>);
       setCurrentUser(user);
-      localStorage.setItem(AUTH_CACHE_KEY, JSON.stringify(user));
+      cacheAuthUser(user);
     }
     return { success: true };
   };
