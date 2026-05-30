@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import PasswordInput from '@/components/ui/PasswordInput';
 import { sanitizeEmail } from '@/lib/sanitize';
@@ -39,7 +39,9 @@ export default function LoginPage() {
             <i className="ri-grid-fill text-white text-2xl"></i>
           </div>
           <div>
-            <span className="text-white font-bold text-2xl tracking-tight">SPark360</span>
+            <span className="text-white font-bold text-xl leading-tight tracking-tight max-w-[18rem]">
+              Bizzy App Business Management System
+            </span>
             <p className="text-slate-400 text-sm">POS &amp; Inventory</p>
           </div>
         </div>
@@ -93,7 +95,9 @@ export default function LoginPage() {
             <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center">
               <i className="ri-grid-fill text-white text-xl"></i>
             </div>
-            <span className="text-slate-800 font-bold text-xl tracking-tight">SPark360</span>
+            <span className="text-slate-800 font-bold text-base leading-tight tracking-tight">
+              Bizzy App Business Management System
+            </span>
           </div>
 
           <h1 className="text-slate-800 font-bold text-3xl mb-2">Welcome back!</h1>
@@ -156,8 +160,11 @@ export default function LoginPage() {
               )}
             </button>
 
-            <p className="text-center text-slate-400 text-sm leading-relaxed">
-              Don&apos;t have an account or forgotten your password, please contact the Owner. Thank you.
+            <p className="text-center text-slate-500 text-sm leading-relaxed">
+              Don&apos;t have an account?{' '}
+              <Link to="/register" className="font-bold text-indigo-600 hover:text-indigo-700">
+                Register as an Owner
+              </Link>
             </p>
           </form>
         </div>

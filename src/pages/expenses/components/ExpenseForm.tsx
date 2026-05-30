@@ -1,11 +1,12 @@
 import { useState, useRef } from 'react';
 import type { ExpenseRecord, ExpensePaymentMethod } from '@/types/erp';
-import { EXPENSE_CATEGORIES, PAYMENT_METHODS } from '@/mocks/expenses';
+import { PAYMENT_METHODS } from '@/mocks/expenses';
 import { supabase } from '@/lib/supabase';
 import { sanitizeText, sanitizeMultiline } from '@/lib/sanitize';
 
 interface Props {
   initial?: ExpenseRecord;
+  categories: string[];
   onSave: (data: Omit<ExpenseRecord, 'expenseId'>) => void;
   onClose: () => void;
 }
@@ -17,10 +18,10 @@ const PAYMENT_ICONS: Record<ExpensePaymentMethod, string> = {
   'Bank Transfer': 'ri-bank-line',
 };
 
-export default function ExpenseForm({ initial, onSave, onClose }: Props) {
+export default function ExpenseForm({ initial, categories, onSave, onClose }: Props) {
   const [form, setForm] = useState({
     description: initial?.description ?? '',
-    category:    initial?.category    ?? EXPENSE_CATEGORIES[0],
+    category:    initial?.category    ?? categories[0] ?? '',
     amountGHS:   initial?.amountGHS   ?? 0,
     date:        initial?.date        ?? new Date().toISOString().split('T')[0],
     paidBy:      (initial?.paidBy     ?? 'Cash') as ExpensePaymentMethod,
@@ -49,6 +50,7 @@ export default function ExpenseForm({ initial, onSave, onClose }: Props) {
   const validate = () => {
     const e: Record<string, string> = {};
     if (!form.description.trim()) e.description = 'Description is required';
+    if (!form.category.trim()) e.category = 'Choose or add a category';
     if (!form.amountGHS || form.amountGHS <= 0) e.amountGHS = 'Enter a valid amount';
     if (!form.date) e.date = 'Date is required';
     setErrors(e);
@@ -131,10 +133,12 @@ export default function ExpenseForm({ initial, onSave, onClose }: Props) {
               <select
                 value={form.category}
                 onChange={(e) => set('category', e.target.value)}
-                className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 bg-white cursor-pointer"
+                className={`w-full border rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:ring-2 focus:ring-indigo-100 bg-white cursor-pointer ${errors.category ? 'border-red-400' : 'border-slate-200 focus:border-indigo-400'}`}
               >
-                {EXPENSE_CATEGORIES.map((c) => <option key={c}>{c}</option>)}
+                <option value="">Select category</option>
+                {categories.map((c) => <option key={c}>{c}</option>)}
               </select>
+              {errors.category && <p className="text-red-500 text-xs mt-1">{errors.category}</p>}
             </div>
 
             {/* Amount GHS */}

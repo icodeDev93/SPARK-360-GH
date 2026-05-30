@@ -7,6 +7,7 @@ import PasswordInput from '@/components/ui/PasswordInput';
 import { writeLog, diffFields } from '@/lib/activityLog';
 import { sanitizeEmail, sanitizeText } from '@/lib/sanitize';
 import { useFeedbackModal } from '@/hooks/useFeedbackModal';
+import { useBusiness } from '@/contexts/BusinessContext';
 
 interface AppUser {
   id: string;
@@ -43,6 +44,7 @@ const EMPTY_FORM = {
   name: '', email: '', role: 'cashier' as UserRole,
   status: 'Active' as 'Active' | 'Inactive',
   password: '', confirmPassword: '',
+  businessId: '',
   overrides: EMPTY_OVERRIDES,
 };
 
@@ -52,6 +54,7 @@ function hasCustomOverrides(o: PermissionOverrides) {
 
 export default function UsersPage() {
   const { rolePermissions, currentUser } = useAuth();
+  const { businesses, activeBusinessId } = useBusiness();
   const { showFeedback } = useFeedbackModal();
   const [users, setUsers]           = useState<AppUser[]>([]);
   const [loading, setLoading]       = useState(true);
@@ -73,12 +76,19 @@ export default function UsersPage() {
     })();
   }, []);
 
-  const openAdd  = () => { setEditTarget(null); setForm(EMPTY_FORM); setErrors({}); setFormError(''); setShowForm(true); };
+  const openAdd  = () => {
+    setEditTarget(null);
+    setForm({ ...EMPTY_FORM, businessId: activeBusinessId ?? businesses[0]?.id ?? '' });
+    setErrors({});
+    setFormError('');
+    setShowForm(true);
+  };
   const openEdit = (u: AppUser) => {
     setEditTarget(u);
     setForm({
       name: u.name, email: u.email, role: u.role, status: u.status,
       password: '', confirmPassword: '',
+      businessId: u.role === 'cashier' ? '' : '',
       overrides: { granted: [...u.permissionOverrides.granted], revoked: [...u.permissionOverrides.revoked] },
     });
     setErrors({}); setFormError(''); setShowForm(true);
@@ -87,7 +97,12 @@ export default function UsersPage() {
 
   // When role changes in form, clear overrides so they start fresh for the new role
   function handleRoleChange(newRole: UserRole) {
-    setForm((p) => ({ ...p, role: newRole, overrides: EMPTY_OVERRIDES }));
+    setForm((p) => ({
+      ...p,
+      role: newRole,
+      businessId: newRole === 'cashier' ? (p.businessId || activeBusinessId || businesses[0]?.id || '') : '',
+      overrides: EMPTY_OVERRIDES,
+    }));
   }
 
   // Toggle a permission override for the user being edited
@@ -128,6 +143,7 @@ export default function UsersPage() {
     if (!form.name.trim()) e.name = 'Name is required';
     if (!form.email.trim()) e.email = 'Email is required';
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) e.email = 'Invalid email address';
+    if (!editTarget && form.role === 'cashier' && !form.businessId) e.businessId = 'Business is required for attendants';
     if (!editTarget) {
       if (!form.password) e.password = 'Password is required';
       else if (form.password.length < 6) e.password = 'Minimum 6 characters';
@@ -197,8 +213,54 @@ export default function UsersPage() {
           buttonLabel: 'Continue',
         });
       } else {
-        setFormError('Creating sign-in accounts needs a secure server-side owner endpoint. Service role keys cannot be used in the browser.');
-        return;
+        const cleanName = sanitizeText(form.name);
+        const cleanEmail = sanitizeEmail(form.email);
+        const overridesToSave = form.role === 'owner' ? EMPTY_OVERRIDES : form.overrides;
+
+        const { data, error } = await supabase.functions.invoke('create-user', {
+          body: {
+            name: cleanName,
+            email: cleanEmail,
+            password: form.password,
+            role: form.role,
+            status: form.status,
+            permissionOverrides: overridesToSave,
+            businessId: form.role === 'cashier' ? form.businessId : null,
+          },
+        });
+
+        if (error) {
+          setFormError(error.message);
+          return;
+        }
+
+        if ((data as { error?: string } | null)?.error) {
+          setFormError((data as { error: string }).error);
+          return;
+        }
+
+        const profile = (data as { profile?: Record<string, unknown> } | null)?.profile;
+        if (!profile) {
+          setFormError('User was created, but no profile was returned.');
+          return;
+        }
+
+        const newUser = mapRow(profile);
+        setUsers((prev) => [...prev, newUser].sort((a, b) => a.name.localeCompare(b.name)));
+
+        if (currentUser) {
+          writeLog(currentUser, {
+            category: 'users',
+            action: 'create',
+            description: `Created user ${cleanName} (${ROLE_LABELS[form.role].label})`,
+          });
+        }
+
+        showFeedback({
+          title: 'User Created',
+          message: `${cleanName} can now sign in to the system.`,
+          buttonLabel: 'Continue',
+        });
       }
 
       closeForm();
@@ -432,7 +494,7 @@ export default function UsersPage() {
                   type="email"
                   value={form.email}
                   onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
-                  placeholder="e.g. kofi@spark360gh.com"
+                  placeholder="e.g. kofi@bizzyapp.com"
                   autoComplete="off"
                   disabled={!!editTarget}
                   className={`w-full border rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none transition-all disabled:bg-slate-50 disabled:text-slate-400 ${errors.email ? 'border-red-400' : 'border-slate-200 focus:border-indigo-400'}`}
@@ -465,6 +527,25 @@ export default function UsersPage() {
                   </select>
                 </div>
               </div>
+
+              {!editTarget && form.role === 'cashier' && (
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+                    Assigned Business <span className="text-red-400">*</span>
+                  </label>
+                  <select
+                    value={form.businessId}
+                    onChange={(e) => setForm((p) => ({ ...p, businessId: e.target.value }))}
+                    className={`w-full border rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 bg-white cursor-pointer ${errors.businessId ? 'border-red-400' : 'border-slate-200'}`}
+                  >
+                    <option value="">Select business</option>
+                    {businesses.map((business) => (
+                      <option key={business.id} value={business.id}>{business.businessName}</option>
+                    ))}
+                  </select>
+                  {errors.businessId && <p className="text-red-500 text-xs mt-1">{errors.businessId}</p>}
+                </div>
+              )}
 
               {/* Access Permissions */}
               <div className="border-t border-slate-100 pt-4">

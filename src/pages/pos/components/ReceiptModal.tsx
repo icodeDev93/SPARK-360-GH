@@ -120,7 +120,9 @@ export default function ReceiptModal({
          </div>` : '';
 
     const logoHtml = settings.receiptShowLogo
-      ? `<div style="width:38px;height:38px;background:rgba(255,255,255,0.2);border-radius:9px;display:flex;align-items:center;justify-content:center;margin:0 auto 8px;font-size:18px;color:#fff;">🏪</div>`
+      ? settings.storeLogo
+        ? `<img src="${settings.storeLogo}" alt="Store logo" style="width:44px;height:44px;object-fit:contain;background:#fff;border-radius:9px;display:block;margin:0 auto 8px;padding:4px;"/>`
+        : `<div style="width:38px;height:38px;background:rgba(255,255,255,0.2);border-radius:9px;display:flex;align-items:center;justify-content:center;margin:0 auto 8px;font-size:10px;font-weight:800;color:#fff;">LOGO</div>`
       : '';
 
     win.document.write(`<!DOCTYPE html>
@@ -240,9 +242,15 @@ export default function ReceiptModal({
             <div className={`px-5 py-4 text-center ${settings.receiptTheme === 'minimal' ? 'bg-slate-50' : settings.receiptTheme === 'classic' ? 'bg-slate-800 text-white' : 'bg-indigo-600 text-white'}`}>
               {settings.receiptShowLogo && (
                 <div className="flex justify-center mb-2">
-                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${settings.receiptTheme === 'minimal' ? 'bg-indigo-600' : 'bg-white/20'}`}>
-                    <i className={`ri-store-2-line text-xl ${settings.receiptTheme === 'minimal' ? 'text-white' : 'text-white'}`}></i>
-                  </div>
+                  {settings.storeLogo ? (
+                    <div className="w-12 h-12 rounded-lg bg-white border border-white/20 overflow-hidden flex items-center justify-center">
+                      <img src={settings.storeLogo} alt="Store logo" className="w-full h-full object-contain p-1.5" />
+                    </div>
+                  ) : (
+                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${settings.receiptTheme === 'minimal' ? 'bg-indigo-600' : 'bg-white/20'}`}>
+                      <i className={`ri-store-2-line text-xl ${settings.receiptTheme === 'minimal' ? 'text-white' : 'text-white'}`}></i>
+                    </div>
+                  )}
                 </div>
               )}
               <p className={`font-bold text-base ${settings.receiptTheme === 'minimal' ? 'text-slate-800' : 'text-white'}`}>

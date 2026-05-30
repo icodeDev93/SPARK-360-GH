@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import type { InventoryItem } from '@/types/erp';
 import { supabase } from '@/lib/supabase';
 import { sanitizeMultiline, sanitizeText } from '@/lib/sanitize';
+import { calcCurrentStockUnits, calcStockValue, formatPackStock } from '@/services/inventoryService';
 
 interface ItemDrawerProps {
   open: boolean;
@@ -98,6 +99,26 @@ export default function ItemDrawer({ open, item, categories, suppliers, onClose,
   const setNumber = (key: NumberField, value: string) =>
     setForm((prev) => ({ ...prev, [key]: parseFloat(value) || 0 }));
 
+  const setWholesaleSellingPrice = (value: string) => {
+    const wholesaleSellingPrice = parseFloat(value) || 0;
+    setForm((prev) => ({
+      ...prev,
+      wholesaleSellingPrice,
+      halfSellingPrice: Number((wholesaleSellingPrice / 2).toFixed(2)),
+      quarterSellingPrice: Number((wholesaleSellingPrice / 4).toFixed(2)),
+    }));
+  };
+
+  const setPackNumber = (key: NumberField, value: string) =>
+    setForm((prev) => {
+      const next = { ...prev, [key]: parseFloat(value) || 0 };
+      return {
+        ...next,
+        currentStock: calcCurrentStockUnits(next),
+        reorderLevel: next.stockLimit,
+      };
+    });
+
   const uploadImage = async () => {
     if (!selectedImage) return form.image;
 
@@ -167,12 +188,10 @@ export default function ItemDrawer({ open, item, categories, suppliers, onClose,
     try {
       setSaving(true);
       const image = await uploadImage();
-      const quantityPerBox = Math.max(0, itemToSave.quantityPerBox);
-      const wholesaleQuantity = Math.max(0, itemToSave.wholesaleQuantity);
-      const singleQuantity = Math.max(0, itemToSave.singleQuantity);
-      const currentStock = quantityPerBox > 0
-        ? Math.floor(wholesaleQuantity * quantityPerBox + singleQuantity)
-        : Math.floor(singleQuantity);
+      const wholesaleSellingPrice = Math.max(0, itemToSave.wholesaleSellingPrice);
+      const halfSellingPrice = Number((wholesaleSellingPrice / 2).toFixed(2));
+      const quarterSellingPrice = Number((wholesaleSellingPrice / 4).toFixed(2));
+      const currentStock = calcCurrentStockUnits(itemToSave);
 
       await onSave({
         ...itemToSave,
@@ -180,8 +199,11 @@ export default function ItemDrawer({ open, item, categories, suppliers, onClose,
         productName: sanitizeText(itemToSave.productName),
         description: sanitizeMultiline(itemToSave.description),
         image,
-        costPrice: itemToSave.singleCostPrice,
+        costPrice: itemToSave.wholesaleCostPrice,
         sellingPrice: itemToSave.singleSellingPrice,
+        wholesaleSellingPrice,
+        halfSellingPrice,
+        quarterSellingPrice,
         currentStock,
         reorderLevel: itemToSave.stockLimit,
         priceLevels: itemToSave.priceLevels
@@ -198,6 +220,8 @@ export default function ItemDrawer({ open, item, categories, suppliers, onClose,
 
   const margin = form.singleSellingPrice - form.singleCostPrice;
   const marginPct = form.singleSellingPrice > 0 ? (margin / form.singleSellingPrice) * 100 : 0;
+  const currentStockPreview = calcCurrentStockUnits(form);
+  const stockValuePreview = calcStockValue(form);
   const supplierQuery = supplierSearch.trim().toLowerCase();
   const filteredSuppliers = suppliers.filter((supplier) =>
     supplier.toLowerCase().includes(supplierQuery)
@@ -374,15 +398,15 @@ export default function ItemDrawer({ open, item, categories, suppliers, onClose,
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Wholesale SP (₵) <RequiredMark /></label>
-              <input required type="number" min={0} step={0.01} value={form.wholesaleSellingPrice} onChange={(e) => setNumber('wholesaleSellingPrice', e.target.value)} className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 transition-all font-mono" />
+              <input required type="number" min={0} step={0.01} value={form.wholesaleSellingPrice} onChange={(e) => setWholesaleSellingPrice(e.target.value)} className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 transition-all font-mono" />
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Half SP (₵) <RequiredMark /></label>
-              <input required type="number" min={0} step={0.01} value={form.halfSellingPrice} onChange={(e) => setNumber('halfSellingPrice', e.target.value)} className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 transition-all font-mono" />
+              <input required readOnly type="number" min={0} step={0.01} value={form.halfSellingPrice} className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-500 outline-none bg-slate-50 font-mono" />
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Quarter SP (₵) <RequiredMark /></label>
-              <input required type="number" min={0} step={0.01} value={form.quarterSellingPrice} onChange={(e) => setNumber('quarterSellingPrice', e.target.value)} className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 transition-all font-mono" />
+              <input required readOnly type="number" min={0} step={0.01} value={form.quarterSellingPrice} className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-500 outline-none bg-slate-50 font-mono" />
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Single SP (₵) <RequiredMark /></label>
@@ -398,29 +422,42 @@ export default function ItemDrawer({ open, item, categories, suppliers, onClose,
             </div>
           )}
 
-          <SectionHeader>Quantities Available</SectionHeader>
+          <SectionHeader>Quantity Available</SectionHeader>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Wholesale Quantity <RequiredMark /></label>
-              <input required type="number" min={0} step={0.01} value={form.wholesaleQuantity} onChange={(e) => setNumber('wholesaleQuantity', e.target.value)} className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 transition-all font-mono" />
+              <input required type="number" min={0} step={0.01} value={form.wholesaleQuantity} onChange={(e) => setPackNumber('wholesaleQuantity', e.target.value)} className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 transition-all font-mono" />
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Single Quantity <RequiredMark /></label>
-              <input required type="number" min={0} value={form.singleQuantity} onChange={(e) => setNumber('singleQuantity', e.target.value)} className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 transition-all font-mono" />
+              <input required type="number" min={0} value={form.singleQuantity} onChange={(e) => setPackNumber('singleQuantity', e.target.value)} className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 transition-all font-mono" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Units Per Pack <RequiredMark /></label>
+              <input required type="number" min={0} value={form.quantityPerBox} onChange={(e) => setPackNumber('quantityPerBox', e.target.value)} className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 transition-all font-mono" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Stock Limit <RequiredMark /></label>
+              <input required type="number" min={0} value={form.stockLimit} onChange={(e) => setPackNumber('stockLimit', e.target.value)} className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 transition-all font-mono" />
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-indigo-100 bg-indigo-50/70 p-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <p className="text-[11px] font-semibold uppercase text-indigo-500">Calculated Stock</p>
+                <p className="text-sm font-bold text-slate-800">{formatPackStock({ ...form, currentStock: currentStockPreview })}</p>
+                <p className="text-xs text-slate-500">{currentStockPreview} total units</p>
+              </div>
+              <div>
+                <p className="text-[11px] font-semibold uppercase text-indigo-500">Stock Value</p>
+                <p className="text-sm font-bold text-slate-800">₵{stockValuePreview.toFixed(2)}</p>
+                <p className="text-xs text-slate-500">Packs CP + loose unit CP</p>
+              </div>
             </div>
           </div>
 
           <SectionHeader>Additional Details</SectionHeader>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Quantity Per Box <RequiredMark /></label>
-              <input required type="number" min={0} value={form.quantityPerBox} onChange={(e) => setNumber('quantityPerBox', e.target.value)} className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 transition-all font-mono" />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Stock Limit <RequiredMark /></label>
-              <input required type="number" min={0} value={form.stockLimit} onChange={(e) => setNumber('stockLimit', e.target.value)} className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 transition-all font-mono" />
-            </div>
-          </div>
 
           <div>
             <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Expiry Date <RequiredMark /></label>

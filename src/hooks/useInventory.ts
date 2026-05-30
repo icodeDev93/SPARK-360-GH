@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import type { InventoryItem } from '@/types/erp';
 import { enrichInventoryItem } from '@/services/inventoryService';
 import { supabase } from '@/lib/supabase';
@@ -17,6 +17,7 @@ type Row = {
   wholesale_quantity?: number | null; single_quantity?: number | null;
   quantity_per_box?: number | null; stock_limit?: number | null;
   description?: string | null; price_levels?: { label: string; price: number }[] | null;
+  created_at?: string | null; updated_at?: string | null;
 };
 
 const toItem = (r: Row): InventoryItem => enrichInventoryItem({
@@ -37,6 +38,8 @@ const toItem = (r: Row): InventoryItem => enrichInventoryItem({
   priceLevels: r.price_levels ?? [],
   currentStock: r.current_stock, reorderLevel: r.reorder_level,
   expiryDate: r.expiry_date ?? '', image: r.image_url ?? '',
+  createdAt: r.created_at ?? '',
+  updatedAt: r.updated_at ?? '',
 } as InventoryItem);
 
 const cleanItem = (item: InventoryItem): InventoryItem => ({
@@ -86,50 +89,88 @@ export function useInventory() {
   const [categories, setCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const fetchInventory = async () => {
-      if (!activeBusinessId) {
-        setItems([]);
-        setCategories([]);
-        setLoading(false);
-        return;
-      }
+  const fetchInventory = useCallback(async (useCache = true) => {
+    if (!activeBusinessId) {
+      setItems([]);
+      setCategories([]);
+      setLoading(false);
+      return;
+    }
+
+    if (useCache) {
       const [cachedItems, cachedCategories] = await Promise.all([
         loadLocalCollection<InventoryItem>('inventory'),
         loadLocalCollection<string>('inventory_categories'),
       ]);
       if (cachedItems.length) setItems(cachedItems);
       if (cachedCategories.length) setCategories(cachedCategories);
+    }
 
-      const [itemsRes, catsRes] = await Promise.all([
-        supabase.from('inventory').select('*').eq('business_id', activeBusinessId).order('product_name'),
-        supabase.from('inventory_categories').select('name').eq('business_id', activeBusinessId).order('name'),
-      ]);
-      if (itemsRes.error) console.error(itemsRes.error);
-      if (catsRes.error) console.error(catsRes.error);
-      if (!itemsRes.error && itemsRes.data) {
-        const nextItems = itemsRes.data.map(toItem);
-        setItems(nextItems);
-        saveLocalCollection('inventory', nextItems);
-      }
-      if (!catsRes.error && catsRes.data) {
-        const nextCategories = catsRes.data.map((r: { name: string }) => r.name);
-        setCategories(nextCategories);
-        saveLocalCollection('inventory_categories', nextCategories);
-      }
-      setLoading(false);
-    };
+    const [itemsRes, catsRes] = await Promise.all([
+      supabase.from('inventory').select('*').eq('business_id', activeBusinessId).order('product_name'),
+      supabase.from('inventory_categories').select('name').eq('business_id', activeBusinessId).order('name'),
+    ]);
+    if (itemsRes.error) console.error(itemsRes.error);
+    if (catsRes.error) console.error(catsRes.error);
+    if (!itemsRes.error && itemsRes.data) {
+      const nextItems = itemsRes.data.map(toItem);
+      setItems(nextItems);
+      saveLocalCollection('inventory', nextItems);
+    }
+    if (!catsRes.error && catsRes.data) {
+      const nextCategories = catsRes.data.map((r: { name: string }) => r.name);
+      setCategories(nextCategories);
+      saveLocalCollection('inventory_categories', nextCategories);
+    }
+    setLoading(false);
+  }, [activeBusinessId]);
 
+  useEffect(() => {
     fetchInventory();
 
     const channel = supabase
       .channel('inventory-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory' }, fetchInventory)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory_categories' }, fetchInventory)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory' }, () => { fetchInventory(false); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory_categories' }, () => { fetchInventory(false); })
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [activeBusinessId]);
+  }, [fetchInventory]);
+
+  useEffect(() => {
+    const handleStockAdjusted = (event: Event) => {
+      const detail = (event as CustomEvent<{
+        businessId?: string | null;
+        items?: { productId: string; stockUnitsDeducted: number }[];
+      }>).detail;
+      if (!detail?.items?.length || detail.businessId !== activeBusinessId) return;
+
+      setItems((current) => {
+        const deductions = new Map(
+          detail.items?.map((item) => [normalizeProductCode(item.productId), Math.max(0, Number(item.stockUnitsDeducted) || 0)]) ?? []
+        );
+        const nextItems = current.map((item) => {
+          const deducted = deductions.get(normalizeProductCode(item.itemId)) ?? 0;
+          if (deducted <= 0) return item;
+          return enrichInventoryItem({ ...item, currentStock: Math.max(0, item.currentStock - deducted) });
+        });
+        saveLocalCollection('inventory', nextItems);
+        return nextItems;
+      });
+    };
+
+    const handleInventoryRefresh = (event: Event) => {
+      const detail = (event as CustomEvent<{ businessId?: string | null }>).detail;
+      if (!detail?.businessId || detail.businessId === activeBusinessId) fetchInventory(false);
+    };
+
+    window.addEventListener('bizzyapp:inventory-stock-adjusted', handleStockAdjusted);
+    window.addEventListener('bizzyapp:inventory-refresh', handleInventoryRefresh);
+    return () => {
+      window.removeEventListener('bizzyapp:inventory-stock-adjusted', handleStockAdjusted);
+      window.removeEventListener('bizzyapp:inventory-refresh', handleInventoryRefresh);
+    };
+  }, [activeBusinessId, fetchInventory]);
 
   const saveItem = async (item: InventoryItem) => {
     if (!activeBusinessId) return;

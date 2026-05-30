@@ -1,6 +1,6 @@
 import { createContext } from 'react';
 
-export type FeedbackKind = 'success' | 'deleted';
+export type FeedbackKind = 'success' | 'deleted' | 'warning';
 
 export interface FeedbackOptions {
   title: string;

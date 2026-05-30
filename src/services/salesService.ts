@@ -1,4 +1,4 @@
-import type { InvoiceRecord, SaleLineItem, PaymentMethod } from '@/types/erp';
+import type { InvoiceRecord, SaleLineItem, PaymentMethod, SalePriceLevel } from '@/types/erp';
 import { INVOICE_PREFIX } from '@/lib/constants';
 
 export function generateNextInvoiceNo(existingInvoices: InvoiceRecord[]): string {
@@ -30,11 +30,14 @@ export function calcLineItem(
   qty: number,
   returnsQty: number,
   unitPrice: number,
-  costPrice: number
+  costPrice: number,
+  priceLevel: SalePriceLevel = 'Single',
+  stockUnitsPerQty = 1
 ): SaleLineItem {
   const netQty = Math.max(0, qty - returnsQty);
   const netSales = unitPrice * netQty;
   const totalCost = costPrice * netQty;
+  const stockUnitsDeducted = Math.max(0, Math.round(qty * Math.max(1, stockUnitsPerQty)));
   return {
     productId,
     productName,
@@ -43,6 +46,8 @@ export function calcLineItem(
     netQty,
     unitPrice,
     costPrice,
+    priceLevel,
+    stockUnitsDeducted,
     netSales,
     totalCost,
     grossMargin: netSales - totalCost,

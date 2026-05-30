@@ -25,6 +25,7 @@ interface BusinessContextValue {
   activeBusiness: BusinessRecord | null;
   activeBusinessId: string | null;
   loading: boolean;
+  loadError: string;
   selectBusiness: (businessId: string) => void;
   refreshBusinesses: () => Promise<void>;
   createBusiness: (input: BusinessInput) => Promise<{ success: boolean; error?: string }>;
@@ -56,6 +57,8 @@ type BusinessRow = {
 };
 
 const BusinessContext = createContext<BusinessContextValue | null>(null);
+const BUSINESS_CACHE_PREFIX = 'bizzyapp:businesses:';
+
 const mapBusiness = (row: BusinessRow): BusinessRecord => ({
   id: row.id,
   ownerId: row.owner_id,
@@ -79,37 +82,91 @@ const cleanBusiness = (input: BusinessInput) => ({
   logo_url: sanitizeUrl(input.logoUrl ?? ''),
 });
 
+const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
+
+function businessCacheKey(userId: string) {
+  return `${BUSINESS_CACHE_PREFIX}${userId}`;
+}
+
+function loadCachedBusinesses(userId: string): BusinessRecord[] {
+  try {
+    const raw = localStorage.getItem(businessCacheKey(userId));
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveCachedBusinesses(userId: string, records: BusinessRecord[]) {
+  localStorage.setItem(businessCacheKey(userId), JSON.stringify(records));
+}
+
 export function BusinessProvider({ children }: { children: ReactNode }) {
   const { currentUser, sessionLoading } = useAuth();
   const navigate = useNavigate();
   const [businesses, setBusinesses] = useState<BusinessRecord[]>([]);
   const [activeBusinessId, setActiveBusinessId] = useState<string | null>(() => getStoredActiveBusinessId());
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
 
   const refreshBusinesses = useCallback(async () => {
     if (!currentUser) {
       setBusinesses([]);
       setActiveBusinessId(null);
       setStoredActiveBusinessId(null);
+      setLoadError('');
       setLoading(false);
       return;
     }
 
-    setLoading(true);
-    const { data, error } = await supabase
-      .from('businesses')
-      .select('*')
-      .eq('status', 'active')
-      .order('business_name');
+    const cachedBusinesses = loadCachedBusinesses(currentUser.id);
+    if (cachedBusinesses.length) {
+      setBusinesses(cachedBusinesses);
+    }
 
-    if (error) {
-      console.error(error);
+    setLoading(cachedBusinesses.length === 0);
+    setLoadError('');
+
+    let data: unknown[] | null = null;
+    let lastError: unknown = null;
+
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      const response = await supabase.rpc('get_accessible_businesses');
+
+      if (!response.error) {
+        data = response.data ?? [];
+        if (data.length > 0 || cachedBusinesses.length === 0 || attempt === 3) break;
+      } else {
+        lastError = response.error;
+      }
+
+      if (attempt < 3) await wait(attempt * 450);
+    }
+
+    if (lastError && data === null) {
+      console.error(lastError);
+      if (cachedBusinesses.length) {
+        setBusinesses(cachedBusinesses);
+        setLoadError('Showing the last saved business list because the live database could not be reached.');
+      } else {
+        setLoadError('Unable to load businesses from the live database. Check your connection and try again.');
+      }
       setLoading(false);
       return;
     }
 
     const nextBusinesses = (data ?? []).map((row) => mapBusiness(row as BusinessRow));
+
+    if (nextBusinesses.length === 0 && cachedBusinesses.length > 0) {
+      setBusinesses(cachedBusinesses);
+      setLoadError('The live database returned no businesses, so the last saved list is being shown. Use Retry to refresh.');
+      setLoading(false);
+      return;
+    }
+
     setBusinesses(nextBusinesses);
+    saveCachedBusinesses(currentUser.id, nextBusinesses);
 
     const stored = getStoredActiveBusinessId();
     const cashierBusiness = currentUser.role === 'cashier' ? currentUser.primaryBusinessId : null;
@@ -134,6 +191,7 @@ export function BusinessProvider({ children }: { children: ReactNode }) {
     if (!currentUser || currentUser.role !== 'owner') return { success: false, error: 'Only owner can create businesses.' };
     const row = cleanBusiness(input);
     if (!row.business_name) return { success: false, error: 'Business name is required.' };
+    if (!row.address) return { success: false, error: 'Business address is required.' };
     const { error } = await supabase.from('businesses').insert({ owner_id: currentUser.id, ...row });
     if (error) return { success: false, error: error.message };
     await refreshBusinesses();
@@ -144,6 +202,7 @@ export function BusinessProvider({ children }: { children: ReactNode }) {
     if (!currentUser || currentUser.role !== 'owner') return { success: false, error: 'Only owner can update businesses.' };
     const row = cleanBusiness(input);
     if (!row.business_name) return { success: false, error: 'Business name is required.' };
+    if (!row.address) return { success: false, error: 'Business address is required.' };
     const { error } = await supabase.from('businesses').update(row).eq('id', businessId);
     if (error) return { success: false, error: error.message };
     await refreshBusinesses();
@@ -177,6 +236,7 @@ export function BusinessProvider({ children }: { children: ReactNode }) {
         activeBusiness,
         activeBusinessId,
         loading,
+        loadError,
         selectBusiness,
         refreshBusinesses,
         createBusiness,

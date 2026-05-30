@@ -9,6 +9,14 @@ import Paginator from '@/components/ui/Paginator';
 import { useFeedbackModal } from '@/hooks/useFeedbackModal';
 import CreditPaymentReceiptModal, { type CreditPaymentReceipt } from '@/pages/credit/components/CreditPaymentReceiptModal';
 import ReceiptModal from '@/pages/pos/components/ReceiptModal';
+import {
+  dateRangeLabel,
+  exportRowsCsv,
+  exportRowsPdf,
+  formatCurrency,
+  isWithinDateRange,
+  type ExportColumn,
+} from '@/lib/exportRecords';
 
 type StatusFilter = 'all' | 'completed' | 'credit' | 'refunded';
 const CASH_METHODS: Exclude<PaymentMethod, 'Credit'>[] = ['Cash', 'MoMo', 'Cheque', 'Bank Transfer'];
@@ -52,9 +60,11 @@ export default function SalesHistoryPage() {
   const [filterStatus, setFilterStatus] = useState<StatusFilter>('all');
   const [filterPayment, setFilterPayment] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
   const [page, setPage] = useState(1);
 
-  useEffect(() => { setPage(1); }, [filterStatus, filterPayment, searchQuery]);
+  useEffect(() => { setPage(1); }, [filterStatus, filterPayment, searchQuery, startDate, endDate]);
 
   const today = new Date().toISOString().split('T')[0];
   const isAttendant = currentUser?.role === 'cashier';
@@ -74,7 +84,8 @@ export default function SalesHistoryPage() {
       inv.customerName.toLowerCase().includes(q) ||
       inv.cashier.toLowerCase().includes(q) ||
       inv.items.some((i) => i.productName.toLowerCase().includes(q));
-    return matchStatus && matchPayment && matchSearch;
+    const matchDate = isWithinDateRange(inv.date, startDate, endDate);
+    return matchStatus && matchPayment && matchSearch && matchDate;
   });
 
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -83,6 +94,45 @@ export default function SalesHistoryPage() {
   const todayCount      = baseInvoices.filter((i) => i.date === today).length;
   const refundedCount   = baseInvoices.filter((i) => i.status === 'refunded').length;
   const creditOutstanding = baseInvoices.filter((i) => i.status === 'credit').reduce((s, i) => s + i.balanceDue, 0);
+
+  const salesColumns: ExportColumn<InvoiceRecord>[] = [
+    { header: 'Invoice No.', value: (invoice) => invoice.invoiceNo },
+    { header: 'Receipt No.', value: (invoice) => invoice.receiptNo ?? 'Pending payment' },
+    { header: 'Date', value: (invoice) => formatDate(invoice.date) },
+    { header: 'Customer', value: (invoice) => invoice.customerName },
+    { header: 'Items', value: (invoice) => invoice.items.map((item) => `${item.productName} [${item.netQty} pcs]`).join(', ') },
+    { header: 'Cashier', value: (invoice) => invoice.cashier },
+    { header: 'Payment Method', value: (invoice) => invoice.paymentMethod },
+    { header: 'Net Sales', value: (invoice) => formatCurrency(invoice.netSales) },
+    { header: 'Amount Paid', value: (invoice) => formatCurrency(invoice.amountPaid) },
+    { header: 'Balance Due', value: (invoice) => formatCurrency(invoice.balanceDue) },
+    { header: 'Total Cost', value: (invoice) => formatCurrency(invoice.totalCost) },
+    { header: 'Gross Margin', value: (invoice) => formatCurrency(invoice.grossMargin) },
+    { header: 'Status', value: (invoice) => invoice.status },
+  ];
+
+  const exportSalesHistory = (format: 'csv' | 'pdf') => {
+    const completedTotal = filtered
+      .filter((invoice) => invoice.status === 'completed')
+      .reduce((sum, invoice) => sum + invoice.netSales, 0);
+    const creditTotal = filtered
+      .filter((invoice) => invoice.status === 'credit')
+      .reduce((sum, invoice) => sum + invoice.balanceDue, 0);
+    const options = {
+      title: 'Sales History Report',
+      filename: `sales-history-${new Date().toISOString().slice(0, 10)}`,
+      subtitle: dateRangeLabel(startDate, endDate),
+      columns: salesColumns,
+      rows: filtered,
+      totals: [
+        { label: 'Transactions', value: String(filtered.length) },
+        { label: 'Completed Sales', value: formatCurrency(completedTotal) },
+        { label: 'Credit Outstanding', value: formatCurrency(creditTotal) },
+      ],
+    };
+    if (format === 'csv') exportRowsCsv(options);
+    else exportRowsPdf(options);
+  };
 
   const summaryCards = [
     { label: 'Total Transactions', value: String(baseInvoices.length), icon: 'ri-receipt-line',       color: 'bg-indigo-50 text-indigo-600' },
@@ -150,6 +200,36 @@ export default function SalesHistoryPage() {
             onChange={(e) => setSearchQuery(e.target.value)}
             className="bg-transparent text-sm text-slate-600 placeholder-slate-400 outline-none flex-1"
           />
+        </div>
+        <input
+          type="date"
+          value={startDate}
+          onChange={(e) => setStartDate(e.target.value)}
+          className="border border-slate-200 bg-white rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none"
+          title="Start date"
+        />
+        <input
+          type="date"
+          value={endDate}
+          onChange={(e) => setEndDate(e.target.value)}
+          className="border border-slate-200 bg-white rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none"
+          title="End date"
+        />
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => exportSalesHistory('csv')}
+            className="flex items-center gap-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap"
+          >
+            <i className="ri-file-excel-2-line text-base"></i>
+            CSV
+          </button>
+          <button
+            onClick={() => exportSalesHistory('pdf')}
+            className="flex items-center gap-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap"
+          >
+            <i className="ri-file-pdf-2-line text-base"></i>
+            PDF
+          </button>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {(['all', 'completed', 'credit', 'refunded'] as StatusFilter[]).map((s) => (

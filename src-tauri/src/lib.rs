@@ -301,7 +301,7 @@ pub fn run() {
         .map_err(|error| tauri::Error::Anyhow(error.into()))?;
       std::fs::create_dir_all(&data_dir).map_err(|error| tauri::Error::Anyhow(error.into()))?;
       let offline_db = OfflineDb {
-        path: data_dir.join("spark360-offline.sqlite"),
+        path: data_dir.join("bizzyapp-offline.sqlite"),
       };
       offline_db.initialize().map_err(|error| tauri::Error::Anyhow(anyhow::anyhow!(error)))?;
       app.manage(offline_db);
@@ -320,7 +320,7 @@ pub fn run() {
           if let Ok(Some(update)) = updater.check().await {
             tauri_plugin_dialog::DialogExt::dialog(&handle)
               .message(format!(
-                "SPARK 360 v{} is available.\n\nInstalling now — the app will restart automatically.",
+                "Bizzy App Business Management System v{} is available.\n\nInstalling now — the app will restart automatically.",
                 update.version
               ))
               .title("Update Available")

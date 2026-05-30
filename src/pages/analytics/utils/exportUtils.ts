@@ -848,7 +848,7 @@ export function printAnalyticsPDF(
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>SPark360 — ${tab} Report</title>
+  <title>Bizzy App Business Management System — ${tab} Report</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     @page { size: A4; margin: 16mm 15mm; }
@@ -861,7 +861,7 @@ export function printAnalyticsPDF(
     <div style="display:flex;align-items:center;gap:12px;">
       <div style="width:36px;height:36px;background:#4f46e5;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">🏪</div>
       <div>
-        <div style="font-size:20px;font-weight:800;color:#0f172a;letter-spacing:-0.02em;line-height:1.1;">SPark360</div>
+        <div style="font-size:20px;font-weight:800;color:#0f172a;letter-spacing:-0.02em;line-height:1.1;">Bizzy App Business Management System</div>
         <div style="font-size:10px;color:#64748b;margin-top:2px;">POS &amp; Inventory Management</div>
       </div>
     </div>
@@ -875,7 +875,7 @@ export function printAnalyticsPDF(
   ${body}
 
   <div style="margin-top:34px;padding-top:12px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;">
-    <span style="font-size:10px;color:#94a3b8;">SPark360 POS &amp; Inventory — Confidential · Internal Use Only</span>
+    <span style="font-size:10px;color:#94a3b8;">Bizzy App Business Management System POS &amp; Inventory — Confidential · Internal Use Only</span>
     <span style="font-size:10px;color:#94a3b8;">${tab} · ${label}</span>
   </div>
 

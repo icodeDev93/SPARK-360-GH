@@ -28,7 +28,7 @@ export interface AuthUser {
 const ADMIN_PERMISSIONS = [
   'dashboard', 'pos', 'sales-history', 'customers', 'credit',
   'purchases', 'inventory', 'expenses', 'bank-deposit',
-  'stock-transfer', 'reports', 'settings', 'users',
+  'stock-transfer', 'reports', 'settings', 'users', 'logs',
 ];
 
 // Static fallback used while Supabase loads (and for display in users/page.tsx)
@@ -59,6 +59,7 @@ export const ALL_PERMISSIONS = [
   { key: 'reports',       label: 'Analytics & Reports',  icon: 'ri-pie-chart-2-line' },
   { key: 'users',         label: 'User Management',      icon: 'ri-user-settings-line' },
   { key: 'settings',      label: 'Settings',             icon: 'ri-settings-3-line' },
+  { key: 'logs',          label: 'Activity Log',         icon: 'ri-file-list-3-line' },
 ] as const;
 
 export const ROLE_USERS: AuthUser[] = [];
@@ -100,8 +101,8 @@ interface AuthContextValue {
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
-const AUTH_CACHE_KEY = 'spark360:auth-user';
-const AUTH_SIGNED_OUT_KEY = 'spark360:auth-signed-out';
+const AUTH_CACHE_KEY = 'bizzyapp:auth-user';
+const AUTH_SIGNED_OUT_KEY = 'bizzyapp:auth-signed-out';
 
 function getCachedAuthUser(): AuthUser | null {
   try {

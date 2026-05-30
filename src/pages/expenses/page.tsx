@@ -4,12 +4,19 @@ import Paginator from '@/components/ui/Paginator';
 
 const PAGE_SIZE = 20;
 import { useExpenses } from '@/hooks/useExpenses';
-import { EXPENSE_CATEGORIES } from '@/mocks/expenses';
 import ExpenseForm from './components/ExpenseForm';
 import type { ExpenseRecord, ExpensePaymentMethod } from '@/types/erp';
 import { useAuth } from '@/hooks/useAuth';
 import { writeLog, diffFields } from '@/lib/activityLog';
 import { useFeedbackModal } from '@/hooks/useFeedbackModal';
+import {
+  dateRangeLabel,
+  exportRowsCsv,
+  exportRowsPdf,
+  formatCurrency,
+  isWithinDateRange,
+  type ExportColumn,
+} from '@/lib/exportRecords';
 
 const CATEGORY_COLORS: Record<string, string> = {
   Rent:        'bg-emerald-100 text-emerald-700',
@@ -56,7 +63,11 @@ function formatDate(iso: string) {
 }
 
 export default function ExpensesPage() {
-  const { expenses, addExpense, updateExpense, deleteExpense, totalByCategory, grandTotalGHS } = useExpenses();
+  const {
+    expenses, categories, addExpense, updateExpense, deleteExpense,
+    addCategory, renameCategory, deleteCategory,
+    totalByCategory, grandTotalGHS,
+  } = useExpenses();
   const { currentUser } = useAuth();
   const { showFeedback } = useFeedbackModal();
   const [showForm, setShowForm]           = useState(false);
@@ -64,14 +75,21 @@ export default function ExpensesPage() {
   const [deleteTarget, setDeleteTarget]   = useState<string | null>(null);
   const [filterCat, setFilterCat]         = useState('All');
   const [search, setSearch]               = useState('');
+  const [startDate, setStartDate]         = useState('');
+  const [endDate, setEndDate]             = useState('');
   const [page, setPage]                   = useState(1);
+  const [categoryModalOpen, setCategoryModalOpen] = useState(false);
+  const [newCategory, setNewCategory]     = useState('');
+  const [categoryError, setCategoryError] = useState('');
+  const [editingCategory, setEditingCategory] = useState<string | null>(null);
+  const [editingCategoryName, setEditingCategoryName] = useState('');
 
-  useEffect(() => { setPage(1); }, [filterCat, search]);
+  useEffect(() => { setPage(1); }, [filterCat, search, startDate, endDate]);
 
   const filtered = expenses.filter((e) => {
     const matchCat    = filterCat === 'All' || e.category === filterCat;
     const matchSearch = e.description.toLowerCase().includes(search.toLowerCase());
-    return matchCat && matchSearch;
+    return matchCat && matchSearch && isWithinDateRange(e.date, startDate, endDate);
   });
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
@@ -79,8 +97,88 @@ export default function ExpensesPage() {
   const topCats     = sortedCats.slice(0, 3);
   const filteredTotal = filtered.reduce((s, e) => s + e.amountGHS, 0);
 
+  const expenseColumns: ExportColumn<ExpenseRecord>[] = [
+    { header: 'Description', value: (expense) => expense.description },
+    { header: 'Category', value: (expense) => expense.category },
+    { header: 'Date', value: (expense) => formatDate(expense.date) },
+    { header: 'Paid By', value: (expense) => expense.paidBy },
+    { header: 'Notes', value: (expense) => expense.notes },
+    { header: 'Amount', value: (expense) => formatCurrency(expense.amountGHS) },
+  ];
+
+  const exportExpenses = (format: 'csv' | 'pdf') => {
+    const options = {
+      title: 'Expenses Report',
+      filename: `expenses-report-${new Date().toISOString().slice(0, 10)}`,
+      subtitle: dateRangeLabel(startDate, endDate),
+      columns: expenseColumns,
+      rows: filtered,
+      totals: [
+        { label: 'Expenses', value: String(filtered.length) },
+        { label: 'Total Amount', value: formatCurrency(filteredTotal) },
+      ],
+    };
+    if (format === 'csv') exportRowsCsv(options);
+    else exportRowsPdf(options);
+  };
+
   const handleEdit  = (exp: ExpenseRecord) => { setEditTarget(exp); setShowForm(true); };
   const handleClose = () => { setShowForm(false); setEditTarget(null); };
+
+  const handleAddCategory = async () => {
+    const result = await addCategory(newCategory);
+    if (!result.success) {
+      setCategoryError(result.error ?? 'Unable to add category.');
+      return;
+    }
+    const savedName = newCategory.trim();
+    setNewCategory('');
+    setCategoryError('');
+    setCategoryModalOpen(false);
+    showFeedback({
+      title: 'Category Added',
+      message: `${savedName} is now available for this business.`,
+      buttonLabel: 'Continue',
+    });
+  };
+
+  const handleStartEditCategory = (category: string) => {
+    setEditingCategory(category);
+    setEditingCategoryName(category);
+    setCategoryError('');
+  };
+
+  const handleRenameCategory = async () => {
+    if (!editingCategory) return;
+    const result = await renameCategory(editingCategory, editingCategoryName);
+    if (!result.success) {
+      setCategoryError(result.error ?? 'Unable to update category.');
+      return;
+    }
+    setEditingCategory(null);
+    setEditingCategoryName('');
+    setCategoryError('');
+    showFeedback({
+      title: 'Category Updated',
+      message: `${editingCategory} has been renamed successfully.`,
+      buttonLabel: 'Continue',
+    });
+  };
+
+  const handleDeleteCategory = async (category: string) => {
+    const result = await deleteCategory(category);
+    if (!result.success) {
+      setCategoryError(result.error ?? 'Unable to delete category.');
+      return;
+    }
+    if (filterCat === category) setFilterCat('All');
+    showFeedback({
+      title: 'Category Deleted',
+      message: `${category} has been removed from this business.`,
+      buttonLabel: 'Continue',
+      kind: 'deleted',
+    });
+  };
 
   const handleSave = (data: Omit<ExpenseRecord, 'expenseId'>) => {
     if (editTarget) {
@@ -119,13 +217,22 @@ export default function ExpensesPage() {
           <h2 className="text-slate-800 font-bold text-xl">Expenses</h2>
           <p className="text-slate-400 text-sm mt-0.5">Track and manage all business expenses</p>
         </div>
-        <button
-          onClick={() => { setEditTarget(null); setShowForm(true); }}
-          className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-lg text-sm font-bold transition-all cursor-pointer whitespace-nowrap"
-        >
-          <i className="ri-add-line text-base"></i>
-          Add Expense
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => { setCategoryModalOpen(true); setNewCategory(''); setCategoryError(''); }}
+            className="flex items-center gap-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-lg text-sm font-bold transition-all cursor-pointer whitespace-nowrap"
+          >
+            <i className="ri-price-tag-3-line text-base"></i>
+            Add Category
+          </button>
+          <button
+            onClick={() => { setEditTarget(null); setShowForm(true); }}
+            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-lg text-sm font-bold transition-all cursor-pointer whitespace-nowrap"
+          >
+            <i className="ri-add-line text-base"></i>
+            Add Expense
+          </button>
+        </div>
       </div>
 
       {/* Summary Cards */}
@@ -209,8 +316,20 @@ export default function ExpensesPage() {
             className="bg-transparent text-sm text-slate-600 placeholder-slate-400 outline-none flex-1"
           />
         </div>
+        <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="border border-slate-200 bg-white rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none" title="Start date" />
+        <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="border border-slate-200 bg-white rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none" title="End date" />
+        <div className="flex items-center gap-2">
+          <button onClick={() => exportExpenses('csv')} className="flex items-center gap-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap">
+            <i className="ri-file-excel-2-line text-base"></i>
+            CSV
+          </button>
+          <button onClick={() => exportExpenses('pdf')} className="flex items-center gap-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap">
+            <i className="ri-file-pdf-2-line text-base"></i>
+            PDF
+          </button>
+        </div>
         <div className="flex items-center gap-2 flex-wrap">
-          {(['All', ...EXPENSE_CATEGORIES] as string[]).map((cat) => (
+          {(['All', ...categories] as string[]).map((cat) => (
             <button
               key={cat}
               onClick={() => setFilterCat(cat)}
@@ -334,9 +453,133 @@ export default function ExpensesPage() {
       {showForm && (
         <ExpenseForm
           initial={editTarget ?? undefined}
+          categories={categories}
           onSave={handleSave}
           onClose={handleClose}
         />
+      )}
+
+      {categoryModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
+              <div>
+                <h2 className="text-slate-800 font-bold text-base">Add Expense Category</h2>
+                <p className="text-slate-400 text-xs mt-0.5">Available only for this business</p>
+              </div>
+              <button
+                onClick={() => {
+                  setCategoryModalOpen(false);
+                  setEditingCategory(null);
+                  setCategoryError('');
+                }}
+                className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 cursor-pointer transition-all"
+              >
+                <i className="ri-close-line text-lg"></i>
+              </button>
+            </div>
+            <div className="px-6 py-5">
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5">Category Name</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newCategory}
+                  onChange={(event) => { setNewCategory(event.target.value); setCategoryError(''); }}
+                  placeholder="e.g. Repairs"
+                  maxLength={80}
+                  className={`min-w-0 flex-1 border rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none transition-all ${categoryError ? 'border-red-400 focus:border-red-400' : 'border-slate-200 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100'}`}
+                />
+                <button
+                  onClick={handleAddCategory}
+                  className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-bold cursor-pointer whitespace-nowrap transition-all"
+                >
+                  Add
+                </button>
+              </div>
+              {categoryError && <p className="text-red-500 text-xs mt-1">{categoryError}</p>}
+
+              <div className="mt-5 border-t border-slate-100 pt-4">
+                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">Existing Categories</h3>
+                {categories.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-slate-200 p-5 text-center">
+                    <i className="ri-price-tag-3-line text-2xl text-slate-300"></i>
+                    <p className="text-slate-400 text-sm mt-2">No categories added yet</p>
+                  </div>
+                ) : (
+                  <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
+                    {categories.map((category) => {
+                      const count = expenses.filter((expense) => expense.category === category).length;
+                      const isEditing = editingCategory === category;
+                      return (
+                        <div key={category} className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5">
+                          {isEditing ? (
+                            <div className="flex items-center gap-2">
+                              <input
+                                value={editingCategoryName}
+                                onChange={(event) => { setEditingCategoryName(event.target.value); setCategoryError(''); }}
+                                className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-indigo-400"
+                                maxLength={80}
+                              />
+                              <button
+                                onClick={handleRenameCategory}
+                                className="w-8 h-8 flex items-center justify-center rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 cursor-pointer"
+                                title="Save category"
+                              >
+                                <i className="ri-check-line text-sm"></i>
+                              </button>
+                              <button
+                                onClick={() => { setEditingCategory(null); setEditingCategoryName(''); }}
+                                className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-100 cursor-pointer"
+                                title="Cancel edit"
+                              >
+                                <i className="ri-close-line text-sm"></i>
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-bold text-slate-700">{category}</p>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <button
+                                  onClick={() => handleStartEditCategory(category)}
+                                  className="w-8 h-8 flex items-center justify-center rounded-lg bg-white border border-slate-200 text-slate-500 hover:text-indigo-600 hover:border-indigo-200 cursor-pointer"
+                                  title="Edit category"
+                                >
+                                  <i className="ri-edit-line text-sm"></i>
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteCategory(category)}
+                                  disabled={count > 0}
+                                  className="w-8 h-8 flex items-center justify-center rounded-lg bg-white border border-slate-200 text-slate-500 hover:text-red-500 hover:border-red-200 disabled:opacity-40 disabled:hover:text-slate-500 disabled:hover:border-slate-200 cursor-pointer"
+                                  title={count > 0 ? 'Category is in use' : 'Delete category'}
+                                >
+                                  <i className="ri-delete-bin-line text-sm"></i>
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="flex gap-3 px-6 py-4 border-t border-slate-100">
+              <button
+                onClick={() => {
+                  setCategoryModalOpen(false);
+                  setEditingCategory(null);
+                  setCategoryError('');
+                }}
+                className="flex-1 py-2.5 border border-slate-200 rounded-lg text-sm font-semibold text-slate-600 hover:bg-slate-50 cursor-pointer whitespace-nowrap transition-all"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Delete Confirm */}

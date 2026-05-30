@@ -18,7 +18,7 @@ export interface NotificationItem {
   route:       string;
 }
 
-const DISMISSED_KEY = 'spark360_notifs_dismissed_v2';
+const DISMISSED_KEY = 'bizzyapp_notifs_dismissed_v2';
 
 function loadDismissed(): Set<string> {
   try {

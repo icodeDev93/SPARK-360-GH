@@ -3,25 +3,18 @@ import { useSettings } from '@/hooks/useSettings';
 import { useSalesLog } from '@/hooks/useSalesLog';
 import { useAuth } from '@/hooks/useAuth';
 import { useCustomers } from '@/hooks/useCustomers';
+import { useBusiness } from '@/contexts/BusinessContext';
 import { calcLineItem, generateReceiptNo } from '@/services/salesService';
-import type { PaymentMethod } from '@/types/erp';
+import type { PaymentMethod, SalePriceLevel } from '@/types/erp';
 import ReceiptModal from './ReceiptModal';
 import CustomerSelectModal from './CustomerSelectModal';
 import { writeLog } from '@/lib/activityLog';
-
-interface CartItem {
-  id: string;
-  name: string;
-  price: number;
-  costPrice: number;
-  qty: number;
-  stock: number;
-  image: string;
-}
+import { maxQtyForCartItem, PRICE_LEVELS, type CartItem } from '../pricing';
 
 interface CartPanelProps {
   items: CartItem[];
   onUpdateQty: (id: string, qty: number) => void;
+  onUpdatePriceLevel: (id: string, priceLevel: SalePriceLevel) => void;
   onRemove: (id: string) => void;
   onClear: () => void;
 }
@@ -44,11 +37,12 @@ function productInitials(name: string) {
     .toUpperCase();
 }
 
-export default function CartPanel({ items, onUpdateQty, onRemove, onClear }: CartPanelProps) {
+export default function CartPanel({ items, onUpdateQty, onUpdatePriceLevel, onRemove, onClear }: CartPanelProps) {
   const { settings } = useSettings();
   const { addInvoice } = useSalesLog();
   const { currentUser } = useAuth();
   const { customers, addCustomer } = useCustomers();
+  const { activeBusinessId } = useBusiness();
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('Cash');
   const [discount, setDiscount] = useState(0);
   const [showPaymentComplete, setShowPaymentComplete] = useState(false);
@@ -77,7 +71,7 @@ export default function CartPanel({ items, onUpdateQty, onRemove, onClear }: Car
   const handleCustomerConfirm = (customerId: string | null, customerName: string) => {
     setShowCustomerModal(false);
     const saleItems = items.map((item) =>
-      calcLineItem(item.id, item.name, item.qty, 0, item.price, item.costPrice)
+      calcLineItem(item.id, item.name, item.qty, 0, item.price, item.costPrice, item.priceLevel, item.stockUnitsPerQty)
     );
     const isCreditSale = paymentMethod === 'Credit';
     const nextReceiptNo = isCreditSale ? null : generateReceiptNo();
@@ -91,6 +85,15 @@ export default function CartPanel({ items, onUpdateQty, onRemove, onClear }: Car
       cashier:      currentUser.name,
       status:       isCreditSale ? 'credit' : 'completed',
     });
+    window.dispatchEvent(new CustomEvent('bizzyapp:inventory-stock-adjusted', {
+      detail: {
+        businessId: activeBusinessId,
+        items: saleItems.map((item) => ({
+          productId: item.productId,
+          stockUnitsDeducted: item.stockUnitsDeducted,
+        })),
+      },
+    }));
     if (nextReceiptNo) setReceiptNo(nextReceiptNo);
     const saleDescription = isCreditSale
       ? `Created credit invoice ${invoice.invoiceNo} for ${customerName} — ₵${grandTotal.toFixed(2)} (${saleItems.length} item${saleItems.length !== 1 ? 's' : ''})`
@@ -179,6 +182,18 @@ export default function CartPanel({ items, onUpdateQty, onRemove, onClear }: Car
                 <div className="flex-1 min-w-0">
                   <p className="text-slate-800 text-xs font-semibold truncate">{item.name}</p>
                   <p className="text-indigo-600 text-xs font-bold font-mono">{settings.currencySymbol}{item.price.toFixed(2)}</p>
+                  <select
+                    value={item.priceLevel}
+                    onChange={(event) => onUpdatePriceLevel(item.id, event.target.value as SalePriceLevel)}
+                    className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 outline-none focus:border-indigo-400"
+                  >
+                    {PRICE_LEVELS.map((level) => (
+                      <option key={level} value={level}>{level}</option>
+                    ))}
+                  </select>
+                  <p className="mt-1 text-[10px] text-slate-400">
+                    {item.stockUnitsPerQty} stock unit{item.stockUnitsPerQty !== 1 ? 's' : ''} per {item.priceLevel.toLowerCase()}
+                  </p>
                 </div>
                 <div className="flex items-center gap-1 flex-shrink-0">
                   <button
@@ -190,7 +205,7 @@ export default function CartPanel({ items, onUpdateQty, onRemove, onClear }: Car
                   <span className="w-8 text-center text-sm font-bold text-slate-800 font-mono">{item.qty}</span>
                   <button
                     onClick={() => onUpdateQty(item.id, item.qty + 1)}
-                    disabled={item.qty >= item.stock}
+                    disabled={item.qty >= maxQtyForCartItem(item)}
                     className="w-7 h-7 flex items-center justify-center rounded-md border border-slate-200 hover:bg-indigo-100 hover:border-indigo-300 disabled:bg-slate-100 disabled:text-slate-300 disabled:hover:border-slate-200 text-slate-600 hover:text-indigo-600 transition-all cursor-pointer"
                   >
                     <i className="ri-add-line text-xs"></i>

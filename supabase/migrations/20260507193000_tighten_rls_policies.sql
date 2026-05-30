@@ -1,4 +1,4 @@
--- Tighten public schema RLS for the SPark360 app.
+-- Tighten public schema RLS for the Bizzy App Business Management System app.
 -- This migration intentionally recreates policies for the app tables so older
 -- permissive policies cannot linger beside the tightened ones.
 

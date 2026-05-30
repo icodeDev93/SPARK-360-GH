@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "SPARK 360",
+  "productName": "Bizzy App Business Management System",
   "version": "0.2.0",
-  "identifier": "com.spark360.app",
+  "identifier": "com.bizzyapp.app",
   "build": {
     "frontendDist": "../out",
     "devUrl": "http://localhost:3000",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "SPARK 360",
+        "title": "Bizzy App Business Management System",
         "width": 1280,
         "height": 800,
         "minWidth": 960,
@@ -37,7 +37,7 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "publisher": "SPARK 360",
+    "publisher": "Bizzy App Business Management System",
     "windows": {
       "allowDowngrades": false
     }

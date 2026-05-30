@@ -13,21 +13,26 @@ const pageTitles: Record<string, string> = {
   '/pos': 'Sales (POS)',
   '/sales-history': 'Sales History',
   '/customers': 'Customers',
+  '/credit': 'Credit Invoices',
   '/suppliers': 'Purchases & Supplies',
+  '/purchases': 'Purchases',
   '/inventory': 'Inventory',
   '/expenses': 'Expenses',
   '/bank-deposit': 'Bank Deposit',
+  '/stock-transfer': 'Stock Transfer',
   '/reports': 'Reports',
-  '/analytics': 'Analytics',
+  '/analytics': 'Analytics & Reports',
   '/settings': 'Settings',
   '/users': 'User Management',
+  '/logs': 'Activity Log',
+  '/businesses': 'Your Businesses',
 };
 
 
 export default function Topbar() {
   const location = useLocation();
   const navigate = useNavigate();
-  const title = pageTitles[location.pathname] || 'SPark360';
+  const title = pageTitles[location.pathname] || 'Bizzy App Business Management System';
   const [showNotif, setShowNotif] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showAccountSettings, setShowAccountSettings] = useState(false);

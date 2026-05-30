@@ -1,18 +1,19 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import AppLayout from '@/components/feature/AppLayout';
 import { supabase } from '@/lib/supabase';
-import { ROLE_LABELS } from '@/hooks/useAuth';
-import type { LogCategory, LogAction, LogChange } from '@/lib/activityLog';
+import { ROLE_LABELS, useAuth } from '@/hooks/useAuth';
+import { cleanLogText, type LogCategory, type LogAction, type LogChange } from '@/lib/activityLog';
 import { loadLocalCollection, saveLocalCollection } from '@/lib/localCache';
 import { useBusiness } from '@/contexts/BusinessContext';
 
 interface LogRow {
   id: string;
+  business_id: string | null;
   user_id: string | null;
   user_name: string;
   user_role: string;
-  category: LogCategory;
-  action: LogAction;
+  category: string;
+  action: string;
   description: string;
   changes: LogChange[] | null;
   created_at: string;
@@ -45,6 +46,27 @@ const ACTION_META: Record<LogAction, { label: string; color: string; bg: string 
 const ALL_CATEGORIES: LogCategory[] = ['sales', 'inventory', 'expenses', 'customers', 'credit', 'bank-deposit', 'purchases', 'suppliers', 'users', 'settings', 'auth'];
 const ALL_ACTIONS: LogAction[] = ['create', 'edit', 'delete', 'login', 'logout', 'refund', 'complete'];
 
+function normalizeFilterValue(value: string | null | undefined) {
+  return String(value ?? '').trim().toLowerCase();
+}
+
+function getCategoryMeta(category: string) {
+  return CATEGORY_META[normalizeFilterValue(category) as LogCategory] ?? {
+    label: category || 'Other',
+    icon: 'ri-file-list-3-line',
+    color: 'text-slate-700',
+    bg: 'bg-slate-100',
+  };
+}
+
+function getActionMeta(action: string) {
+  return ACTION_META[normalizeFilterValue(action) as LogAction] ?? {
+    label: action || 'Action',
+    color: 'text-slate-600',
+    bg: 'bg-slate-100',
+  };
+}
+
 function fullTime(iso: string) {
   return new Date(iso).toLocaleString('en-GH', {
     day: 'numeric', month: 'short', year: 'numeric',
@@ -52,24 +74,166 @@ function fullTime(iso: string) {
   });
 }
 
-function exportToCsv(rows: LogRow[], dateFrom: string, dateTo: string) {
-  const headers = ['Timestamp', 'User', 'Role', 'Category', 'Action', 'Description'];
-  const lines = rows.map((log) => [
-    fullTime(log.created_at),
-    log.user_name,
-    ROLE_LABELS[log.user_role as keyof typeof ROLE_LABELS]?.label ?? log.user_role,
-    CATEGORY_META[log.category]?.label ?? log.category,
-    ACTION_META[log.action]?.label ?? log.action,
-    `"${log.description.replace(/"/g, '""')}"`,
-  ].join(','));
-  const csv = [headers.join(','), ...lines].join('\n');
+function escapeCsv(value: unknown) {
+  const text = cleanLogText(value);
+  return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function exportToCsv(rows: LogRow[], dateFrom: string, dateTo: string, businessName?: string) {
+  const headers = ['Date', 'Time', 'User Name', 'User Role', 'Category', 'Action', 'Description', 'Changed Field', 'Previous Value', 'New Value'];
+  const lines = rows.flatMap((log) => {
+    const created = new Date(log.created_at);
+    const base = [
+      created.toLocaleDateString('en-GH', { day: 'numeric', month: 'short', year: 'numeric' }),
+      created.toLocaleTimeString('en-GH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      log.user_name,
+      ROLE_LABELS[log.user_role as keyof typeof ROLE_LABELS]?.label ?? log.user_role,
+      getCategoryMeta(log.category).label,
+      getActionMeta(log.action).label,
+      log.description,
+    ];
+
+    if (!log.changes?.length) return [[...base, '', '', ''].map(escapeCsv).join(',')];
+
+    return log.changes.map((change) => [
+      ...base,
+      change.field,
+      change.old,
+      change.new,
+    ].map(escapeCsv).join(','));
+  });
+  const csv = `\uFEFF${[headers.map(escapeCsv).join(','), ...lines].join('\n')}`;
   const suffix = dateFrom && dateTo ? `${dateFrom}-to-${dateTo}` : dateFrom ? `from-${dateFrom}` : dateTo ? `to-${dateTo}` : 'all';
-  const filename = `activity-log-${suffix}.csv`;
+  const scope = businessName ? `${businessName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')}-` : '';
+  const filename = `activity-log-${scope}${suffix}.csv`;
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url; a.download = filename; a.click();
   URL.revokeObjectURL(url);
+}
+
+function escapeHtml(value: unknown) {
+  return cleanLogText(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function expandedLogRows(rows: LogRow[]) {
+  return rows.flatMap((log) => {
+    const created = new Date(log.created_at);
+    const base = {
+      date: created.toLocaleDateString('en-GH', { day: 'numeric', month: 'short', year: 'numeric' }),
+      time: created.toLocaleTimeString('en-GH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      userName: log.user_name,
+      userRole: ROLE_LABELS[log.user_role as keyof typeof ROLE_LABELS]?.label ?? log.user_role,
+      category: getCategoryMeta(log.category).label,
+      action: getActionMeta(log.action).label,
+      description: log.description,
+    };
+
+    if (!log.changes?.length) return [{ ...base, field: '', old: '', next: '' }];
+    return log.changes.map((change) => ({
+      ...base,
+      field: change.field,
+      old: change.old,
+      next: change.new,
+    }));
+  });
+}
+
+function printLogsPdf(rows: LogRow[], dateFrom: string, dateTo: string, businessName?: string) {
+  const win = window.open('', '_blank', 'width=1100,height=820');
+  if (!win) return;
+
+  const suffix = dateFrom && dateTo ? `${dateFrom} to ${dateTo}` : dateFrom ? `From ${dateFrom}` : dateTo ? `To ${dateTo}` : 'All dates';
+  const reportRows = expandedLogRows(rows);
+  const generatedAt = new Date().toLocaleString('en-GH', {
+    day: 'numeric', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  });
+
+  win.document.write(`
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Activity Log Report</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 28px; font-family: Arial, sans-serif; color: #0f172a; background: #fff; }
+    .header { display: flex; justify-content: space-between; gap: 24px; align-items: flex-start; border-bottom: 2px solid #e2e8f0; padding-bottom: 16px; margin-bottom: 18px; }
+    h1 { margin: 0; font-size: 22px; line-height: 1.2; }
+    .meta { margin-top: 6px; color: #64748b; font-size: 12px; line-height: 1.5; }
+    .badge { display: inline-block; border: 1px solid #c7d2fe; background: #eef2ff; color: #4338ca; padding: 6px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+    table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    th { text-align: left; background: #f8fafc; color: #475569; padding: 8px; border: 1px solid #e2e8f0; text-transform: uppercase; letter-spacing: .03em; }
+    td { padding: 8px; border: 1px solid #e2e8f0; vertical-align: top; line-height: 1.35; }
+    tr { break-inside: avoid; }
+    .muted { color: #64748b; }
+    .empty { text-align: center; color: #94a3b8; padding: 40px; border: 1px dashed #cbd5e1; border-radius: 12px; }
+    @media print {
+      body { padding: 18px; }
+      .no-print { display: none; }
+      table { font-size: 10px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <h1>Activity Log Report</h1>
+      <div class="meta">
+        <div><strong>Business:</strong> ${escapeHtml(businessName || 'Current Business')}</div>
+        <div><strong>Date Range:</strong> ${escapeHtml(suffix)}</div>
+        <div><strong>Generated:</strong> ${escapeHtml(generatedAt)}</div>
+        <div><strong>Total Rows:</strong> ${reportRows.length}</div>
+      </div>
+    </div>
+    <div class="badge">Bizzy App Business Management System</div>
+  </div>
+
+  ${reportRows.length === 0 ? '<div class="empty">No log entries found for the selected filters.</div>' : `
+  <table>
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Time</th>
+        <th>User</th>
+        <th>Role</th>
+        <th>Category</th>
+        <th>Action</th>
+        <th>Description</th>
+        <th>Changed Field</th>
+        <th>Previous Value</th>
+        <th>New Value</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${reportRows.map((row) => `
+        <tr>
+          <td>${escapeHtml(row.date)}</td>
+          <td>${escapeHtml(row.time)}</td>
+          <td>${escapeHtml(row.userName)}</td>
+          <td>${escapeHtml(row.userRole)}</td>
+          <td>${escapeHtml(row.category)}</td>
+          <td>${escapeHtml(row.action)}</td>
+          <td>${escapeHtml(row.description)}</td>
+          <td class="muted">${escapeHtml(row.field)}</td>
+          <td class="muted">${escapeHtml(row.old)}</td>
+          <td>${escapeHtml(row.next)}</td>
+        </tr>
+      `).join('')}
+    </tbody>
+  </table>
+  `}
+  <script>window.onload = function () { setTimeout(function () { window.print(); }, 300); };<\/script>
+</body>
+</html>`);
+  win.document.close();
 }
 
 function getInitials(name: string) {
@@ -88,12 +252,13 @@ function avatarColor(name: string) {
 }
 
 export default function LogsPage() {
-  const { activeBusinessId } = useBusiness();
+  const { activeBusiness, activeBusinessId } = useBusiness();
+  const { currentUser } = useAuth();
   const [logs, setLogs]               = useState<LogRow[]>([]);
   const [loading, setLoading]         = useState(true);
   const [expandedId, setExpandedId]   = useState<string | null>(null);
-  const [catFilter, setCatFilter]     = useState<LogCategory | 'all'>('all');
-  const [actionFilter, setActionFilter] = useState<LogAction | 'all'>('all');
+  const [catFilter, setCatFilter]     = useState<string>('all');
+  const [actionFilter, setActionFilter] = useState<string>('all');
   const [search, setSearch]           = useState('');
   const [dateFrom, setDateFrom]       = useState('');
   const [dateTo, setDateTo]           = useState('');
@@ -106,7 +271,7 @@ export default function LogsPage() {
         return;
       }
       const cached = await loadLocalCollection<LogRow>('user_logs');
-      if (cached.length) setLogs(cached);
+      if (cached.length) setLogs(cached.filter((log) => log.business_id === activeBusinessId));
       const { data, error } = await supabase
         .from('user_logs')
         .select('*')
@@ -114,8 +279,9 @@ export default function LogsPage() {
         .order('created_at', { ascending: false })
         .limit(500);
       if (!error && data) {
-        setLogs(data as LogRow[]);
-        saveLocalCollection('user_logs', data as LogRow[]);
+        const nextLogs = data as LogRow[];
+        setLogs(nextLogs);
+        saveLocalCollection('user_logs', nextLogs);
       }
       setLoading(false);
     })();
@@ -123,24 +289,87 @@ export default function LogsPage() {
     const channel = supabase
       .channel('user_logs_rt')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'user_logs' }, (payload) => {
-        setLogs((prev) => [payload.new as LogRow, ...prev]);
+        const next = payload.new as LogRow;
+        if (next.business_id === activeBusinessId) {
+          setLogs((prev) => {
+            if (prev.some((log) => log.id === next.id)) return prev;
+            return [next, ...prev].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+          });
+        }
       })
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
   }, [activeBusinessId]);
 
-  const filtered = logs.filter((log) => {
-    if (catFilter !== 'all' && log.category !== catFilter) return false;
-    if (actionFilter !== 'all' && log.action !== actionFilter) return false;
-    if (search) {
-      const q = search.toLowerCase();
-      if (!log.description.toLowerCase().includes(q) && !log.user_name.toLowerCase().includes(q)) return false;
+  const categoryOptions = useMemo(() => {
+    const present = new Set(logs.map((log) => normalizeFilterValue(log.category)).filter(Boolean));
+    return [
+      ...ALL_CATEGORIES,
+      ...Array.from(present).filter((category) => !ALL_CATEGORIES.includes(category as LogCategory)).sort(),
+    ];
+  }, [logs]);
+
+  const logsForSelectedCategory = useMemo(
+    () => logs.filter((log) => catFilter === 'all' || normalizeFilterValue(log.category) === catFilter),
+    [catFilter, logs],
+  );
+
+  const actionOptions = useMemo(() => {
+    const present = new Set(logsForSelectedCategory.map((log) => normalizeFilterValue(log.action)).filter(Boolean));
+    return [
+      ...ALL_ACTIONS,
+      ...Array.from(present).filter((action) => !ALL_ACTIONS.includes(action as LogAction)).sort(),
+    ];
+  }, [logsForSelectedCategory]);
+
+  useEffect(() => {
+    if (catFilter !== 'all' && !categoryOptions.includes(catFilter)) setCatFilter('all');
+  }, [catFilter, categoryOptions]);
+
+  useEffect(() => {
+    if (actionFilter !== 'all' && !actionOptions.includes(actionFilter)) setActionFilter('all');
+  }, [actionFilter, actionOptions]);
+
+  useEffect(() => {
+    setExpandedId(null);
+  }, [catFilter, actionFilter, search, dateFrom, dateTo, activeBusinessId]);
+
+  const filtered = useMemo(() => logs.filter((log) => {
+    const category = normalizeFilterValue(log.category);
+    const action = normalizeFilterValue(log.action);
+    if (catFilter !== 'all' && category !== catFilter) return false;
+    if (actionFilter !== 'all' && action !== actionFilter) return false;
+
+    const q = search.trim().toLowerCase();
+    if (q) {
+      const description = log.description.toLowerCase();
+      const userName = log.user_name.toLowerCase();
+      const categoryLabel = getCategoryMeta(log.category).label.toLowerCase();
+      const actionLabel = getActionMeta(log.action).label.toLowerCase();
+      if (!description.includes(q) && !userName.includes(q) && !categoryLabel.includes(q) && !actionLabel.includes(q)) return false;
     }
-    if (dateFrom && log.created_at < dateFrom) return false;
-    if (dateTo   && log.created_at > dateTo + 'T23:59:59') return false;
+
+    const createdAt = new Date(log.created_at).getTime();
+    if (dateFrom && createdAt < new Date(`${dateFrom}T00:00:00`).getTime()) return false;
+    if (dateTo && createdAt > new Date(`${dateTo}T23:59:59`).getTime()) return false;
     return true;
-  });
+  }), [actionFilter, catFilter, dateFrom, dateTo, logs, search]);
+
+  const selectCategory = (category: string) => {
+    setCatFilter(category);
+    setActionFilter('all');
+  };
+
+  const handleDelete = async (logId: string) => {
+    if (currentUser?.role !== 'owner') return;
+    const { error } = await supabase.from('user_logs').delete().eq('id', logId);
+    if (!error) {
+      const nextLogs = logs.filter((log) => log.id !== logId);
+      setLogs(nextLogs);
+      saveLocalCollection('user_logs', nextLogs);
+    }
+  };
 
   return (
     <AppLayout>
@@ -152,7 +381,15 @@ export default function LogsPage() {
         </div>
         <div className="flex items-center gap-3">
           <button
-            onClick={() => exportToCsv(filtered, dateFrom, dateTo)}
+            onClick={() => printLogsPdf(filtered, dateFrom, dateTo, activeBusiness?.businessName)}
+            disabled={filtered.length === 0}
+            className="flex items-center gap-2 bg-white border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 hover:text-indigo-700 px-4 py-2 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap"
+          >
+            <i className="ri-printer-line text-base"></i>
+            Export PDF
+          </button>
+          <button
+            onClick={() => exportToCsv(filtered, dateFrom, dateTo, activeBusiness?.businessName)}
             disabled={filtered.length === 0}
             className="flex items-center gap-2 bg-white border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 hover:text-indigo-700 px-4 py-2 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap"
           >
@@ -201,17 +438,17 @@ export default function LogsPage() {
         {/* Category pills */}
         <div className="flex flex-wrap gap-2">
           <button
-            onClick={() => setCatFilter('all')}
+            onClick={() => selectCategory('all')}
             className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer whitespace-nowrap ${catFilter === 'all' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
           >
             All Categories
           </button>
-          {ALL_CATEGORIES.map((cat) => {
-            const m = CATEGORY_META[cat];
+          {categoryOptions.map((cat) => {
+            const m = getCategoryMeta(cat);
             return (
               <button
                 key={cat}
-                onClick={() => setCatFilter(cat)}
+                onClick={() => selectCategory(cat)}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer whitespace-nowrap ${catFilter === cat ? `${m.bg} ${m.color}` : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
               >
                 <i className={`${m.icon} text-xs`}></i>
@@ -229,8 +466,8 @@ export default function LogsPage() {
           >
             All Actions
           </button>
-          {ALL_ACTIONS.map((action) => {
-            const m = ACTION_META[action];
+          {actionOptions.map((action) => {
+            const m = getActionMeta(action);
             return (
               <button
                 key={action}
@@ -260,8 +497,8 @@ export default function LogsPage() {
         ) : (
           <div className="divide-y divide-slate-50">
             {filtered.map((log) => {
-              const catMeta    = CATEGORY_META[log.category] ?? CATEGORY_META.settings;
-              const actionMeta = ACTION_META[log.action]     ?? ACTION_META.edit;
+              const catMeta    = getCategoryMeta(log.category);
+              const actionMeta = getActionMeta(log.action);
               const roleMeta   = ROLE_LABELS[log.user_role as keyof typeof ROLE_LABELS];
               const expanded   = expandedId === log.id;
               const hasChanges = log.changes && log.changes.length > 0;
@@ -340,6 +577,16 @@ export default function LogsPage() {
                       <p className="text-slate-400 text-xs mt-0.5 whitespace-nowrap">
                         {new Date(log.created_at).toLocaleTimeString('en-GH', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                       </p>
+                      {currentUser?.role === 'owner' && (
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(log.id)}
+                          className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-red-500 hover:text-red-700"
+                        >
+                          <i className="ri-delete-bin-line"></i>
+                          Delete
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>

@@ -1,16 +1,8 @@
 import { useState } from 'react';
 import { useInventory } from '@/hooks/useInventory';
 import { useSettings } from '@/hooks/useSettings';
-
-interface CartItem {
-  id: string;
-  name: string;
-  price: number;
-  costPrice: number;
-  qty: number;
-  stock: number;
-  image: string;
-}
+import { formatPackStock } from '@/services/inventoryService';
+import { buildCartItem, defaultPriceLevelForItem, priceForLevel, type CartItem } from '../pricing';
 
 interface ProductGridProps {
   onAddToCart: (item: CartItem) => void;
@@ -18,16 +10,13 @@ interface ProductGridProps {
 
 export default function ProductGrid({ onAddToCart }: ProductGridProps) {
   const [search, setSearch] = useState('');
-  const [activeCategory, setActiveCategory] = useState('All');
-  const { items, categories, loading } = useInventory();
+  const { items, loading } = useInventory();
   const { settings } = useSettings();
 
-  const posCategories = ['All', ...categories];
   const filtered = items.filter((p) => {
-    const q = search.toLowerCase();
-    const matchCat = activeCategory === 'All' || p.category === activeCategory;
-    const matchSearch = p.productName.toLowerCase().includes(q) || p.itemId.toLowerCase().includes(q);
-    return matchCat && matchSearch;
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    return p.productName.toLowerCase().includes(q) || p.itemId.toLowerCase().includes(q);
   });
 
   return (
@@ -51,21 +40,6 @@ export default function ProductGrid({ onAddToCart }: ProductGridProps) {
           )}
         </div>
 
-        <div className="flex flex-wrap gap-2 mt-3">
-          {posCategories.map((cat) => (
-            <button
-              key={cat}
-              onClick={() => setActiveCategory(cat)}
-              className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer ${
-                activeCategory === cat
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              {cat}
-            </button>
-          ))}
-        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 min-w-0">
@@ -85,7 +59,11 @@ export default function ProductGrid({ onAddToCart }: ProductGridProps) {
           </div>
         ) : (
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-            {filtered.map((product) => (
+            {filtered.map((product) => {
+              const defaultLevel = defaultPriceLevelForItem(product);
+              const defaultPrice = priceForLevel(product, defaultLevel).price;
+              const hasPrice = defaultPrice > 0;
+              return (
               <div
                 key={product.itemId}
                 className="bg-white border border-slate-100 rounded-xl overflow-hidden hover:border-indigo-200 transition-all group"
@@ -117,18 +95,12 @@ export default function ProductGrid({ onAddToCart }: ProductGridProps) {
                 <div className="p-3">
                   <p className="text-slate-800 text-sm font-semibold leading-tight line-clamp-2 mb-1">{product.productName}</p>
                   <p className="text-slate-400 text-xs font-mono mb-1">{product.itemId}</p>
-                  <p className="text-indigo-600 text-base font-bold font-mono">{settings.currencySymbol}{product.sellingPrice.toFixed(2)}</p>
+                  <p className="text-slate-400 text-[11px] font-semibold mb-1">{formatPackStock(product)} · {product.currentStock} units</p>
+                  <p className="text-indigo-600 text-base font-bold font-mono">{settings.currencySymbol}{defaultPrice.toFixed(2)}</p>
+                  <p className="text-slate-400 text-[11px] font-semibold uppercase">{defaultLevel} SP</p>
                   <button
-                    onClick={() => onAddToCart({
-                      id: product.itemId,
-                      name: product.productName,
-                      price: product.sellingPrice,
-                      costPrice: product.costPrice,
-                      qty: 1,
-                      stock: product.currentStock,
-                      image: product.image,
-                    })}
-                    disabled={product.currentStock === 0}
+                    onClick={() => onAddToCart(buildCartItem(product, defaultLevel))}
+                    disabled={product.currentStock === 0 || !hasPrice}
                     className="mt-2 w-full py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400 text-white text-xs font-semibold rounded-lg transition-all cursor-pointer whitespace-nowrap flex items-center justify-center gap-1"
                   >
                     <span className="w-3 h-3 flex items-center justify-center">
@@ -138,7 +110,7 @@ export default function ProductGrid({ onAddToCart }: ProductGridProps) {
                   </button>
                 </div>
               </div>
-            ))}
+            )})}
           </div>
         )}
       </div>

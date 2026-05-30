@@ -8,7 +8,7 @@ export interface StockAlertItem {
   severity: 'critical' | 'low' | 'warning';
 }
 
-const DISMISSED_KEY = 'spark360_dismissed_alerts';
+const DISMISSED_KEY = 'bizzyapp_dismissed_alerts';
 
 function getSeverity(stock: number, reorder: number): 'critical' | 'low' | 'warning' {
   if (stock === 0) return 'critical';

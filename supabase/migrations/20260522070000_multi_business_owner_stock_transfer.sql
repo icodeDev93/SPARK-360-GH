@@ -33,7 +33,7 @@ create table if not exists public.businesses (
   legal_name text,
   phone text,
   email text,
-  address text,
+  address text not null default 'Not provided' check (btrim(address) <> ''),
   logo_url text,
   status text not null default 'active' check (status in ('active', 'archived')),
   archived_at timestamptz,
@@ -67,11 +67,11 @@ for each row execute function public.touch_updated_at();
 insert into public.businesses (owner_id, business_name, legal_name, phone, email, address)
 select
   p.id,
-  coalesce((select store_name from public.store_settings where settings_key = 'default' limit 1), 'SPARK 360 GH'),
-  coalesce((select store_name from public.store_settings where settings_key = 'default' limit 1), 'SPARK 360 GH'),
+  coalesce((select store_name from public.store_settings where settings_key = 'default' limit 1), 'Bizzy App Business Management System'),
+  coalesce((select store_name from public.store_settings where settings_key = 'default' limit 1), 'Bizzy App Business Management System'),
   (select store_phone from public.store_settings where settings_key = 'default' limit 1),
   (select store_email from public.store_settings where settings_key = 'default' limit 1),
-  (select store_address from public.store_settings where settings_key = 'default' limit 1)
+  coalesce((select store_address from public.store_settings where settings_key = 'default' limit 1), 'Not provided')
 from public.profiles p
 where p.role = 'owner'
   and not exists (select 1 from public.businesses)
@@ -376,8 +376,26 @@ begin
     update public.inventory
     set current_stock = current_stock + transfer_quantity,
         single_quantity = single_quantity + transfer_quantity,
+        product_name = source_item.product_name,
         category_id = coalesce(category_id, category_id_value),
-        category_name = coalesce(nullif(category_name, ''), source_item.category_name)
+        category_name = coalesce(nullif(category_name, ''), source_item.category_name),
+        supplier_name = source_item.supplier_name,
+        cost_price = source_item.cost_price,
+        selling_price = source_item.selling_price,
+        wholesale_cost_price = source_item.wholesale_cost_price,
+        single_cost_price = source_item.single_cost_price,
+        wholesale_selling_price = source_item.wholesale_selling_price,
+        half_selling_price = source_item.half_selling_price,
+        quarter_selling_price = source_item.quarter_selling_price,
+        single_selling_price = source_item.single_selling_price,
+        reorder_level = source_item.reorder_level,
+        quantity_per_box = source_item.quantity_per_box,
+        stock_limit = source_item.stock_limit,
+        expiry_date = source_item.expiry_date,
+        description = source_item.description,
+        price_levels = source_item.price_levels,
+        image_url = source_item.image_url,
+        is_active = source_item.is_active
     where id = target_item.id;
   else
     insert into public.inventory (

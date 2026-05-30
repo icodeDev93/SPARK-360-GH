@@ -8,8 +8,18 @@ import { useInventory } from '@/hooks/useInventory';
 import { useSuppliers } from '@/hooks/useSuppliers';
 import type { InventoryItem } from '@/types/erp';
 import { useAuth } from '@/hooks/useAuth';
+import { calcStockValue, formatPackStock } from '@/services/inventoryService';
 import { writeLog, diffFields } from '@/lib/activityLog';
 import { useFeedbackModal } from '@/hooks/useFeedbackModal';
+import {
+  dateRangeLabel,
+  exportRowsCsv,
+  exportRowsPdf,
+  formatCurrency,
+  formatExportDate,
+  isWithinDateRange,
+  type ExportColumn,
+} from '@/lib/exportRecords';
 
 const CAT_COLORS = [
   'bg-indigo-100 text-indigo-600',
@@ -86,10 +96,12 @@ export default function InventoryPage() {
   const [search, setSearch]                 = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All');
   const [stockFilter, setStockFilter]       = useState('All');
+  const [startDate, setStartDate]           = useState('');
+  const [endDate, setEndDate]               = useState('');
   const [deleteId, setDeleteId]             = useState<string | null>(null);
   const [page, setPage]                     = useState(1);
 
-  useEffect(() => { setPage(1); }, [search, categoryFilter, stockFilter]);
+  useEffect(() => { setPage(1); }, [search, categoryFilter, stockFilter, startDate, endDate]);
 
   const filtered = items.filter((item) => {
     const q           = search.toLowerCase();
@@ -100,9 +112,51 @@ export default function InventoryPage() {
       : stockFilter === 'Low'   ? item.stockStatus === 'LOW'
       : stockFilter === 'Out'   ? item.stockStatus === 'OUT OF STOCK'
       : item.stockStatus === 'OK';
-    return matchSearch && matchCat && matchStock;
+    const itemDate = item.createdAt || item.updatedAt || item.expiryDate;
+    return matchSearch && matchCat && matchStock && isWithinDateRange(itemDate, startDate, endDate);
   });
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  const productColumns: ExportColumn<InventoryItem>[] = [
+    { header: 'Product Code', value: (item) => item.itemId },
+    { header: 'Product Name', value: (item) => item.productName },
+    { header: 'Category', value: (item) => item.category },
+    { header: 'Supplier', value: (item) => item.supplier },
+    { header: 'Current Stock', value: (item) => item.currentStock },
+    { header: 'Stock Breakdown', value: (item) => formatPackStock(item) },
+    { header: 'Wholesale Quantity', value: (item) => item.wholesaleQuantity },
+    { header: 'Single Quantity', value: (item) => item.singleQuantity },
+    { header: 'Units Per Pack', value: (item) => item.quantityPerBox },
+    { header: 'Reorder Level', value: (item) => item.reorderLevel },
+    { header: 'Stock Status', value: (item) => item.stockStatus },
+    { header: 'Stock Value', value: (item) => formatCurrency(calcStockValue(item)) },
+    { header: 'Cost Price', value: (item) => formatCurrency(item.costPrice) },
+    { header: 'Selling Price', value: (item) => formatCurrency(item.sellingPrice) },
+    { header: 'Wholesale Cost Price', value: (item) => formatCurrency(item.wholesaleCostPrice) },
+    { header: 'Single Cost Price', value: (item) => formatCurrency(item.singleCostPrice) },
+    { header: 'Wholesale Selling Price', value: (item) => formatCurrency(item.wholesaleSellingPrice) },
+    { header: 'Half Selling Price', value: (item) => formatCurrency(item.halfSellingPrice) },
+    { header: 'Quarter Selling Price', value: (item) => formatCurrency(item.quarterSellingPrice) },
+    { header: 'Single Selling Price', value: (item) => formatCurrency(item.singleSellingPrice) },
+    { header: 'Expiry Date', value: (item) => formatExportDate(item.expiryDate) || 'No expiry' },
+    { header: 'Date Added', value: (item) => formatExportDate(item.createdAt) },
+  ];
+
+  const exportProducts = (format: 'csv' | 'pdf') => {
+    const options = {
+      title: 'Products Report',
+      filename: `products-report-${new Date().toISOString().slice(0, 10)}`,
+      subtitle: dateRangeLabel(startDate, endDate),
+      columns: productColumns,
+      rows: filtered,
+      totals: [
+        { label: 'Products', value: String(filtered.length) },
+        { label: 'Stock Value', value: formatCurrency(filtered.reduce((sum, item) => sum + calcStockValue(item), 0)) },
+      ],
+    };
+    if (format === 'csv') exportRowsCsv(options);
+    else exportRowsPdf(options);
+  };
 
   const handleSave = async (item: InventoryItem) => {
     const isEdit = !!editItem;
@@ -213,6 +267,18 @@ export default function InventoryPage() {
                 <option value="Out">Out of Stock</option>
                 <option value="OK">In Stock</option>
               </select>
+              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="border border-slate-200 bg-white rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none" title="Start date" />
+              <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="border border-slate-200 bg-white rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none" title="End date" />
+            </div>
+            <div className="flex items-center gap-2">
+              <button onClick={() => exportProducts('csv')} className="flex items-center gap-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap">
+                <i className="ri-file-excel-2-line text-base"></i>
+                CSV
+              </button>
+              <button onClick={() => exportProducts('pdf')} className="flex items-center gap-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap">
+                <i className="ri-file-pdf-2-line text-base"></i>
+                PDF
+              </button>
             </div>
             <button
               onClick={() => { setEditItem(null); setDrawerOpen(true); }}
@@ -255,15 +321,16 @@ export default function InventoryPage() {
                     <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">Stock</th>
                     <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">Expiry</th>
                     <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">Supplier</th>
-                    <th className="text-right text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">Cost</th>
-                    <th className="text-right text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">Price</th>
+                    <th className="text-right text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">Stock Value</th>
+                    <th className="text-right text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">Wholesale CP</th>
+                    <th className="text-right text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">Single SP</th>
                     <th className="text-right text-xs font-semibold text-slate-400 uppercase tracking-wide px-5 py-3.5">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="px-5 py-14 text-center">
+                      <td colSpan={10} className="px-5 py-14 text-center">
                         <div className="flex flex-col items-center gap-2">
                           <i className="ri-archive-drawer-line text-3xl text-slate-300"></i>
                           <p className="text-slate-400 text-sm">No items found</p>
@@ -287,15 +354,23 @@ export default function InventoryPage() {
                         <td className="px-4 py-3.5">
                           <span className="bg-slate-100 text-slate-600 text-xs font-semibold px-2.5 py-1 rounded-full">{item.category}</span>
                         </td>
-                        <td className="px-4 py-3.5"><StockBar current={item.currentStock} reorder={item.reorderLevel} /></td>
+                        <td className="px-4 py-3.5">
+                          <div className="space-y-1">
+                            <StockBar current={item.currentStock} reorder={item.reorderLevel} />
+                            <p className="text-[11px] text-slate-400 font-semibold whitespace-nowrap">
+                              {formatPackStock(item)} · {item.currentStock} units
+                            </p>
+                          </div>
+                        </td>
                         <td className="px-4 py-3.5">
                           <span className="text-slate-500 text-xs font-mono">
                             {item.expiryDate || 'No expiry'}
                           </span>
                         </td>
                         <td className="px-4 py-3.5"><span className="text-slate-500 text-xs truncate max-w-[140px] block">{item.supplier}</span></td>
-                        <td className="px-4 py-3.5 text-right"><span className="text-slate-500 text-sm font-mono">₵{item.costPrice.toFixed(2)}</span></td>
-                        <td className="px-4 py-3.5 text-right"><span className="text-slate-800 text-sm font-bold font-mono">₵{item.sellingPrice.toFixed(2)}</span></td>
+                        <td className="px-4 py-3.5 text-right"><span className="text-slate-800 text-sm font-bold font-mono">₵{calcStockValue(item).toFixed(2)}</span></td>
+                        <td className="px-4 py-3.5 text-right"><span className="text-slate-500 text-sm font-mono">₵{item.wholesaleCostPrice.toFixed(2)}</span></td>
+                        <td className="px-4 py-3.5 text-right"><span className="text-slate-800 text-sm font-bold font-mono">₵{item.singleSellingPrice.toFixed(2)}</span></td>
                         <td className="px-5 py-3.5 text-right">
                           <div className="flex items-center justify-end gap-1">
                             <button

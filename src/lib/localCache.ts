@@ -7,14 +7,14 @@ import {
 } from './offlineStore';
 
 const COLLECTION_ID = '__collection__';
-const ACTIVE_BUSINESS_KEY = 'spark360:active-business-id';
+const ACTIVE_BUSINESS_KEY = 'bizzyapp:active-business-id';
 
 function activeBusinessScope() {
   return localStorage.getItem(ACTIVE_BUSINESS_KEY) || 'platform';
 }
 
 function storageKey(entity: string) {
-  return `spark360:${activeBusinessScope()}:${entity}`;
+  return `bizzyapp:${activeBusinessScope()}:${entity}`;
 }
 
 function scopedEntity(entity: string) {

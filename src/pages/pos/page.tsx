@@ -3,16 +3,8 @@ import Sidebar from '@/components/feature/Sidebar';
 import Topbar from '@/components/feature/Topbar';
 import ProductGrid from './components/ProductGrid';
 import CartPanel from './components/CartPanel';
-
-interface CartItem {
-  id: string;
-  name: string;
-  price: number;
-  costPrice: number;
-  qty: number;
-  stock: number;
-  image: string;
-}
+import { applyPriceLevel, maxQtyForCartItem, type CartItem } from './pricing';
+import type { SalePriceLevel } from '@/types/erp';
 
 export default function POSPage() {
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
@@ -22,14 +14,18 @@ export default function POSPage() {
     setCartItems((prev) => {
       const existing = prev.find((i) => i.id === item.id);
       if (existing) {
-        return prev.map((i) => i.id === item.id ? { ...i, qty: Math.min(i.stock, i.qty + 1) } : i);
+        return prev.map((i) => i.id === item.id ? { ...i, qty: Math.min(maxQtyForCartItem(i), i.qty + 1) } : i);
       }
       return [...prev, item];
     });
   };
 
   const handleUpdateQty = (id: string, qty: number) => {
-    setCartItems((prev) => prev.map((i) => i.id === id ? { ...i, qty: Math.min(i.stock, Math.max(1, qty)) } : i));
+    setCartItems((prev) => prev.map((i) => i.id === id ? { ...i, qty: Math.min(maxQtyForCartItem(i), Math.max(1, qty)) } : i));
+  };
+
+  const handleUpdatePriceLevel = (id: string, priceLevel: SalePriceLevel) => {
+    setCartItems((prev) => prev.map((i) => i.id === id ? applyPriceLevel(i, priceLevel) : i));
   };
 
   const handleRemove = (id: string) => {
@@ -55,6 +51,7 @@ export default function POSPage() {
             <CartPanel
               items={cartItems}
               onUpdateQty={handleUpdateQty}
+              onUpdatePriceLevel={handleUpdatePriceLevel}
               onRemove={handleRemove}
               onClear={handleClear}
             />

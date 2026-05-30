@@ -1,5 +1,5 @@
 -- =====================================================
--- SPark360 Database Schema
+-- Bizzy App Business Management System Database Schema
 -- UUID-first POS / retail structure for Supabase
 --
 -- Keep the existing public.profiles table. Run this after deleting the
@@ -329,7 +329,7 @@ create table if not exists public.bank_deposits (
 create table if not exists public.store_settings (
   id uuid primary key default gen_random_uuid(),
   settings_key text not null unique default 'default',
-  store_name text not null default 'SPark360 Store',
+  store_name text not null default 'Bizzy App Business Management System Store',
   store_address text,
   store_phone text,
   store_email text,

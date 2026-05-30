@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import type { CreditPayment, InvoiceRecord, SaleLineItem, PaymentMethod } from '@/types/erp';
+import type { CreditPayment, InvoiceRecord, SaleLineItem, PaymentMethod, SalePriceLevel } from '@/types/erp';
 import { generateNextInvoiceNo, generateReceiptNo, buildInvoice, refundInvoice, calcLineItem, calcInvoiceTotals } from '@/services/salesService';
 import { supabase } from '@/lib/supabase';
 import { sanitizeMultiline, sanitizeText } from '@/lib/sanitize';
@@ -119,6 +119,7 @@ type ItemRow = {
   product_code: string; product_name: string; quantity: number; returned_quantity: number | null;
   net_quantity: number | null; unit_price: number; unit_cost: number;
   line_total: number; line_cost: number; line_margin: number;
+  price_level?: string | null; stock_units_deducted?: number | null;
 };
 
 const toLineItem = (i: ItemRow): SaleLineItem => {
@@ -127,6 +128,8 @@ const toLineItem = (i: ItemRow): SaleLineItem => {
     productId: i.product_code, productName: i.product_name, qty: i.quantity,
     returnsQty, netQty: i.net_quantity ?? (i.quantity - returnsQty),
     unitPrice: i.unit_price, costPrice: i.unit_cost,
+    priceLevel: (i.price_level ?? 'Single') as SalePriceLevel,
+    stockUnitsDeducted: i.stock_units_deducted ?? i.quantity,
     netSales: i.line_total, totalCost: i.line_cost, grossMargin: i.line_margin,
   };
 };
@@ -239,7 +242,7 @@ const saleRow = (invoice: InvoiceRecord, businessId: string) => {
   invoice_number: inv.invoiceNo,
   receipt_number: inv.receiptNo,
   sale_date: inv.date,
-  customer_id: inv.customerId || null,
+  customer_id: inv.customerId && inv.customerId !== 'walk-in' ? inv.customerId : null,
   customer_name: inv.customerName,
   items: saleItemsText(inv.items),
   subtotal: inv.netSales,
@@ -263,7 +266,12 @@ const insertSale = async (inv: InvoiceRecord, businessId: string) => {
 const insertSaleItems = async (saleId: string, items: SaleLineItem[], businessId: string) => {
   const rows = saleItemRows(saleId, items, businessId);
   const { error } = await supabase.from('sale_items').insert(rows);
-  if (error) console.error(error);
+  if (error) {
+    console.error(error);
+    return false;
+  }
+  window.dispatchEvent(new CustomEvent('bizzyapp:inventory-refresh', { detail: { businessId } }));
+  return true;
 };
 
 // net_quantity is a generated column (quantity - returned_quantity) — never write it
@@ -276,6 +284,8 @@ const saleItemRows = (saleId: string, items: SaleLineItem[], businessId: string)
   returned_quantity: it.returnsQty,
   unit_price: it.unitPrice,
   unit_cost: it.costPrice,
+  price_level: it.priceLevel,
+  stock_units_deducted: it.stockUnitsDeducted,
   line_total: it.netSales,
   line_cost: it.totalCost,
   line_margin: it.grossMargin,
@@ -443,7 +453,7 @@ export function useSalesLog() {
       }
       if (!sale) return;
       if (newInvoice.items.length > 0) {
-        insertSaleItems(sale.id, newInvoice.items, activeBusinessId);
+        await insertSaleItems(sale.id, newInvoice.items, activeBusinessId);
       }
       if (newInvoice.receiptNo) {
         supabase.from('receipts').insert(receiptRow(sale.id, newInvoice, newInvoice.receiptNo, newInvoice.paymentMethod, newInvoice.netSales, activeBusinessId))
@@ -585,7 +595,7 @@ export function useSalesLog() {
 
       const paymentPayload = {
         business_id: activeBusinessId,
-        customer_id: inv.customerId || null,
+        customer_id: inv.customerId && inv.customerId !== 'walk-in' ? inv.customerId : null,
         sale_id: sale.id,
         invoice_number: cleanInvoiceNo,
         receipt_id: receipt?.id ?? null,
@@ -642,7 +652,16 @@ export function useSalesLog() {
       const ret = returns.find((r) => r.productId === item.productId);
       if (!ret || ret.returnQty <= 0) return item;
       const newReturnsQty = Math.min(item.qty, item.returnsQty + ret.returnQty);
-      return calcLineItem(item.productId, item.productName, item.qty, newReturnsQty, item.unitPrice, item.costPrice);
+      return calcLineItem(
+        item.productId,
+        item.productName,
+        item.qty,
+        newReturnsQty,
+        item.unitPrice,
+        item.costPrice,
+        item.priceLevel,
+        item.stockUnitsDeducted / Math.max(1, item.qty),
+      );
     });
 
     const newTotals = calcInvoiceTotals(updatedItems);

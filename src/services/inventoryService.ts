@@ -21,7 +21,30 @@ export function calcMarginPercent(sellingPrice: number, costPrice: number): numb
 }
 
 export function calcTotalStockValue(items: InventoryItem[]): number {
-  return items.reduce((sum, item) => sum + item.currentStock * item.costPrice, 0);
+  return items.reduce((sum, item) => sum + calcStockValue(item), 0);
+}
+
+export function calcCurrentStockUnits(item: Pick<InventoryItem, 'wholesaleQuantity' | 'singleQuantity' | 'quantityPerBox'>): number {
+  const unitsPerPack = Math.max(0, Math.floor(item.quantityPerBox || 0));
+  const packs = Math.max(0, Number(item.wholesaleQuantity) || 0);
+  const singles = Math.max(0, Math.floor(item.singleQuantity || 0));
+  return Math.floor(unitsPerPack > 0 ? packs * unitsPerPack + singles : singles);
+}
+
+export function calcStockValue(item: Pick<InventoryItem, 'wholesaleQuantity' | 'singleQuantity' | 'wholesaleCostPrice' | 'singleCostPrice'>): number {
+  const packs = Math.max(0, Number(item.wholesaleQuantity) || 0);
+  const singles = Math.max(0, Math.floor(item.singleQuantity || 0));
+  return packs * Math.max(0, Number(item.wholesaleCostPrice) || 0) + singles * Math.max(0, Number(item.singleCostPrice) || 0);
+}
+
+export function formatPackStock(item: Pick<InventoryItem, 'wholesaleQuantity' | 'singleQuantity' | 'quantityPerBox' | 'currentStock'>): string {
+  const unitsPerPack = Math.max(0, Math.floor(item.quantityPerBox || 0));
+  if (unitsPerPack <= 0) return `${Math.max(0, Math.floor(item.currentStock || 0))} pcs`;
+  const packs = Math.max(0, Number(item.wholesaleQuantity) || 0);
+  const singles = Math.max(0, Math.floor(item.singleQuantity || 0));
+  const packLabel = packs === 1 ? 'pack' : 'packs';
+  const pieceLabel = singles === 1 ? 'pc' : 'pcs';
+  return `${packs} ${packLabel} + ${singles} ${pieceLabel}`;
 }
 
 export function decrementStock(
@@ -66,18 +89,18 @@ export function enrichInventoryItem(
   const quantityPerBox = item.quantityPerBox ?? 0;
   const wholesaleQuantity = item.wholesaleQuantity ?? 0;
   const singleQuantity = item.singleQuantity ?? item.currentStock ?? 0;
-  const currentStock = quantityPerBox > 0
-    ? Math.max(0, Math.floor(wholesaleQuantity * quantityPerBox + singleQuantity))
-    : Math.max(0, Math.floor(item.currentStock ?? singleQuantity));
+  const calculatedStock = calcCurrentStockUnits({ wholesaleQuantity, singleQuantity, quantityPerBox });
+  const currentStock = Math.max(0, Math.floor(item.currentStock ?? calculatedStock));
+  const wholesaleCostPrice = item.wholesaleCostPrice ?? item.costPrice ?? 0;
   const singleCostPrice = item.singleCostPrice ?? item.costPrice ?? 0;
   const singleSellingPrice = item.singleSellingPrice ?? item.sellingPrice ?? 0;
   const reorderLevel = item.stockLimit ?? item.reorderLevel ?? 0;
 
   return {
     ...item,
-    costPrice: singleCostPrice,
+    costPrice: wholesaleCostPrice,
     sellingPrice: singleSellingPrice,
-    wholesaleCostPrice: item.wholesaleCostPrice ?? 0,
+    wholesaleCostPrice,
     singleCostPrice,
     wholesaleSellingPrice: item.wholesaleSellingPrice ?? 0,
     halfSellingPrice: item.halfSellingPrice ?? 0,

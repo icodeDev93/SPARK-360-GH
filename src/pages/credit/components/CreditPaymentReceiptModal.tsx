@@ -55,6 +55,11 @@ export default function CreditPaymentReceiptModal({ receipt, onClose }: Props) {
       ['Payment Method', paymentLabels[receipt.paymentMethod]],
       ['Recorded By', receipt.cashier],
     ];
+    const logoHtml = settings.receiptShowLogo
+      ? settings.storeLogo
+        ? `<img src="${settings.storeLogo}" alt="Store logo" style="width:44px;height:44px;object-fit:contain;background:#fff;border-radius:9px;display:block;margin:0 auto 8px;padding:4px;"/>`
+        : ''
+      : '';
 
     win.document.write(`<!DOCTYPE html>
 <html>
@@ -69,6 +74,7 @@ export default function CreditPaymentReceiptModal({ receipt, onClose }: Props) {
 </head>
 <body>
   <div style="background:#4f46e5;color:#fff;text-align:center;padding:18px 14px 14px;">
+    ${logoHtml}
     <div style="font-size:15px;font-weight:800;margin-bottom:3px;">${settings.storeName}</div>
     <div style="font-size:10px;color:rgba(255,255,255,0.82);line-height:1.5;">${settings.storeAddress}</div>
     ${settings.storePhone ? `<div style="font-size:10px;color:rgba(255,255,255,0.82);">${settings.storePhone}</div>` : ''}
@@ -137,6 +143,13 @@ export default function CreditPaymentReceiptModal({ receipt, onClose }: Props) {
         <div className="p-6">
           <div className="border border-slate-200 rounded-xl overflow-hidden">
             <div className="bg-indigo-600 text-white text-center px-5 py-4">
+              {settings.receiptShowLogo && settings.storeLogo && (
+                <div className="mb-2 flex justify-center">
+                  <div className="w-12 h-12 rounded-lg bg-white overflow-hidden flex items-center justify-center">
+                    <img src={settings.storeLogo} alt="Store logo" className="w-full h-full object-contain p-1.5" />
+                  </div>
+                </div>
+              )}
               <p className="font-bold text-base">{settings.storeName}</p>
               <p className="text-xs text-white/80 mt-0.5">Credit Payment Receipt</p>
             </div>

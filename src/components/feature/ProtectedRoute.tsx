@@ -16,6 +16,7 @@ const PERMISSION_HOME: Record<string, string> = {
   settings: '/settings',
   'sales-history': '/sales-history',
   users: '/users',
+  logs: '/logs',
 };
 
 function defaultPathForRole(role: UserRole) {

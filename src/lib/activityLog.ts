@@ -1,9 +1,8 @@
 import { supabase } from '@/lib/supabase';
 import type { AuthUser } from '@/hooks/useAuth';
 import { sanitizeText } from '@/lib/sanitize';
-import { loadLocalCollection, queueLocalMutation, saveLocalCollection } from './localCache';
-
-const ACTIVE_BUSINESS_KEY = 'spark360:active-business-id';
+import { ACTIVE_BUSINESS_KEY } from '@/lib/businessScope';
+import { createLocalId, isNetworkError, loadLocalCollection, queueLocalMutation, saveLocalCollection } from './localCache';
 
 export interface LogChange {
   field: string;
@@ -26,28 +25,42 @@ export interface LogEntry {
   changes?: LogChange[];
 }
 
+export function cleanLogText(value: unknown) {
+  return sanitizeText(String(value ?? ''))
+    .replace(/Ã¢â€šÂµ|â‚µ/g, '₵')
+    .replace(/â€”|â€“/g, '-')
+    .replace(/â€¦/g, '...')
+    .replace(/â€˜|â€™/g, "'")
+    .replace(/â€œ|â€�/g, '"')
+    .replace(/Â·/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export async function writeLog(user: AuthUser, entry: LogEntry): Promise<void> {
+  const businessId = localStorage.getItem(ACTIVE_BUSINESS_KEY);
   const localLog = {
-    id: `LOG${Date.now()}`,
-    business_id: localStorage.getItem(ACTIVE_BUSINESS_KEY),
+    id: createLocalId(),
+    business_id: businessId,
     user_id: user.id,
-    user_name: sanitizeText(user.name),
+    user_name: cleanLogText(user.name),
     user_role: user.role,
-    category: entry.category,
-    action: entry.action,
-    description: sanitizeText(entry.description),
+    category: cleanLogText(entry.category),
+    action: cleanLogText(entry.action),
+    description: cleanLogText(entry.description),
     changes: entry.changes?.length ? entry.changes.map((change) => ({
-      field: sanitizeText(change.field),
-      old: sanitizeText(change.old),
-      new: sanitizeText(change.new),
+      field: cleanLogText(change.field),
+      old: cleanLogText(change.old),
+      new: cleanLogText(change.new),
     })) : null,
     created_at: new Date().toISOString(),
   };
   try {
     const current = await loadLocalCollection<typeof localLog>('user_logs');
     await saveLocalCollection('user_logs', [localLog, ...current].slice(0, 1000));
+    if (!businessId) return;
     const { error } = await supabase.from('user_logs').insert(localLog);
-    if (error) await queueLocalMutation('user_logs', localLog.id, 'create', localLog);
+    if (error && isNetworkError(error)) await queueLocalMutation('user_logs', localLog.id, 'create', localLog);
   } catch {
     // Logging failures never block the main action
   }

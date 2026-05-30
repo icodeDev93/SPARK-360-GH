@@ -27,12 +27,15 @@ export interface InventoryItem {
   stockStatus: StockStatus;
   marginPerUnit: number;  // sellingPrice - costPrice
   image: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 // ─── Sales ────────────────────────────────────────────────────────────────────
 
 export type PaymentMethod = 'Cash' | 'MoMo' | 'Cheque' | 'Bank Transfer' | 'Credit';
 export type ExpensePaymentMethod = Exclude<PaymentMethod, 'Credit'>;
+export type SalePriceLevel = 'Single' | 'Quarter' | 'Half' | 'Wholesale';
 
 export interface SaleLineItem {
   productId: string;
@@ -42,6 +45,8 @@ export interface SaleLineItem {
   netQty: number;        // qty - returnsQty
   unitPrice: number;     // GHS selling price
   costPrice: number;     // GHS cost price
+  priceLevel: SalePriceLevel;
+  stockUnitsDeducted: number;
   netSales: number;      // unitPrice * netQty
   totalCost: number;     // costPrice * netQty
   grossMargin: number;   // netSales - totalCost
@@ -66,16 +71,7 @@ export interface InvoiceRecord {
 
 // ─── Expenses ─────────────────────────────────────────────────────────────────
 
-export type ExpenseCategory =
-  | 'Transport'
-  | 'Payroll'
-  | 'Rent'
-  | 'Utilities'
-  | 'Supplies'
-  | 'Marketing'
-  | 'Maintenance'
-  | 'Insurance'
-  | 'Other';
+export type ExpenseCategory = string;
 
 export interface ExpenseRecord {
   expenseId: string;

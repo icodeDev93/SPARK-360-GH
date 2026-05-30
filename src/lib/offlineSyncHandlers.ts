@@ -4,7 +4,7 @@ import type { BankDepositRecord, BankRecord, Customer, ExpenseRecord, InventoryI
 import type { StoreSettings } from '@/hooks/useSettings';
 import type { PurchaseOrder, Supplier } from '@/mocks/suppliers';
 
-const ACTIVE_BUSINESS_KEY = 'spark360:active-business-id';
+const ACTIVE_BUSINESS_KEY = 'bizzyapp:active-business-id';
 const activeBusinessId = () => localStorage.getItem(ACTIVE_BUSINESS_KEY);
 
 const itemRow = (item: InventoryItem) => ({
@@ -133,6 +133,8 @@ const saleItemRows = (saleId: string, items: SaleLineItem[]) => items.map((item)
   returned_quantity: item.returnsQty,
   unit_price: item.unitPrice,
   unit_cost: item.costPrice,
+  price_level: item.priceLevel,
+  stock_units_deducted: item.stockUnitsDeducted,
   line_total: item.netSales,
   line_cost: item.totalCost,
   line_margin: item.grossMargin,

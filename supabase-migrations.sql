@@ -1,5 +1,5 @@
 -- ============================================================
--- SPARK 360 — Credit & Invoice Feature Migrations
+-- Bizzy App Business Management System — Credit & Invoice Feature Migrations
 -- Run this in: Supabase Dashboard > SQL Editor > New query
 -- All statements are idempotent — safe to re-run at any time.
 -- ============================================================

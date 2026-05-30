@@ -7,6 +7,14 @@ import { useFeedbackModal } from '@/hooks/useFeedbackModal';
 import { writeLog } from '@/lib/activityLog';
 import { sanitizeMultiline, sanitizeText } from '@/lib/sanitize';
 import type { BankDepositRecord, BankRecord } from '@/types/erp';
+import {
+  dateRangeLabel,
+  exportRowsCsv,
+  exportRowsPdf,
+  formatCurrency,
+  isWithinDateRange,
+  type ExportColumn,
+} from '@/lib/exportRecords';
 
 const today = new Date().toISOString().split('T')[0];
 
@@ -47,6 +55,8 @@ export default function BankDepositPage() {
   const [viewBank, setViewBank] = useState<BankRecord | null>(null);
   const [editBank, setEditBank] = useState<BankRecord | null>(null);
   const [deleteBankTarget, setDeleteBankTarget] = useState<BankRecord | null>(null);
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
   const [form, setForm] = useState({
     date: today,
     bankId: '',
@@ -60,6 +70,34 @@ export default function BankDepositPage() {
     address: '',
     telephone: '',
   });
+
+  const filteredDeposits = deposits.filter((deposit) => isWithinDateRange(deposit.date, startDate, endDate));
+  const filteredTotalDeposits = filteredDeposits.reduce((sum, deposit) => sum + deposit.amountGHS, 0);
+  const depositColumns: ExportColumn<BankDepositRecord>[] = [
+    { header: 'Date', value: (deposit) => formatDate(deposit.date) },
+    { header: 'Bank', value: (deposit) => deposit.bank },
+    { header: 'Account No.', value: (deposit) => deposit.accountNo },
+    { header: 'Amount', value: (deposit) => formatCurrency(deposit.amountGHS) },
+    { header: 'Remarks', value: (deposit) => deposit.remarks },
+    { header: 'Created By', value: (deposit) => deposit.createdBy },
+    { header: 'Created At', value: (deposit) => formatDate(deposit.createdAt) },
+  ];
+
+  const exportDeposits = (format: 'csv' | 'pdf') => {
+    const options = {
+      title: 'Bank Deposits Report',
+      filename: `bank-deposits-${new Date().toISOString().slice(0, 10)}`,
+      subtitle: dateRangeLabel(startDate, endDate),
+      columns: depositColumns,
+      rows: filteredDeposits,
+      totals: [
+        { label: 'Deposits', value: String(filteredDeposits.length) },
+        { label: 'Total Amount', value: formatCurrency(filteredTotalDeposits) },
+      ],
+    };
+    if (format === 'csv') exportRowsCsv(options);
+    else exportRowsPdf(options);
+  };
 
   const resetForm = () => {
     setForm({ date: today, bankId: '', accountNo: '', amountGHS: 0, remarks: '' });
@@ -302,6 +340,21 @@ export default function BankDepositPage() {
             </div>
           </div>
 
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4">
+            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="border border-slate-200 bg-white rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none" title="Start date" />
+            <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="border border-slate-200 bg-white rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none" title="End date" />
+            <div className="flex items-center gap-2">
+              <button onClick={() => exportDeposits('csv')} className="flex items-center gap-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap">
+                <i className="ri-file-excel-2-line text-base"></i>
+                CSV
+              </button>
+              <button onClick={() => exportDeposits('pdf')} className="flex items-center gap-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap">
+                <i className="ri-file-pdf-2-line text-base"></i>
+                PDF
+              </button>
+            </div>
+          </div>
+
           <div className="bg-white rounded-xl border border-slate-100 overflow-hidden">
             <div className="px-5 py-4 border-b border-slate-100">
               <h3 className="text-slate-800 font-bold text-sm">Deposit History</h3>
@@ -322,9 +375,9 @@ export default function BankDepositPage() {
                 <tbody className="divide-y divide-slate-100">
                   {loading ? (
                     <tr><td colSpan={7} className="px-5 py-8 text-center text-slate-400">Loading deposits...</td></tr>
-                  ) : deposits.length === 0 ? (
+                  ) : filteredDeposits.length === 0 ? (
                     <tr><td colSpan={7} className="px-5 py-8 text-center text-slate-400">No bank deposits recorded yet</td></tr>
-                  ) : deposits.map((deposit) => (
+                  ) : filteredDeposits.map((deposit) => (
                     <tr key={deposit.depositId} className="hover:bg-slate-50/60">
                       <td className="px-5 py-3 text-slate-600">{formatDate(deposit.date)}</td>
                       <td className="px-5 py-3 text-slate-800 font-semibold">{deposit.bank}</td>

@@ -1,7 +1,7 @@
-# SPark360 - POS & Inventory Management System
+# Bizzy App Business Management System - POS & Inventory Management System
 
 ## 1. Project Description
-SPark360 is a modern Point-of-Sale and Inventory Management System designed for small to medium retail businesses. It enables cashiers, store managers, and admins to handle daily operations — sales, stock tracking, purchasing, customer management, and reporting — from a single, fast, intuitive interface.
+Bizzy App Business Management System is a modern Point-of-Sale and Inventory Management System designed for small to medium retail businesses. It enables cashiers, store managers, and admins to handle daily operations — sales, stock tracking, purchasing, customer management, and reporting — from a single, fast, intuitive interface.
 
 ## 2. Page Structure
 - `/` - Dashboard (KPIs, charts, recent transactions, stock alerts)

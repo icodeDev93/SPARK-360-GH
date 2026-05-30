@@ -22,18 +22,15 @@ const BOTTOM_ITEMS = [
   { path: '/settings', label: 'Settings',        icon: 'ri-settings-3-line',    permission: 'settings' },
 ];
 
-const ADMIN_ONLY_ITEMS = [
-  { path: '/logs', label: 'Activity Log', icon: 'ri-file-list-3-line' },
-];
-
 export default function Sidebar() {
   const { hasPermission, currentUser } = useAuth();
   const { businesses, activeBusinessId, activeBusiness, selectBusiness } = useBusiness();
   const { isOpen, close } = useSidebar();
-  const isOwner = currentUser?.role === 'owner';
-
   const visibleNav    = ALL_NAV_ITEMS.filter((item) => hasPermission(item.permission));
-  const visibleBottom = BOTTOM_ITEMS.filter((item) => hasPermission(item.permission));
+  const visibleBottom = [
+    ...BOTTOM_ITEMS.filter((item) => hasPermission(item.permission)),
+    ...(hasPermission('logs') ? [{ path: '/logs', label: 'Activity Log', icon: 'ri-file-list-3-line' }] : []),
+  ];
 
   return (
     <>
@@ -48,14 +45,25 @@ export default function Sidebar() {
       <aside className={`fixed left-0 top-0 h-screen w-64 bg-slate-900 flex flex-col z-30 transition-transform duration-200 ease-in-out ${isOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}>
         {/* Logo */}
         <div className="flex items-center gap-3 px-5 py-5 border-b border-slate-700/50">
-          <img
-            src="https://public.readdy.ai/ai/img_res/9cd4e698-d740-4b81-959f-322698fcc5bc.png"
-            alt="SPark360"
-            className="w-9 h-9 object-contain rounded-lg"
-          />
-          <div>
-            <span className="text-white font-bold text-lg leading-none tracking-tight">SPark360</span>
-            <p className="text-slate-400 text-xs mt-0.5">POS & Inventory</p>
+          {activeBusiness?.logoUrl ? (
+            <div className="w-9 h-9 flex-shrink-0 rounded-lg bg-white overflow-hidden flex items-center justify-center">
+              <img
+                src={activeBusiness.logoUrl}
+                alt={activeBusiness?.businessName ?? 'Selected business'}
+                className="w-full h-full object-contain p-1"
+              />
+            </div>
+          ) : (
+            <img
+              src="https://public.readdy.ai/ai/img_res/9cd4e698-d740-4b81-959f-322698fcc5bc.png"
+              alt={activeBusiness?.businessName ?? 'Selected business'}
+              className="w-9 h-9 object-contain rounded-lg"
+            />
+          )}
+          <div className="min-w-0">
+            <span className="block truncate text-white font-bold text-sm leading-tight tracking-tight">
+              {activeBusiness?.businessName ?? 'Select Business'}
+            </span>
           </div>
         </div>
 
@@ -96,11 +104,11 @@ export default function Sidebar() {
             ))}
           </ul>
 
-          {(visibleBottom.length > 0 || isOwner) && (
+          {visibleBottom.length > 0 && (
             <div className="mt-6 pt-4 border-t border-slate-700/50">
               <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest px-3 mb-3">System</p>
               <ul className="space-y-0.5">
-                {[...visibleBottom, ...(isOwner ? ADMIN_ONLY_ITEMS : [])].map((item) => (
+                {visibleBottom.map((item) => (
                   <li key={item.path}>
                     <NavLink
                       to={item.path}

@@ -14,6 +14,7 @@ import CreditPage from '@/pages/credit/page';
 import UsersPage from '@/pages/users/page';
 import NotFound from '@/pages/NotFound';
 import LoginPage from '@/pages/login/page';
+import RegisterPage from '@/pages/register/page';
 import LogsPage from '@/pages/logs/page';
 import BusinessSelectPage from '@/pages/business-select/page';
 import StockTransferPage from '@/pages/stock-transfer/page';
@@ -21,6 +22,7 @@ import ProtectedRoute from '@/components/feature/ProtectedRoute';
 
 const routes: RouteObject[] = [
   { path: '/login', element: <LoginPage /> },
+  { path: '/register', element: <RegisterPage /> },
   { path: '/businesses', element: <BusinessSelectPage /> },
   { path: '/',              element: <ProtectedRoute permission="dashboard"><DashboardPage /></ProtectedRoute> },
   { path: '/pos',           element: <ProtectedRoute permission="pos"><POSPage /></ProtectedRoute> },
@@ -37,7 +39,7 @@ const routes: RouteObject[] = [
   { path: '/analytics',     element: <ProtectedRoute permission="reports"><AnalyticsPage /></ProtectedRoute> },
   { path: '/settings',      element: <ProtectedRoute permission="settings"><SettingsPage /></ProtectedRoute> },
   { path: '/users',         element: <ProtectedRoute permission="users"><UsersPage /></ProtectedRoute> },
-  { path: '/logs',          element: <ProtectedRoute adminOnly><LogsPage /></ProtectedRoute> },
+  { path: '/logs',          element: <ProtectedRoute permission="logs"><LogsPage /></ProtectedRoute> },
   { path: '*', element: <NotFound /> },
 ];
 

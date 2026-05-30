@@ -10,6 +10,14 @@ import type { InvoiceRecord, PaymentMethod } from '@/types/erp';
 import { writeLog } from '@/lib/activityLog';
 import { useFeedbackModal } from '@/hooks/useFeedbackModal';
 import CreditPaymentReceiptModal, { type CreditPaymentReceipt } from './components/CreditPaymentReceiptModal';
+import {
+  dateRangeLabel,
+  exportRowsCsv,
+  exportRowsPdf,
+  formatCurrency,
+  isWithinDateRange,
+  type ExportColumn,
+} from '@/lib/exportRecords';
 
 const PAGE_SIZE = 20;
 
@@ -63,6 +71,8 @@ export default function CreditPage() {
   const { invoiceDueDays } = settings;
 
   const [searchQuery, setSearchQuery] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
   const [sortBy, setSortBy] = useState<SortCol>('date');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [page, setPage] = useState(1);
@@ -77,7 +87,7 @@ export default function CreditPage() {
   const [returnInvoice, setReturnInvoice] = useState<InvoiceRecord | null>(null);
   const [returnQtys, setReturnQtys] = useState<Record<string, number>>({});
 
-  useEffect(() => { setPage(1); }, [searchQuery, sortBy, sortDir]);
+  useEffect(() => { setPage(1); }, [searchQuery, startDate, endDate, sortBy, sortDir]);
 
   const customerTypeMap = useMemo(() => {
     const map: Record<string, string> = {};
@@ -95,6 +105,7 @@ export default function CreditPage() {
         (inv.receiptNo ?? '').toLowerCase().includes(q) ||
         inv.invoiceNo.toLowerCase().includes(q)
       )
+      .filter((inv) => isWithinDateRange(inv.date, startDate, endDate))
       .sort((a, b) => {
         let diff = 0;
         if (sortBy === 'date')   diff = new Date(a.date).getTime() - new Date(b.date).getTime();
@@ -102,13 +113,42 @@ export default function CreditPage() {
         if (sortBy === 'days')   diff = daysAgo(b.date) - daysAgo(a.date);
         return sortDir === 'asc' ? diff : -diff;
       });
-  }, [invoices, searchQuery, sortBy, sortDir]);
+  }, [invoices, searchQuery, startDate, endDate, sortBy, sortDir]);
 
   const paginated = creditInvoices.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const totalOutstanding = creditInvoices.reduce((s, inv) => s + inv.balanceDue, 0);
   const uniqueCustomers  = new Set(creditInvoices.map((inv) => inv.customerId || inv.customerName)).size;
   const oldestDays       = creditInvoices.length > 0 ? Math.max(...creditInvoices.map((inv) => daysAgo(inv.date))) : 0;
+
+  const creditColumns: ExportColumn<InvoiceRecord>[] = [
+    { header: 'Invoice No.', value: (invoice) => invoice.invoiceNo },
+    { header: 'Customer', value: (invoice) => invoice.customerName },
+    { header: 'Date', value: (invoice) => formatDate(invoice.date) },
+    { header: 'Due Date', value: (invoice) => formatDate(calcDueDate(invoice.date, invoiceDueDays).toISOString()) },
+    { header: 'Age', value: (invoice) => `${daysAgo(invoice.date)} days` },
+    { header: 'Items', value: (invoice) => invoice.items.map((item) => `${item.productName} [${item.netQty} pcs]`).join(', ') },
+    { header: 'Invoice Total', value: (invoice) => formatCurrency(invoice.netSales) },
+    { header: 'Amount Paid', value: (invoice) => formatCurrency(invoice.amountPaid) },
+    { header: 'Balance Due', value: (invoice) => formatCurrency(invoice.balanceDue) },
+    { header: 'Cashier', value: (invoice) => invoice.cashier },
+  ];
+
+  const exportCreditInvoices = (format: 'csv' | 'pdf') => {
+    const options = {
+      title: 'Credit Invoices Report',
+      filename: `credit-invoices-${new Date().toISOString().slice(0, 10)}`,
+      subtitle: dateRangeLabel(startDate, endDate),
+      columns: creditColumns,
+      rows: creditInvoices,
+      totals: [
+        { label: 'Invoices', value: String(creditInvoices.length) },
+        { label: 'Total Outstanding', value: formatCurrency(totalOutstanding) },
+      ],
+    };
+    if (format === 'csv') exportRowsCsv(options);
+    else exportRowsPdf(options);
+  };
 
   const toggleSort = (col: SortCol) => {
     if (sortBy === col) setSortDir((d) => d === 'asc' ? 'desc' : 'asc');
@@ -176,15 +216,29 @@ export default function CreditPage() {
       </div>
 
       {/* Search */}
-      <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-3 py-2 mb-4 max-w-sm">
-        <i className="ri-search-line text-slate-400 text-sm"></i>
-        <input
-          type="text"
-          placeholder="Search customer or invoice no..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="bg-transparent text-sm text-slate-600 placeholder-slate-400 outline-none flex-1"
-        />
+      <div className="flex flex-col lg:flex-row lg:items-center gap-3 mb-4">
+        <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-3 py-2 max-w-sm">
+          <i className="ri-search-line text-slate-400 text-sm"></i>
+          <input
+            type="text"
+            placeholder="Search customer or invoice no..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="bg-transparent text-sm text-slate-600 placeholder-slate-400 outline-none flex-1"
+          />
+        </div>
+        <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="border border-slate-200 bg-white rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none" title="Start date" />
+        <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="border border-slate-200 bg-white rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none" title="End date" />
+        <div className="flex items-center gap-2">
+          <button onClick={() => exportCreditInvoices('csv')} className="flex items-center gap-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap">
+            <i className="ri-file-excel-2-line text-base"></i>
+            CSV
+          </button>
+          <button onClick={() => exportCreditInvoices('pdf')} className="flex items-center gap-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap">
+            <i className="ri-file-pdf-2-line text-base"></i>
+            PDF
+          </button>
+        </div>
       </div>
 
       {/* Table */}

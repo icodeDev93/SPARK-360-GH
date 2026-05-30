@@ -14,8 +14,8 @@ export interface StoreSettings {
 }
 
 const DEFAULT_SETTINGS: StoreSettings = {
-  storeName: 'SPark360 Store', storeAddress: '123 Market Street, Downtown, NY 10001',
-  storePhone: '+1 (555) 234-5678', storeEmail: 'store@spark360.com', storeLogo: '',
+  storeName: 'Bizzy App Business Management System Store', storeAddress: '123 Market Street, Downtown, NY 10001',
+  storePhone: '+1 (555) 234-5678', storeEmail: 'store@bizzyapp.com', storeLogo: '',
   currency: 'GHS', currencySymbol: '₵', taxRate: 10, taxLabel: 'VAT', taxEnabled: true,
   receiptFooter: 'Thank you for shopping with us! Returns accepted within 7 days with receipt.',
   receiptShowLogo: true, receiptShowTax: true, receiptShowBarcode: true,
@@ -58,7 +58,7 @@ const cleanSettings = (settings: StoreSettings): StoreSettings => ({
 });
 
 export function useSettings() {
-  const { activeBusinessId } = useBusiness();
+  const { activeBusinessId, refreshBusinesses } = useBusiness();
   const [settings, setSettings] = useState<StoreSettings>(DEFAULT_SETTINGS);
 
   useEffect(() => {
@@ -103,6 +103,27 @@ export function useSettings() {
     if (error) {
       console.error(error);
       queueLocalMutation('store_settings', 'default', 'update', next);
+    }
+
+    const shouldSyncBusiness =
+      'storeName' in updates || 'storeAddress' in updates || 'storePhone' in updates ||
+      'storeEmail' in updates || 'storeLogo' in updates;
+    if (shouldSyncBusiness && next.storeName) {
+      const { error: businessError } = await supabase
+        .from('businesses')
+        .update({
+          business_name: next.storeName,
+          address: next.storeAddress,
+          phone: next.storePhone,
+          email: next.storeEmail,
+          logo_url: next.storeLogo,
+        })
+        .eq('id', activeBusinessId);
+      if (businessError) {
+        console.error(businessError);
+      } else {
+        await refreshBusinesses();
+      }
     }
   };
 

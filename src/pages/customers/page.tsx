@@ -13,6 +13,7 @@ import { writeLog, diffFields } from '@/lib/activityLog';
 import { sanitizeText, sanitizeMultiline } from '@/lib/sanitize';
 import { useFeedbackModal } from '@/hooks/useFeedbackModal';
 import CreditPaymentReceiptModal, { type CreditPaymentReceipt } from '@/pages/credit/components/CreditPaymentReceiptModal';
+import { exportRowsCsv, exportRowsPdf, formatCurrency, formatExportDate, type ExportColumn } from '@/lib/exportRecords';
 
 const CASH_METHODS = ['Cash', 'MoMo', 'Cheque', 'Bank Transfer'] as const;
 type CashMethod = typeof CASH_METHODS[number];
@@ -97,6 +98,34 @@ export default function CustomersPage() {
 
   const filtered = searchCustomers(customers, search);
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  const customerColumns: ExportColumn<Customer>[] = [
+    { header: 'Customer Name', value: (customer) => customer.fullName },
+    { header: 'Telephone', value: (customer) => customer.phone },
+    { header: 'Address', value: (customer) => customer.address },
+    { header: 'Remarks', value: (customer) => customer.remarks },
+    { header: 'Visiting Day', value: (customer) => customer.visitingDay },
+    { header: 'Status', value: (customer) => customer.statusFlag },
+    { header: 'Debt Limit', value: (customer) => formatCurrency(customer.debtLimit) },
+    { header: 'Outstanding Balance', value: (customer) => formatCurrency(customer.outstandingBalance) },
+    { header: 'Last Visit', value: (customer) => formatExportDate(customer.lastOrderDate) },
+  ];
+
+  const exportCustomers = (format: 'csv' | 'pdf') => {
+    const options = {
+      title: 'Customers Report',
+      filename: `customers-report-${new Date().toISOString().slice(0, 10)}`,
+      subtitle: `${filtered.length} customer${filtered.length === 1 ? '' : 's'}`,
+      columns: customerColumns,
+      rows: filtered,
+      totals: [
+        { label: 'Customers', value: String(filtered.length) },
+        { label: 'Outstanding Balance', value: formatCurrency(filtered.reduce((sum, customer) => sum + customer.outstandingBalance, 0)) },
+      ],
+    };
+    if (format === 'csv') exportRowsCsv(options);
+    else exportRowsPdf(options);
+  };
 
   const totalRevenue = Object.values(totalSpentByCustomer).reduce((s, v) => s + v, 0);
   const avgSpent      = customers.length ? totalRevenue / customers.length : 0;
@@ -238,6 +267,16 @@ export default function CustomersPage() {
             placeholder="Search customers..."
             className="bg-transparent text-sm text-slate-700 placeholder-slate-400 outline-none flex-1"
           />
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={() => exportCustomers('csv')} className="flex items-center gap-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap">
+            <i className="ri-file-excel-2-line text-base"></i>
+            CSV
+          </button>
+          <button onClick={() => exportCustomers('pdf')} className="flex items-center gap-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap">
+            <i className="ri-file-pdf-2-line text-base"></i>
+            PDF
+          </button>
         </div>
         <button
           onClick={() => setShowAddForm(true)}
