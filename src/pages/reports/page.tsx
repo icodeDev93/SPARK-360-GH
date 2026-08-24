@@ -35,22 +35,25 @@ export default function ReportsPage() {
   const { sales, invoices } = useSalesLog();
   const { expenses } = useExpenses();
 
-  const filteredSales = useMemo(
-    () => sales.filter((s) => s.status === 'completed' && filter.isInRange(s.date)),
-    [sales, filter]
-  );
-  const filteredCreditInvoices = useMemo(
-    () => invoices.filter((inv) => inv.status === 'credit' && filter.isInRange(inv.date)),
+  void sales;
+
+  const filteredCompletedInvoices = useMemo(
+    () => invoices.filter((inv) => inv.status === 'completed' && filter.isInRange(inv.date)),
     [invoices, filter]
+  );
+  const receivableInvoices = useMemo(
+    () => invoices.filter((inv) => inv.balanceDue > 0.005),
+    [invoices]
   );
   const filteredExpenses = useMemo(
     () => expenses.filter((e) => filter.isInRange(e.date)),
     [expenses, filter]
   );
-  const totalRevenue = filteredSales.reduce((sum, s) => sum + s.grandTotal, 0);
+  const totalRevenue = filteredCompletedInvoices.reduce((sum, inv) => sum + inv.netSales, 0);
+  const grossProfit = filteredCompletedInvoices.reduce((sum, inv) => sum + inv.grossMargin, 0);
   const totalExpenses = filteredExpenses.reduce((sum, e) => sum + e.amountGHS, 0);
-  const netProfit = totalRevenue - totalExpenses;
-  const customerReceivables = filteredCreditInvoices.reduce((sum, inv) => sum + inv.balanceDue, 0);
+  const netProfit = grossProfit - totalExpenses;
+  const customerReceivables = receivableInvoices.reduce((sum, inv) => sum + inv.balanceDue, 0);
 
   return (
     <AppLayout>
@@ -88,7 +91,7 @@ export default function ReportsPage() {
           {filter.label}
           {filter.preset === 'custom' && filter.customFrom && (
             <span className="text-indigo-500 font-normal ml-1">
-              {filter.customFrom}{filter.customTo ? ` â†’ ${filter.customTo}` : ''}
+              {filter.customFrom}{filter.customTo ? ` -> ${filter.customTo}` : ''}
             </span>
           )}
         </span>
@@ -104,8 +107,8 @@ export default function ReportsPage() {
             {[
               { label: 'Total Revenue',         value: `₵${totalRevenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}`,         icon: 'ri-funds-line',        color: 'emerald', note: 'Collected sales' },
               { label: 'Total Expenses',         value: `₵${totalExpenses.toLocaleString('en-US', { minimumFractionDigits: 2 })}`,        icon: 'ri-wallet-3-line',     color: 'amber',   note: 'Expenses in period' },
-              { label: 'Net Profit',             value: `₵${netProfit.toLocaleString('en-US', { minimumFractionDigits: 2 })}`,            icon: 'ri-coins-line',        color: netProfit >= 0 ? 'emerald' : 'rose', note: netProfit >= 0 ? 'Revenue minus expenses' : 'Running at a loss' },
-              { label: 'Customer Receivables',   value: `₵${customerReceivables.toLocaleString('en-US', { minimumFractionDigits: 2 })}`,  icon: 'ri-hand-coin-line',    color: 'violet',  note: `${filteredCreditInvoices.length} credit invoice${filteredCreditInvoices.length !== 1 ? 's' : ''}` },
+              { label: 'Net Profit',             value: `₵${netProfit.toLocaleString('en-US', { minimumFractionDigits: 2 })}`,            icon: 'ri-coins-line',        color: netProfit >= 0 ? 'emerald' : 'rose', note: netProfit >= 0 ? 'Gross profit minus expenses' : 'Running at a loss' },
+              { label: 'Customer Receivables',   value: `₵${customerReceivables.toLocaleString('en-US', { minimumFractionDigits: 2 })}`,  icon: 'ri-hand-coin-line',    color: 'violet',  note: `${receivableInvoices.length} open invoice${receivableInvoices.length !== 1 ? 's' : ''}` },
             ].map((s) => {
               const c = colorMap[s.color] || colorMap.indigo;
               return (

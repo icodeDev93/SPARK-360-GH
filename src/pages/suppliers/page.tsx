@@ -203,6 +203,9 @@ export default function SuppliersPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {suppliers.map((s) => {
             const supplierOrders = getSupplierOrders(s.id);
+            const supplierTotalSpent = supplierOrders
+              .filter((o) => o.status !== 'Cancelled')
+              .reduce((sum, order) => sum + order.total, 0);
             const pendingOrders = supplierOrders.filter((o) => o.status === 'Pending').length;
             return (
               <div key={s.id} className="bg-white rounded-xl border border-slate-100 hover:border-indigo-200 transition-all overflow-hidden">
@@ -263,12 +266,12 @@ export default function SuppliersPage() {
 
                   <div className="flex gap-3 pt-3 border-t border-slate-100">
                     <div className="flex-1 text-center">
-                      <p className="text-slate-800 font-bold text-base">{s.totalOrders}</p>
+                      <p className="text-slate-800 font-bold text-base">{supplierOrders.length}</p>
                       <p className="text-slate-400 text-xs">Orders</p>
                     </div>
                     <div className="w-px bg-slate-100"></div>
                     <div className="flex-1 text-center">
-                      <p className="text-slate-800 font-bold text-base">₵{(s.totalSpent / 1000).toFixed(1)}k</p>
+                      <p className="text-slate-800 font-bold text-base">₵{(supplierTotalSpent / 1000).toFixed(1)}k</p>
                       <p className="text-slate-400 text-xs">Total Spent</p>
                     </div>
                     <div className="w-px bg-slate-100"></div>
@@ -342,7 +345,10 @@ export default function SuppliersPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(selectedSupplier ? filteredOrders.filter((o) => o.supplierId === selectedSupplier.id) : filteredOrders).map((o, i) => (
+                  {(selectedSupplier
+                    ? filteredOrders.filter((o) => getSupplierOrders(selectedSupplier.id).some((supplierOrder) => supplierOrder.id === o.id))
+                    : filteredOrders
+                  ).map((o, i) => (
                     <tr key={o.id} className={`border-b border-slate-50 hover:bg-slate-50 transition-all ${i % 2 === 1 ? 'bg-slate-50/30' : ''}`}>
                       <td className="px-5 py-3.5"><span className="text-indigo-600 text-sm font-bold font-mono">{o.id}</span></td>
                       <td className="px-5 py-3.5"><span className="text-slate-700 text-sm font-medium">{o.supplierName}</span></td>
@@ -489,3 +495,4 @@ export default function SuppliersPage() {
     </AppLayout>
   );
 }
+

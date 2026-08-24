@@ -189,6 +189,7 @@ export function useInventory() {
     if (error) {
       console.error(error);
       queueLocalMutation('inventory', enriched.itemId, existing ? 'update' : 'create', enriched);
+      throw new Error(error.message || 'Inventory item could not be saved to the database.');
     }
     if (data) {
       const saved = toItem(data);

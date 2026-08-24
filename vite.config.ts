@@ -71,8 +71,20 @@ export default defineConfig({
   ],
   base,
   build: {
-    sourcemap: true,
+    sourcemap: false,
     outDir: 'out',
+    chunkSizeWarningLimit: 700,
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          groups: [
+            { name: 'react-vendor', test: /[\\/]node_modules[\\/](react|react-dom|react-router-dom)[\\/]/ },
+            { name: 'supabase-vendor', test: /[\\/]node_modules[\\/]@supabase[\\/]/ },
+            { name: 'charts-vendor', test: /[\\/]node_modules[\\/](recharts|d3-|victory|@visx)[\\/]/ },
+          ],
+        },
+      },
+    },
   },
   resolve: {
     alias: {

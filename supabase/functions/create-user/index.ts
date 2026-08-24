@@ -59,6 +59,17 @@ Deno.serve(async (request) => {
     return json({ error: 'Only owners and managers can create users.' }, 403);
   }
 
+  const { error: rateLimitError } = await supabase.rpc('check_rate_limit_for_actor', {
+    actor_id: actor.id,
+    action_key: 'edge:create-user',
+    max_requests: 10,
+    window_seconds: 600,
+    target_business_id: null,
+  });
+  if (rateLimitError) {
+    return json({ error: rateLimitError.message }, 429);
+  }
+
   const payload = await request.json().catch(() => null) as CreateUserRequest | null;
   const name = payload?.name?.trim() ?? '';
   const email = payload?.email?.trim().toLowerCase() ?? '';

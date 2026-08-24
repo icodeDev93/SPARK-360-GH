@@ -1,11 +1,14 @@
 import type { SaleRecord } from '@/hooks/useSalesLog';
 import type { ExpenseRecord, InventoryItem, InvoiceRecord } from '@/types/erp';
 import { inventoryItems } from '@/mocks/inventory';
+import { printHtml } from '@/lib/printDocument';
+import { cleanExportText, type ExportBusinessDetails } from '@/lib/exportRecords';
+import { calcRetailStockValue, calcStockValue } from '@/services/inventoryService';
 
 // ─── CSV helpers ────────────────────────────────────────────────────────────
 
 function escapeCSV(val: string | number): string {
-  const str = String(val);
+  const str = cleanExportText(val);
   if (str.includes(',') || str.includes('"') || str.includes('\n')) {
     return `"${str.replace(/"/g, '""')}"`;
   }
@@ -20,8 +23,48 @@ function buildCSV(headers: string[], rows: (string | number)[][]): string {
   return lines.join('\n');
 }
 
+function businessName(details?: ExportBusinessDetails): string {
+  return details?.businessName || details?.legalName || 'Selected Business';
+}
+
+function businessContactLine(details?: ExportBusinessDetails): string {
+  if (!details) return '';
+  return [details.address, details.phone, details.email]
+    .map(cleanExportText)
+    .filter(Boolean)
+    .join(' | ');
+}
+
+function escapeHtmlAttr(value: unknown): string {
+  return cleanExportText(value)
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function businessLogoMarkup(details: ExportBusinessDetails | undefined, fallbackInitial: string): string {
+  if (!details?.logoUrl) return cleanExportText(fallbackInitial);
+  return `<img src="${escapeHtmlAttr(details.logoUrl)}" alt="${escapeHtmlAttr(businessName(details))} logo" style="width:100%;height:100%;object-fit:contain;display:block;" />`;
+}
+
+function withBusinessCsvHeader(csv: string, business?: ExportBusinessDetails): string {
+  const rows: (string | number)[][] = [
+    ['Business Name', businessName(business)],
+    ...(business?.legalName && business.legalName !== business.businessName ? [['Legal Name', business.legalName]] : []),
+    ...(business?.address ? [['Address', business.address]] : []),
+    ...(business?.phone ? [['Phone', business.phone]] : []),
+    ...(business?.email ? [['Email', business.email]] : []),
+    ...(business?.logoUrl ? [['Logo URL', business.logoUrl]] : []),
+    ['Generated At', new Date().toLocaleString('en-GH')],
+    [],
+  ];
+  return `${rows.map((row) => row.map(escapeCSV).join(',')).join('\n')}\n${csv}`;
+}
+
 function downloadCSV(filename: string, csv: string): void {
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -32,9 +75,9 @@ function downloadCSV(filename: string, csv: string): void {
 
 // ─── Sales CSV ───────────────────────────────────────────────────────────────
 
-export function exportSalesCSV(sales: SaleRecord[], label: string): void {
+export function exportSalesCSV(sales: SaleRecord[], label: string, business?: ExportBusinessDetails): void {
   const completed = sales.filter((s) => s.status === 'completed');
-  const headers = ['Invoice No', 'Receipt No', 'Date', 'Time', 'Cashier', 'Items', 'Subtotal (₵)', 'Tax (₵)', 'Discount (₵)', 'Grand Total (₵)', 'Payment Method', 'Status'];
+  const headers = ['Invoice No', 'Receipt No', 'Date', 'Time', 'Cashier', 'Items', 'Subtotal (GHS)', 'Tax (GHS)', 'Discount (GHS)', 'Grand Total (GHS)', 'Payment Method', 'Status'];
   const rows = completed.map((s) => [
     s.invoiceNo,
     s.receiptNo ?? '',
@@ -49,11 +92,11 @@ export function exportSalesCSV(sales: SaleRecord[], label: string): void {
     s.paymentMethod,
     s.status,
   ]);
-  downloadCSV(`sales-report-${label}.csv`, buildCSV(headers, rows));
+  downloadCSV(`sales-report-${label}.csv`, withBusinessCsvHeader(buildCSV(headers, rows), business));
 }
 
-export function exportCustomerReceivablesCSV(invoices: InvoiceRecord[], label: string): void {
-  const creditInvoices = invoices.filter((inv) => inv.status === 'credit');
+export function exportCustomerReceivablesCSV(invoices: InvoiceRecord[], label: string, business?: ExportBusinessDetails): void {
+  const creditInvoices = invoices.filter((inv) => inv.balanceDue > 0.005);
   const headers = ['Invoice No', 'Date', 'Customer', 'Invoice Total (GHS)', 'Amount Paid (GHS)', 'Outstanding (GHS)', 'Status'];
   const rows: (string | number)[][] = creditInvoices.map((inv) => [
     inv.invoiceNo,
@@ -62,7 +105,7 @@ export function exportCustomerReceivablesCSV(invoices: InvoiceRecord[], label: s
     inv.netSales.toFixed(2),
     inv.amountPaid.toFixed(2),
     inv.balanceDue.toFixed(2),
-    'Credit',
+    inv.status === 'credit' ? 'Credit' : 'Outstanding',
   ]);
   rows.push([
     'TOTAL',
@@ -73,12 +116,12 @@ export function exportCustomerReceivablesCSV(invoices: InvoiceRecord[], label: s
     creditInvoices.reduce((sum, inv) => sum + inv.balanceDue, 0).toFixed(2),
     '',
   ]);
-  downloadCSV(`customer-receivables-report-${label}.csv`, buildCSV(headers, rows));
+  downloadCSV(`customer-receivables-report-${label}.csv`, withBusinessCsvHeader(buildCSV(headers, rows), business));
 }
 
 // ─── Products CSV ────────────────────────────────────────────────────────────
 
-export function exportProductsCSV(sales: SaleRecord[], label: string): void {
+export function exportProductsCSV(sales: SaleRecord[], label: string, business?: ExportBusinessDetails): void {
   const completed = sales.filter((s) => s.status === 'completed');
   const map = new Map<number, { name: string; category: string; qty: number; revenue: number; cost: number; profit: number }>();
 
@@ -106,7 +149,7 @@ export function exportProductsCSV(sales: SaleRecord[], label: string): void {
     });
   });
 
-  const headers = ['Product', 'Category', 'Qty Sold', 'Revenue (₵)', 'COGS (₵)', 'Gross Profit (₵)', 'Margin (%)'];
+  const headers = ['Product', 'Category', 'Qty Sold', 'Revenue (GHS)', 'COGS (GHS)', 'Gross Profit (GHS)', 'Margin (%)'];
   const rows = Array.from(map.values())
     .sort((a, b) => b.revenue - a.revenue)
     .map((p) => [
@@ -119,10 +162,10 @@ export function exportProductsCSV(sales: SaleRecord[], label: string): void {
       p.revenue > 0 ? ((p.profit / p.revenue) * 100).toFixed(1) : '0.0',
     ]);
 
-  downloadCSV(`products-report-${label}.csv`, buildCSV(headers, rows));
+  downloadCSV(`products-report-${label}.csv`, withBusinessCsvHeader(buildCSV(headers, rows), business));
 }
 
-export function exportInventoryCSV(items: InventoryItem[], label: string): void {
+export function exportInventoryCSV(items: InventoryItem[], label: string, business?: ExportBusinessDetails): void {
   const headers = [
     'Product',
     'Product Code',
@@ -132,12 +175,14 @@ export function exportInventoryCSV(items: InventoryItem[], label: string): void 
     'Reorder Level',
     'Cost Price (GHS)',
     'Selling Price (GHS)',
-    'Stock Value (GHS)',
+    'Stock Value Cost (GHS)',
+    'Retail Value (GHS)',
     'Margin (%)',
     'Status',
   ];
   const rows = items.map((item) => {
-    const stockValue = item.costPrice * item.currentStock;
+    const stockValue = calcStockValue(item);
+    const retailValue = calcRetailStockValue(item);
     const marginPct = item.sellingPrice > 0
       ? ((item.sellingPrice - item.costPrice) / item.sellingPrice) * 100
       : 0;
@@ -151,17 +196,18 @@ export function exportInventoryCSV(items: InventoryItem[], label: string): void 
       item.costPrice.toFixed(2),
       item.sellingPrice.toFixed(2),
       stockValue.toFixed(2),
+      retailValue.toFixed(2),
       marginPct.toFixed(1),
       item.stockStatus,
     ];
   });
-  downloadCSV(`inventory-report-${label}.csv`, buildCSV(headers, rows));
+  downloadCSV(`inventory-report-${label}.csv`, withBusinessCsvHeader(buildCSV(headers, rows), business));
 }
 
 // ─── Expenses CSV ────────────────────────────────────────────────────────────
 
-export function exportExpensesCSV(expenses: ExpenseRecord[], label: string): void {
-  const headers = ['Description', 'Category', 'Amount (₵)', 'Date', 'Paid By', 'Notes'];
+export function exportExpensesCSV(expenses: ExpenseRecord[], label: string, business?: ExportBusinessDetails): void {
+  const headers = ['Description', 'Category', 'Amount (GHS)', 'Date', 'Paid By', 'Notes'];
   const rows = expenses.map((e) => [
     e.description,
     e.category,
@@ -170,25 +216,39 @@ export function exportExpensesCSV(expenses: ExpenseRecord[], label: string): voi
     e.paidBy,
     e.notes,
   ]);
-  downloadCSV(`expenses-report-${label}.csv`, buildCSV(headers, rows));
+  downloadCSV(`expenses-report-${label}.csv`, withBusinessCsvHeader(buildCSV(headers, rows), business));
 }
 
 // ─── Profit Summary CSV ──────────────────────────────────────────────────────
 
-export function exportProfitCSV(sales: SaleRecord[], expenses: ExpenseRecord[], label: string): void {
+export function exportProfitCSV(
+  sales: SaleRecord[],
+  expenses: ExpenseRecord[],
+  label: string,
+  business?: ExportBusinessDetails,
+  invoiceRecords: InvoiceRecord[] = [],
+): void {
   const completed = sales.filter((s) => s.status === 'completed');
-  const totalRevenue = completed.reduce((s, t) => s + t.grandTotal, 0);
-  const totalCOGS = completed.reduce((sum, sale) => {
-    return sum + sale.items.reduce((itemSum, item) => {
-      const inv = inventoryItems.find((i) => Number(i.itemId.replace(/\D/g, '')) === item.id);
-      return itemSum + (inv ? inv.costPrice * item.qty : 0);
-    }, 0);
-  }, 0);
+  const completedInvoices = invoiceRecords.filter((inv) => inv.status === 'completed');
+  const hasInvoiceMetrics = completedInvoices.length > 0;
+  const totalRevenue = hasInvoiceMetrics
+    ? completedInvoices.reduce((sum, inv) => sum + inv.netSales, 0)
+    : completed.reduce((sum, sale) => sum + sale.grandTotal, 0);
+  const totalCOGS = hasInvoiceMetrics
+    ? completedInvoices.reduce((sum, inv) => sum + inv.totalCost, 0)
+    : completed.reduce((sum, sale) => {
+        return sum + sale.items.reduce((itemSum, item) => {
+          const inv = inventoryItems.find((i) => Number(i.itemId.replace(/\D/g, '')) === item.id);
+          return itemSum + (inv ? inv.costPrice * item.qty : 0);
+        }, 0);
+      }, 0);
   const totalExpenses = expenses.reduce((s, e) => s + e.amountGHS, 0);
-  const grossProfit = totalRevenue - totalCOGS;
+  const grossProfit = hasInvoiceMetrics
+    ? completedInvoices.reduce((sum, inv) => sum + inv.grossMargin, 0)
+    : totalRevenue - totalCOGS;
   const netProfit = grossProfit - totalExpenses;
 
-  const headers = ['Metric', 'Amount (₵)'];
+  const headers = ['Metric', 'Amount (GHS)'];
   const rows: (string | number)[][] = [
     ['Total Revenue', totalRevenue.toFixed(2)],
     ['Cost of Goods Sold (COGS)', totalCOGS.toFixed(2)],
@@ -198,7 +258,7 @@ export function exportProfitCSV(sales: SaleRecord[], expenses: ExpenseRecord[], 
     ['Net Profit', netProfit.toFixed(2)],
     ['Net Margin (%)', totalRevenue > 0 ? ((netProfit / totalRevenue) * 100).toFixed(1) : '0.0'],
   ];
-  downloadCSV(`profit-summary-${label}.csv`, buildCSV(headers, rows));
+  downloadCSV(`profit-summary-${label}.csv`, withBusinessCsvHeader(buildCSV(headers, rows), business));
 }
 
 // ─── PDF Print ───────────────────────────────────────────────────────────────
@@ -211,20 +271,27 @@ export function printAnalyticsPDF(
   expenses: ExpenseRecord[],
   liveItems?: InventoryItem[],
   creditInvoiceRecords: InvoiceRecord[] = [],
+  business?: ExportBusinessDetails,
+  invoiceRecords: InvoiceRecord[] = [],
 ): void {
-  const win = window.open('', '_blank', 'width=1050,height=820');
-  if (!win) return;
-
   // ── Computed metrics ─────────────────────────────────────────────────────
   const completed = sales.filter((s) => s.status === 'completed');
-  const totalRevenue  = completed.reduce((s, t) => s + t.grandTotal, 0);
+  const completedInvoices = invoiceRecords.filter((inv) => inv.status === 'completed');
+  const hasInvoiceMetrics = completedInvoices.length > 0;
+  const totalRevenue  = hasInvoiceMetrics
+    ? completedInvoices.reduce((sum, inv) => sum + inv.netSales, 0)
+    : completed.reduce((sum, sale) => sum + sale.grandTotal, 0);
   const totalExpenses = expenses.reduce((s, e) => s + e.amountGHS, 0);
-  const totalCOGS = completed.reduce((sum, sale) =>
-    sum + sale.items.reduce((is, item) => {
-      const inv = inventoryItems.find((i) => Number(i.itemId.replace(/\D/g, '')) === item.id);
-      return is + (inv ? inv.costPrice * item.qty : 0);
-    }, 0), 0);
-  const grossProfit = totalRevenue - totalCOGS;
+  const totalCOGS = hasInvoiceMetrics
+    ? completedInvoices.reduce((sum, inv) => sum + inv.totalCost, 0)
+    : completed.reduce((sum, sale) =>
+        sum + sale.items.reduce((is, item) => {
+          const inv = inventoryItems.find((i) => Number(i.itemId.replace(/\D/g, '')) === item.id);
+          return is + (inv ? inv.costPrice * item.qty : 0);
+        }, 0), 0);
+  const grossProfit = hasInvoiceMetrics
+    ? completedInvoices.reduce((sum, inv) => sum + inv.grossMargin, 0)
+    : totalRevenue - totalCOGS;
   const netProfit   = grossProfit - totalExpenses;
   const grossMargin = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0;
   const netMargin   = totalRevenue > 0 ? (netProfit  / totalRevenue) * 100 : 0;
@@ -286,17 +353,20 @@ export function printAnalyticsPDF(
   // ── Format helpers ───────────────────────────────────────────────────────
   const C = '₵';
   const fmt = (n: number) =>
-    `${C}${Math.abs(n).toLocaleString('en-GH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    `${n < 0 ? '-' : ''}${C}${Math.abs(n).toLocaleString('en-GH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const fmtS = (n: number) => {
-    if (n >= 1_000_000) return `${C}${(n / 1_000_000).toFixed(1)}M`;
-    if (n >= 1_000)     return `${C}${(n / 1_000).toFixed(1)}k`;
-    return `${C}${n.toFixed(0)}`;
+    const sign = n < 0 ? '-' : '';
+    const abs = Math.abs(n);
+    if (abs >= 1_000_000) return `${sign}${C}${(abs / 1_000_000).toFixed(1)}M`;
+    if (abs >= 1_000)     return `${sign}${C}${(abs / 1_000).toFixed(1)}k`;
+    return `${sign}${C}${abs.toFixed(0)}`;
   };
   const sd  = (s: string) => {
     try { return new Date(s).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); }
     catch { return s; }
   };
-  const pct = (a: number, b: number) => b > 0 ? `${((a / b) * 100).toFixed(1)}%` : '—';
+  const pct = (a: number, b: number) => b > 0 ? `${((a / b) * 100).toFixed(1)}%` : '-';
+  const text = (value: unknown): string => cleanExportText(value);
 
   // ── SVG bar chart ────────────────────────────────────────────────────────
   function barChart(data: { label: string; value: number }[], color: string, h = 200): string {
@@ -323,7 +393,7 @@ export function printAnalyticsPDF(
       out += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bW.toFixed(1)}" height="${bH.toFixed(1)}" fill="${color}" rx="3" opacity="0.88"/>`;
       if (bH > 22 && bW > 18)
         out += `<text x="${(x + bW / 2).toFixed(1)}" y="${(y - 5).toFixed(1)}" text-anchor="middle" font-size="8" fill="${color}" font-family="Arial" font-weight="700">${fmtS(d.value)}</text>`;
-      out += `<text x="${(x + bW / 2).toFixed(1)}" y="${(H - 3).toFixed(1)}" text-anchor="middle" font-size="8" fill="#64748b" font-family="Arial,Helvetica,sans-serif">${d.label}</text>`;
+      out += `<text x="${(x + bW / 2).toFixed(1)}" y="${(H - 3).toFixed(1)}" text-anchor="middle" font-size="8" fill="#64748b" font-family="Arial,Helvetica,sans-serif">${text(d.label)}</text>`;
     });
     out += '</svg>';
     return out;
@@ -338,18 +408,24 @@ export function printAnalyticsPDF(
   const TDC = `${TD}text-align:center;`;
   const SEC = `background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;margin-bottom:22px;`;
   const SH  = `padding:14px 20px;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between;align-items:center;`;
+  const ITH  = `padding:7px 7px;text-align:left;font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:0.02em;color:#94a3b8;background:#f8fafc;border-bottom:1px solid #e2e8f0;white-space:normal;`;
+  const ITHR = `${ITH}text-align:right;`;
+  const ITHC = `${ITH}text-align:center;`;
+  const ITD  = `padding:7px 7px;border-bottom:1px solid #f1f5f9;color:#334155;font-size:10px;line-height:1.25;`;
+  const ITDR = `${ITD}text-align:right;white-space:nowrap;`;
+  const ITDC = `${ITD}text-align:center;`;
 
   // ── Component builders ───────────────────────────────────────────────────
   function kpi(lbl: string, val: string, sub: string, accent: string): string {
     return `<div style="flex:1;min-width:130px;background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px 18px;border-left:4px solid ${accent};">
-      <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#94a3b8;margin-bottom:5px;">${lbl}</div>
-      <div style="font-size:21px;font-weight:800;color:#0f172a;font-family:'Courier New',Courier,monospace;line-height:1.1;">${val}</div>
-      <div style="font-size:11px;color:#64748b;margin-top:5px;">${sub}</div>
+      <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#94a3b8;margin-bottom:5px;">${text(lbl)}</div>
+      <div style="font-size:21px;font-weight:800;color:#0f172a;font-family:'Courier New',Courier,monospace;line-height:1.1;">${text(val)}</div>
+      <div style="font-size:11px;color:#64748b;margin-top:5px;">${text(sub)}</div>
     </div>`;
   }
 
-  function badge(text: string, bg: string, color: string): string {
-    return `<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;background:${bg};color:${color};">${text}</span>`;
+  function badge(label: string, bg: string, color: string): string {
+    return `<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;background:${bg};color:${color};">${text(label)}</span>`;
   }
 
   function marginBadge(m: number): string {
@@ -382,8 +458,8 @@ export function printAnalyticsPDF(
     const topB = topBorder ? 'border-top:2px solid #e2e8f0;' : '';
     const pl   = indent ? 'padding-left:36px;' : '';
     return `<tr style="background:${bg};">
-      <td style="padding:10px 20px;font-size:${fs};font-weight:${fw};color:${tc};border-bottom:1px solid #f1f5f9;${topB}${pl}">${lbl}</td>
-      <td style="padding:10px 20px;text-align:right;font-size:${fs};font-weight:${bold ? '800' : '600'};font-family:'Courier New',Courier,monospace;color:${color};border-bottom:1px solid #f1f5f9;${topB}">${val}</td>
+      <td style="padding:10px 20px;font-size:${fs};font-weight:${fw};color:${tc};border-bottom:1px solid #f1f5f9;${topB}${pl}">${text(lbl)}</td>
+      <td style="padding:10px 20px;text-align:right;font-size:${fs};font-weight:${bold ? '800' : '600'};font-family:'Courier New',Courier,monospace;color:${color};border-bottom:1px solid #f1f5f9;${topB}">${text(val)}</td>
     </tr>`;
   }
 
@@ -394,13 +470,17 @@ export function printAnalyticsPDF(
   const isCustomers = tabKey === 'customers' || tabKey === 'top-customers' || tabKey === 'customer-report';
   const isInventory = tabKey === 'inventory' || tabKey === 'stock-report';
   const isReceivables = tabKey === 'customer-receivables';
-  const creditInvoices = creditInvoiceRecords.filter((inv) => inv.status === 'credit');
+  const creditInvoices = creditInvoiceRecords.filter((inv) => inv.balanceDue > 0.005);
   const totalReceivables = creditInvoices.reduce((sum, inv) => sum + inv.balanceDue, 0);
   const totalCreditValue = creditInvoices.reduce((sum, inv) => sum + inv.netSales, 0);
   const totalCreditPaid = creditInvoices.reduce((sum, inv) => sum + inv.amountPaid, 0);
   const receivableCustomers = new Set(creditInvoices.map((inv) => inv.customerId || inv.customerName)).size;
 
   const now = new Date().toLocaleString('en-US', { dateStyle: 'long', timeStyle: 'short' });
+  const reportBusinessName = businessName(business);
+  const reportBusinessContact = businessContactLine(business);
+  const reportBusinessInitial = text(reportBusinessName).charAt(0).toUpperCase() || 'B';
+  const reportLogoMarkup = businessLogoMarkup(business, reportBusinessInitial);
   let body = '';
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -412,15 +492,14 @@ export function printAnalyticsPDF(
       ${kpi('Total Revenue',  fmt(totalRevenue),  `${completed.length} completed sales`,             '#4f46e5')}
       ${kpi('Total Expenses', fmt(totalExpenses), `${expenses.length} expense records`,              '#e11d48')}
       ${kpi('Net Profit',     fmt(netProfit),     `Margin: ${netMargin.toFixed(1)}%`,                netProfit >= 0 ? '#059669' : '#e11d48')}
-      ${kpi('Avg. Sale',      fmt(completed.length > 0 ? totalRevenue / completed.length : 0), 'Per transaction', '#d97706')}
-      ${kpi('Customer Receivables', fmt(totalReceivables), `${creditInvoices.length} credit invoices`, '#7c3aed')}
+      ${kpi('Customer Receivables', fmt(totalReceivables), `${creditInvoices.length} open invoices`, '#7c3aed')}
     </div>
 
     ${dailyRevenue.length > 0 ? `
     <div style="${SEC}">
       <div style="${SH}">
         <h3 style="font-size:13px;font-weight:700;color:#1e293b;margin:0;">Daily Revenue Trend</h3>
-        <span style="font-size:11px;color:#64748b;">${label} · ${dailyRevenue.length} data points</span>
+        <span style="font-size:11px;color:#64748b;">${text(label)} - ${dailyRevenue.length} data points</span>
       </div>
       <div style="padding:16px 20px;">${barChart(dailyRevenue.map((d) => ({ label: sd(d.date), value: d.revenue })), '#4f46e5', 200)}</div>
     </div>` : ''}
@@ -598,14 +677,14 @@ export function printAnalyticsPDF(
     <div style="display:flex;gap:12px;margin-bottom:22px;flex-wrap:wrap;">
       ${kpi('Total Revenue', fmt(totalRevenue), `From ${topProducts.length} products`, '#4f46e5')}
       ${kpi('Gross Profit',  fmt(grossProfit),  `Margin: ${grossMargin.toFixed(1)}%`,  '#059669')}
-      ${kpi('Top Product',   topProducts[0]?.name.split(' ').slice(0, 2).join(' ') || '—', topProducts[0] ? `${fmt(topProducts[0].revenue)} revenue` : '—', '#7c3aed')}
+      ${kpi('Top Product',   topProducts[0]?.name.split(' ').slice(0, 2).join(' ') || '-', topProducts[0] ? `${fmt(topProducts[0].revenue)} revenue` : '-', '#7c3aed')}
       ${kpi('Units Sold',    `${totalUnits}`,   'Total units',                          '#d97706')}
     </div>
 
     ${topProducts.length > 0 ? `
     <div style="${SEC}">
       <div style="${SH}">
-        <h3 style="font-size:13px;font-weight:700;color:#1e293b;margin:0;">Revenue by Product — Top 10</h3>
+        <h3 style="font-size:13px;font-weight:700;color:#1e293b;margin:0;">Revenue by Product - Top 10</h3>
         <span style="font-size:11px;color:#64748b;">${label}</span>
       </div>
       <div style="padding:16px 20px;">
@@ -616,7 +695,7 @@ export function printAnalyticsPDF(
     <div style="${SEC}">
       <div style="${SH}">
         <h3 style="font-size:13px;font-weight:700;color:#1e293b;margin:0;">Product Performance</h3>
-        <span style="font-size:11px;color:#64748b;">${topProducts.length} products · ${label}</span>
+        <span style="font-size:11px;color:#64748b;">${topProducts.length} products - ${text(label)}</span>
       </div>
       <table style="width:100%;border-collapse:collapse;">
         <thead><tr>
@@ -738,7 +817,7 @@ export function printAnalyticsPDF(
     <div style="${SEC}">
       <div style="${SH}">
         <h3 style="font-size:13px;font-weight:700;color:#1e293b;margin:0;">Customer Receivables</h3>
-        <span style="font-size:11px;color:#64748b;">${creditInvoices.length} invoice${creditInvoices.length !== 1 ? 's' : ''} · ${label}</span>
+        <span style="font-size:11px;color:#64748b;">${creditInvoices.length} invoice${creditInvoices.length !== 1 ? 's' : ''} - ${text(label)}</span>
       </div>
       <table style="width:100%;border-collapse:collapse;">
         <thead><tr>
@@ -778,19 +857,21 @@ export function printAnalyticsPDF(
   }
 
   if (isInventory) {
-    const totalValue   = invItems.reduce((s, i) => s + i.costPrice * i.currentStock, 0);
+    const totalValue   = invItems.reduce((s, i) => s + calcStockValue(i), 0);
+    const totalRetailValue = invItems.reduce((s, i) => s + calcRetailStockValue(i), 0);
     const outOfStock   = invItems.filter((i) => i.stockStatus === 'OUT OF STOCK').length;
     const lowStock     = invItems.filter((i) => i.stockStatus === 'LOW').length;
     const catMap: Record<string, number> = {};
-    invItems.forEach((i) => { catMap[i.category] = (catMap[i.category] || 0) + i.costPrice * i.currentStock; });
+    invItems.forEach((i) => { catMap[i.category] = (catMap[i.category] || 0) + calcStockValue(i); });
     const catValues = Object.entries(catMap).sort((a, b) => b[1] - a[1]);
 
     body += `
-    <div style="display:flex;gap:12px;margin-bottom:22px;flex-wrap:wrap;">
-      ${kpi('Total Products', `${invItems.length}`, 'Products tracked',     '#4f46e5')}
-      ${kpi('Stock Value',   fmt(totalValue),      'At cost price',         '#059669')}
-      ${kpi('Low Stock',     `${lowStock}`,         'At or below reorder',  '#d97706')}
-      ${kpi('Out of Stock',  `${outOfStock}`,       'Zero units remaining', '#e11d48')}
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:22px;">
+      ${kpi('Total Products', `${invItems.length}`, 'Products tracked',       '#4f46e5')}
+      ${kpi('Stock Value',    fmt(totalValue),      'At cost price',          '#059669')}
+      ${kpi('Retail Value',   fmt(totalRetailValue), 'At selling price',      '#7c3aed')}
+      ${kpi('Low Stock',      `${lowStock}`,         'At or below reorder',   '#d97706')}
+      ${kpi('Out of Stock',   `${outOfStock}`,       'Zero units remaining',  '#e11d48')}
     </div>
 
     ${catValues.length > 0 ? `
@@ -810,33 +891,36 @@ export function printAnalyticsPDF(
       </div>
       <table style="width:100%;border-collapse:collapse;">
         <thead><tr>
-          <th style="${TH}">Product</th><th style="${TH}">Product Code</th><th style="${TH}">Category</th>
-          <th style="${THR}">Stock</th><th style="${THR}">Reorder</th>
-          <th style="${THR}">Cost</th><th style="${THR}">Price</th><th style="${THR}">Value</th>
-          <th style="${THC}">Status</th>
+          <th style="${ITH};width:18%;">Product</th><th style="${ITH};width:12%;">Product Code</th><th style="${ITH};width:12%;">Category</th>
+          <th style="${ITHR};width:7%;">Stock</th><th style="${ITHR};width:7%;">Reorder</th>
+          <th style="${ITHR};width:8%;">Cost</th><th style="${ITHR};width:8%;">Price</th><th style="${ITHR};width:10%;">Cost Value</th><th style="${ITHR};width:10%;">Retail Value</th>
+          <th style="${ITHC};width:8%;">Status</th>
         </tr></thead>
         <tbody>
           ${invItems.map((item, i) => {
-            const value = item.costPrice * item.currentStock;
+            const value = calcStockValue(item);
+            const retailValue = calcRetailStockValue(item);
             return `
             <tr style="background:${i % 2 ? '#fafafa' : '#fff'};">
-              <td style="${TD}font-weight:600;color:#1e293b;">${item.productName}</td>
-              <td style="${TD}font-family:'Courier New',monospace;color:#64748b;font-size:11px;">${item.itemId}</td>
-              <td style="${TD}color:#64748b;">${item.category}</td>
-              <td style="${TDR}font-weight:700;">${item.currentStock}</td>
-              <td style="${TDR}color:#64748b;">${item.reorderLevel}</td>
-              <td style="${TDR}font-family:'Courier New',monospace;color:#64748b;">${fmt(item.costPrice)}</td>
-              <td style="${TDR}font-family:'Courier New',monospace;color:#4f46e5;">${fmt(item.sellingPrice)}</td>
-              <td style="${TDR}font-weight:700;font-family:'Courier New',monospace;">${fmt(value)}</td>
-              <td style="${TDC}">${statusBadge(item.stockStatus)}</td>
+              <td style="${ITD}font-weight:700;color:#1e293b;overflow-wrap:anywhere;">${item.productName}</td>
+              <td style="${ITD}font-family:'Courier New',monospace;color:#64748b;font-size:9px;overflow-wrap:anywhere;">${item.itemId}</td>
+              <td style="${ITD}color:#64748b;overflow-wrap:anywhere;">${item.category}</td>
+              <td style="${ITDR}font-weight:700;">${item.currentStock}</td>
+              <td style="${ITDR}color:#64748b;">${item.reorderLevel}</td>
+              <td style="${ITDR}font-family:'Courier New',monospace;color:#64748b;">${fmt(item.costPrice)}</td>
+              <td style="${ITDR}font-family:'Courier New',monospace;color:#4f46e5;">${fmt(item.sellingPrice)}</td>
+              <td style="${ITDR}font-weight:700;font-family:'Courier New',monospace;">${fmt(value)}</td>
+              <td style="${ITDR}font-weight:700;font-family:'Courier New',monospace;color:#7c3aed;">${fmt(retailValue)}</td>
+              <td style="${ITDC}">${statusBadge(item.stockStatus)}</td>
             </tr>`;
           }).join('')}
         </tbody>
         <tfoot style="background:#f8fafc;border-top:2px solid #e2e8f0;">
           <tr>
-            <td colspan="7" style="${TD}font-weight:700;color:#1e293b;">Total Stock Value</td>
-            <td style="${TDR}font-weight:800;font-family:'Courier New',monospace;color:#4f46e5;">${fmt(totalValue)}</td>
-            <td style="${TDC}"></td>
+            <td colspan="7" style="${ITD}font-weight:700;color:#1e293b;">Total Stock Value</td>
+            <td style="${ITDR}font-weight:800;font-family:'Courier New',monospace;color:#4f46e5;">${fmt(totalValue)}</td>
+            <td style="${ITDR}font-weight:800;font-family:'Courier New',monospace;color:#7c3aed;">${fmt(totalRetailValue)}</td>
+            <td style="${ITDC}"></td>
           </tr>
         </tfoot>
       </table>
@@ -848,42 +932,39 @@ export function printAnalyticsPDF(
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Bizzy App Business Management System — ${tab} Report</title>
+  <title>${text(reportBusinessName)} - ${text(tab)} Report</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    @page { size: A4; margin: 16mm 15mm; }
-    body { font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; color: #1e293b; background: #fff; font-size: 12px; line-height: 1.45; }
+    @page { size: ${isInventory ? 'A4 landscape' : 'A4'}; margin: ${isInventory ? '12mm' : '16mm 15mm'}; }
+    body { font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; color: #1e293b; background: #fff; font-size: ${isInventory ? '11px' : '12px'}; line-height: 1.45; }
     @media print { body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; } }
   </style>
 </head>
 <body>
   <div style="display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:16px;border-bottom:3px solid #4f46e5;margin-bottom:22px;">
     <div style="display:flex;align-items:center;gap:12px;">
-      <div style="width:36px;height:36px;background:#4f46e5;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">🏪</div>
+      <div style="width:42px;height:42px;background:#fff;border:1px solid #dbe3f0;border-radius:10px;padding:4px;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;color:#4f46e5;flex-shrink:0;">${reportLogoMarkup}</div>
       <div>
-        <div style="font-size:20px;font-weight:800;color:#0f172a;letter-spacing:-0.02em;line-height:1.1;">Bizzy App Business Management System</div>
-        <div style="font-size:10px;color:#64748b;margin-top:2px;">POS &amp; Inventory Management</div>
+        <div style="font-size:20px;font-weight:800;color:#0f172a;letter-spacing:-0.02em;line-height:1.1;">${text(reportBusinessName)}</div>
+        ${reportBusinessContact ? `<div style="font-size:10px;color:#64748b;margin-top:2px;max-width:430px;">${text(reportBusinessContact)}</div>` : ''}
       </div>
     </div>
     <div style="text-align:right;">
-      <div style="font-size:17px;font-weight:800;color:#0f172a;margin-bottom:4px;">${tab} Report</div>
-      <div style="font-size:11px;color:#64748b;">Period: <strong>${label}</strong></div>
-      <div style="font-size:10px;color:#94a3b8;margin-top:2px;">Generated: ${now}</div>
+      <div style="font-size:17px;font-weight:800;color:#0f172a;margin-bottom:4px;">${text(tab)} Report</div>
+      <div style="font-size:11px;color:#64748b;">Period: <strong>${text(label)}</strong></div>
+      <div style="font-size:10px;color:#94a3b8;margin-top:2px;">Generated: ${text(now)}</div>
     </div>
   </div>
 
   ${body}
 
   <div style="margin-top:34px;padding-top:12px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;">
-    <span style="font-size:10px;color:#94a3b8;">Bizzy App Business Management System POS &amp; Inventory — Confidential · Internal Use Only</span>
-    <span style="font-size:10px;color:#94a3b8;">${tab} · ${label}</span>
+    <span style="font-size:10px;color:#94a3b8;">${text(reportBusinessName)} - Confidential - Internal Use Only</span>
+    <span style="font-size:10px;color:#94a3b8;">${text(tab)} - ${text(label)}</span>
   </div>
 
-  <script>window.onload = function () { setTimeout(function () { window.print(); }, 380); };<\/script>
 </body>
 </html>`;
 
-  win.document.write(html);
-  win.document.close();
-  win.focus();
+  printHtml(html, { title: `${tab} Report`, windowFeatures: 'width=1050,height=820' });
 }

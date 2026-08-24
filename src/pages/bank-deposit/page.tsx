@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import AppLayout from '@/components/feature/AppLayout';
+import BulkActionBar from '@/components/ui/BulkActionBar';
 import { useBankDeposits } from '@/hooks/useBankDeposits';
 import { useBanks } from '@/hooks/useBanks';
 import { useAuth } from '@/hooks/useAuth';
@@ -57,6 +58,9 @@ export default function BankDepositPage() {
   const [deleteBankTarget, setDeleteBankTarget] = useState<BankRecord | null>(null);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [selectedDepositIds, setSelectedDepositIds] = useState<string[]>([]);
+  const [bulkDeleteDepositsOpen, setBulkDeleteDepositsOpen] = useState(false);
+  const [bulkDeletingDeposits, setBulkDeletingDeposits] = useState(false);
   const [form, setForm] = useState({
     date: today,
     bankId: '',
@@ -73,6 +77,9 @@ export default function BankDepositPage() {
 
   const filteredDeposits = deposits.filter((deposit) => isWithinDateRange(deposit.date, startDate, endDate));
   const filteredTotalDeposits = filteredDeposits.reduce((sum, deposit) => sum + deposit.amountGHS, 0);
+  const selectedDeposits = deposits.filter((deposit) => selectedDepositIds.includes(deposit.depositId));
+  const visibleDepositIds = filteredDeposits.map((deposit) => deposit.depositId);
+  const allVisibleDepositsSelected = visibleDepositIds.length > 0 && visibleDepositIds.every((id) => selectedDepositIds.includes(id));
   const depositColumns: ExportColumn<BankDepositRecord>[] = [
     { header: 'Date', value: (deposit) => formatDate(deposit.date) },
     { header: 'Bank', value: (deposit) => deposit.bank },
@@ -223,6 +230,39 @@ export default function BankDepositPage() {
     }
   };
 
+  const toggleSelectedDeposit = (id: string) => {
+    setSelectedDepositIds((prev) => prev.includes(id) ? prev.filter((depositId) => depositId !== id) : [...prev, id]);
+  };
+
+  const toggleVisibleDeposits = () => {
+    setSelectedDepositIds((prev) => {
+      if (allVisibleDepositsSelected) return prev.filter((id) => !visibleDepositIds.includes(id));
+      return Array.from(new Set([...prev, ...visibleDepositIds]));
+    });
+  };
+
+  const handleBulkDeleteDeposits = async () => {
+    if (bulkDeletingDeposits || selectedDeposits.length === 0) return;
+    setBulkDeletingDeposits(true);
+    for (const deposit of selectedDeposits) {
+      await deleteDeposit(deposit.depositId);
+    }
+    if (currentUser) writeLog(currentUser, {
+      category: 'bank-deposit',
+      action: 'delete',
+      description: `Bulk deleted ${selectedDeposits.length} bank deposit(s): ${selectedDeposits.map((deposit) => `${deposit.bank} ${fmt(deposit.amountGHS)}`).join(', ')}`,
+    });
+    showFeedback({
+      title: 'Deposits Deleted',
+      message: `${selectedDeposits.length} bank deposit${selectedDeposits.length === 1 ? '' : 's'} removed successfully.`,
+      buttonLabel: 'Continue',
+      kind: 'deleted',
+    });
+    setSelectedDepositIds([]);
+    setBulkDeleteDepositsOpen(false);
+    setBulkDeletingDeposits(false);
+  };
+
   const handleAddBank = async (event: React.FormEvent) => {
     event.preventDefault();
     const payload: Omit<BankRecord, 'bankId' | 'createdBy' | 'createdAt'> = {
@@ -291,14 +331,14 @@ export default function BankDepositPage() {
 
   return (
     <AppLayout>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6 min-w-0">
         <div>
           <h2 className="text-slate-800 font-bold text-xl">Bank Deposit</h2>
           <p className="text-slate-400 text-sm mt-0.5">Record deposits and manage business bank accounts</p>
         </div>
         <button
           onClick={() => activeTab === 'deposits' ? openNewDeposit() : openNewBank()}
-          className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-lg text-sm font-bold transition-all cursor-pointer whitespace-nowrap"
+          className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-lg text-sm font-bold transition-all cursor-pointer whitespace-nowrap"
         >
           <i className="ri-add-line text-base"></i>
           {activeTab === 'deposits' ? 'New Deposit' : 'Add Bank'}
@@ -340,22 +380,29 @@ export default function BankDepositPage() {
             </div>
           </div>
 
-          <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4">
-            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="border border-slate-200 bg-white rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none" title="Start date" />
-            <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="border border-slate-200 bg-white rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none" title="End date" />
-            <div className="flex items-center gap-2">
-              <button onClick={() => exportDeposits('csv')} className="flex items-center gap-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap">
+          <div className="flex flex-col lg:flex-row lg:flex-wrap lg:items-center gap-3 mb-4 min-w-0">
+            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="border border-slate-200 bg-white rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none min-w-0" title="Start date" />
+            <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="border border-slate-200 bg-white rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none min-w-0" title="End date" />
+            <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2">
+              <button onClick={() => exportDeposits('csv')} className="flex items-center justify-center gap-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap">
                 <i className="ri-file-excel-2-line text-base"></i>
-                CSV
+                Export to CSV
               </button>
-              <button onClick={() => exportDeposits('pdf')} className="flex items-center gap-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap">
+              <button onClick={() => exportDeposits('pdf')} className="flex items-center justify-center gap-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap">
                 <i className="ri-file-pdf-2-line text-base"></i>
-                PDF
+                Export to PDF
               </button>
             </div>
           </div>
 
           <div className="bg-white rounded-xl border border-slate-100 overflow-hidden">
+            <div className="px-5 pt-4">
+              <BulkActionBar
+                selectedCount={selectedDepositIds.length}
+                onClear={() => setSelectedDepositIds([])}
+                onDelete={() => setBulkDeleteDepositsOpen(true)}
+              />
+            </div>
             <div className="px-5 py-4 border-b border-slate-100">
               <h3 className="text-slate-800 font-bold text-sm">Deposit History</h3>
             </div>
@@ -363,6 +410,15 @@ export default function BankDepositPage() {
               <table className="w-full text-sm">
                 <thead className="bg-slate-50 text-slate-400 uppercase text-xs font-bold">
                   <tr>
+                    <th className="text-left px-5 py-3">
+                      <input
+                        type="checkbox"
+                        checked={allVisibleDepositsSelected}
+                        onChange={toggleVisibleDeposits}
+                        className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                        aria-label="Select visible deposits"
+                      />
+                    </th>
                     <th className="text-left px-5 py-3">Date</th>
                     <th className="text-left px-5 py-3">Bank</th>
                     <th className="text-left px-5 py-3">Account No.</th>
@@ -374,11 +430,20 @@ export default function BankDepositPage() {
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {loading ? (
-                    <tr><td colSpan={7} className="px-5 py-8 text-center text-slate-400">Loading deposits...</td></tr>
+                    <tr><td colSpan={8} className="px-5 py-8 text-center text-slate-400">Loading deposits...</td></tr>
                   ) : filteredDeposits.length === 0 ? (
-                    <tr><td colSpan={7} className="px-5 py-8 text-center text-slate-400">No bank deposits recorded yet</td></tr>
+                    <tr><td colSpan={8} className="px-5 py-8 text-center text-slate-400">No bank deposits recorded yet</td></tr>
                   ) : filteredDeposits.map((deposit) => (
                     <tr key={deposit.depositId} className="hover:bg-slate-50/60">
+                      <td className="px-5 py-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedDepositIds.includes(deposit.depositId)}
+                          onChange={() => toggleSelectedDeposit(deposit.depositId)}
+                          className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                          aria-label={`Select deposit ${deposit.depositId}`}
+                        />
+                      </td>
                       <td className="px-5 py-3 text-slate-600">{formatDate(deposit.date)}</td>
                       <td className="px-5 py-3 text-slate-800 font-semibold">{deposit.bank}</td>
                       <td className="px-5 py-3 text-slate-600 font-mono">{deposit.accountNo}</td>
@@ -719,6 +784,45 @@ export default function BankDepositPage() {
                 <button type="button" onClick={handleDeleteDeposit} disabled={saving} className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 disabled:bg-slate-200 disabled:text-slate-400 text-white rounded-lg text-sm font-semibold transition-all cursor-pointer flex items-center justify-center gap-2">
                   {saving && <i className="ri-loader-4-line animate-spin text-base"></i>}
                   {saving ? 'Deleting...' : 'Delete'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {bulkDeleteDepositsOpen && (
+        <>
+          <div className="fixed inset-0 bg-black/40 z-[60]" onClick={() => !bulkDeletingDeposits && setBulkDeleteDepositsOpen(false)}></div>
+          <div className="fixed inset-4 z-[70] flex items-center justify-center">
+            <div className="w-full max-w-md bg-white rounded-xl shadow-2xl overflow-hidden">
+              <div className="px-6 py-5 border-b border-slate-100">
+                <h3 className="text-slate-800 font-bold text-lg">Delete Selected Deposits</h3>
+                <p className="text-slate-500 text-sm mt-1">
+                  {selectedDeposits.length} deposit record{selectedDeposits.length === 1 ? '' : 's'} will be permanently removed.
+                </p>
+              </div>
+              <div className="px-6 py-5 bg-slate-50 text-sm text-slate-700">
+                <p className="font-semibold">Total selected</p>
+                <p className="font-mono">{fmt(selectedDeposits.reduce((sum, deposit) => sum + deposit.amountGHS, 0))}</p>
+              </div>
+              <div className="flex items-center gap-3 px-6 py-4">
+                <button
+                  type="button"
+                  onClick={() => setBulkDeleteDepositsOpen(false)}
+                  disabled={bulkDeletingDeposits}
+                  className="flex-1 py-2.5 border border-slate-200 rounded-lg text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleBulkDeleteDeposits}
+                  disabled={bulkDeletingDeposits}
+                  className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 disabled:bg-slate-200 disabled:text-slate-400 text-white rounded-lg text-sm font-semibold transition-all cursor-pointer flex items-center justify-center gap-2"
+                >
+                  {bulkDeletingDeposits && <i className="ri-loader-4-line animate-spin text-base"></i>}
+                  {bulkDeletingDeposits ? 'Deleting...' : 'Delete'}
                 </button>
               </div>
             </div>

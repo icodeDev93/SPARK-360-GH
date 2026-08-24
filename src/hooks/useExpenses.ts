@@ -218,6 +218,7 @@ export function useExpenses() {
     if (error) {
       console.error(error);
       queueLocalMutation('expenses', rec.expenseId, 'create', rec);
+      throw new Error(error.message || 'Expense could not be saved to the database.');
     }
     if (inserted) {
       const saved = toRecord(inserted);
@@ -248,6 +249,7 @@ export function useExpenses() {
     if (error) {
       console.error(error);
       queueLocalMutation('expenses', expenseId, 'update', nextExpenses.find((e) => e.expenseId === expenseId));
+      throw new Error(error.message || 'Expense could not be updated in the database.');
     }
   };
 

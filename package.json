@@ -6,6 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "admin:dev": "vite --config admin-console/vite.config.ts",
+    "admin:build": "vite build --config admin-console/vite.config.ts",
+    "admin:preview": "vite preview --config admin-console/vite.config.ts",
+    "admin:type-check": "tsc --noEmit --project admin-console/tsconfig.app.json",
     "preview": "vite preview",
     "lint": "eslint src --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "type-check": "tsc --noEmit --project tsconfig.app.json",

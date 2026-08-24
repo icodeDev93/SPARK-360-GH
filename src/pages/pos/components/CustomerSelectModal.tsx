@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { Customer, CustomerStatus, PaymentMethod } from '@/types/erp';
 import { sanitizeText, sanitizeMultiline } from '@/lib/sanitize';
 
@@ -9,12 +9,14 @@ interface Props {
   addCustomer: (
     data: Omit<Customer, 'customerId' | 'totalPurchases' | 'lastOrderDate'>
   ) => Promise<Customer>;
-  onComplete: (customerId: string | null, customerName: string) => void;
+  onComplete: (customerId: string | null, customerName: string) => void | Promise<void>;
   onCancel: () => void;
   paymentMethod?: PaymentMethod;
+  processing?: boolean;
+  error?: string;
 }
 
-export default function CustomerSelectModal({ customers, addCustomer, onComplete, onCancel, paymentMethod }: Props) {
+export default function CustomerSelectModal({ customers, addCustomer, onComplete, onCancel, paymentMethod, processing = false, error = '' }: Props) {
   const isCreditSale = paymentMethod === 'Credit';
   const [step, setStep] = useState<Step>('select');
   const [phone, setPhone] = useState('');
@@ -33,13 +35,32 @@ export default function CustomerSelectModal({ customers, addCustomer, onComplete
     outstandingBalance: '0.00',
   });
 
+  const normalizedSearch = phone.trim().toLowerCase();
+  const normalizedPhoneSearch = phone.trim().replace(/\s/g, '');
+  const customerMatches = useMemo(() => {
+    if (!normalizedSearch) return [];
+    return customers
+      .filter((customer) => {
+        const customerName = customer.fullName.toLowerCase();
+        const customerPhone = customer.phone.replace(/\s/g, '');
+        return customerName.includes(normalizedSearch) || customerPhone.includes(normalizedPhoneSearch);
+      })
+      .slice(0, 8);
+  }, [customers, normalizedPhoneSearch, normalizedSearch]);
+
+  const selectCustomer = (customer: Customer) => {
+    setFoundCustomer(customer);
+    setPhone(customer.fullName);
+    setStep('found');
+  };
+
   const handlePhoneSearch = () => {
-    const q = phone.trim().replace(/\s/g, '');
-    if (!q) return;
-    const match = customers.find((c) => c.phone.replace(/\s/g, '') === q);
+    if (!normalizedSearch) return;
+    const match =
+      customers.find((c) => c.phone.replace(/\s/g, '') === normalizedPhoneSearch) ??
+      customerMatches[0];
     if (match) {
-      setFoundCustomer(match);
-      setStep('found');
+      selectCustomer(match);
     } else {
       setForm((prev) => ({ ...prev, phone: phone.trim() }));
       setStep('not_found');
@@ -70,7 +91,10 @@ export default function CustomerSelectModal({ customers, addCustomer, onComplete
         avatar: getInitials(cleanName),
         notes: sanitizeMultiline(form.remarks) || undefined,
       });
-      onComplete(saved.customerId, saved.fullName);
+      await onComplete(saved.customerId, saved.fullName);
+    } catch (error) {
+      console.error(error);
+      setFormError(error instanceof Error ? error.message : 'Customer or sale could not be saved. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -106,7 +130,7 @@ export default function CustomerSelectModal({ customers, addCustomer, onComplete
               </h2>
               <p className="text-slate-400 text-xs">
                 {step === 'select' && 'Choose how to record this sale'}
-                {step === 'phone' && 'Search by phone number'}
+                {step === 'phone' && 'Search by name or phone number'}
                 {step === 'found' && 'Confirm the customer below'}
                 {step === 'not_found' && `No match for "${phone}"`}
                 {step === 'add_form' && 'Enter customer details'}
@@ -115,7 +139,8 @@ export default function CustomerSelectModal({ customers, addCustomer, onComplete
           </div>
           <button
             onClick={onCancel}
-            className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-all cursor-pointer"
+            disabled={processing}
+            className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer"
           >
             <i className="ri-close-line text-lg"></i>
           </button>
@@ -123,6 +148,12 @@ export default function CustomerSelectModal({ customers, addCustomer, onComplete
 
         {/* Body */}
         <div className="px-6 py-5 overflow-y-auto">
+          {error && (
+            <div className="mb-4 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2">
+              <i className="ri-error-warning-line text-red-500 text-sm mt-0.5 flex-shrink-0"></i>
+              <p className="text-red-600 text-xs">{error}</p>
+            </div>
+          )}
 
           {/* ── Step: select ── */}
           {step === 'select' && (
@@ -135,7 +166,8 @@ export default function CustomerSelectModal({ customers, addCustomer, onComplete
               ) : (
                 <button
                   onClick={() => onComplete(null, 'Walk-in Customer')}
-                  className="w-full flex items-center gap-4 p-4 rounded-xl border-2 border-slate-200 hover:border-indigo-400 hover:bg-indigo-50 text-left transition-all cursor-pointer group"
+                  disabled={processing}
+                  className="w-full flex items-center gap-4 p-4 rounded-xl border-2 border-slate-200 hover:border-indigo-400 hover:bg-indigo-50 disabled:opacity-60 disabled:cursor-not-allowed text-left transition-all cursor-pointer group"
                 >
                   <div className="w-11 h-11 flex-shrink-0 flex items-center justify-center rounded-xl bg-slate-100 group-hover:bg-indigo-100">
                     <i className="ri-walk-line text-xl text-slate-500 group-hover:text-indigo-600"></i>
@@ -157,7 +189,7 @@ export default function CustomerSelectModal({ customers, addCustomer, onComplete
                 </div>
                 <div>
                   <p className="text-slate-800 font-semibold text-sm">Registered Customer</p>
-                  <p className="text-slate-400 text-xs mt-0.5">Search by phone number or add new</p>
+                  <p className="text-slate-400 text-xs mt-0.5">Search by name or phone number</p>
                 </div>
                 <i className="ri-arrow-right-s-line text-slate-300 group-hover:text-emerald-400 ml-auto text-xl"></i>
               </button>
@@ -168,21 +200,49 @@ export default function CustomerSelectModal({ customers, addCustomer, onComplete
           {step === 'phone' && (
             <div className="space-y-4">
               <div>
-                <label className="block text-slate-700 text-sm font-semibold mb-1.5">Phone Number</label>
+                <label className="block text-slate-700 text-sm font-semibold mb-1.5">Customer Name or Phone Number</label>
                 <div className="relative">
                   <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
-                    <i className="ri-phone-line text-base"></i>
+                    <i className="ri-search-line text-base"></i>
                   </span>
                   <input
-                    type="tel"
+                    type="search"
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handlePhoneSearch()}
-                    placeholder="e.g. 0241234567"
+                    placeholder="Search by customer name or phone"
                     autoFocus
                     className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-lg text-sm text-slate-800 placeholder-slate-400 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all"
                   />
                 </div>
+                {phone.trim() && customerMatches.length > 0 && (
+                  <div className="mt-2 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+                    {customerMatches.map((customer) => (
+                      <button
+                        key={customer.customerId}
+                        type="button"
+                        onClick={() => selectCustomer(customer)}
+                        className="flex w-full items-center gap-3 border-b border-slate-100 px-3 py-2.5 text-left transition-all last:border-b-0 hover:bg-indigo-50 cursor-pointer"
+                      >
+                        <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-700">
+                          {customer.avatar || getInitials(customer.fullName)}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold text-slate-800">{customer.fullName}</p>
+                          <p className="truncate text-xs text-slate-500">{customer.phone}</p>
+                        </div>
+                        <span className={`flex-shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                          customer.statusFlag === 'Active' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'
+                        }`}>
+                          {customer.statusFlag}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {phone.trim() && customerMatches.length === 0 && (
+                  <p className="mt-2 text-xs text-slate-400">No matching customers yet. You can search or add a new customer.</p>
+                )}
               </div>
               <button
                 onClick={handlePhoneSearch}
@@ -218,17 +278,18 @@ export default function CustomerSelectModal({ customers, addCustomer, onComplete
 
               <button
                 onClick={() => onComplete(foundCustomer.customerId, foundCustomer.fullName)}
-                className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm transition-all cursor-pointer flex items-center justify-center gap-2"
+                disabled={processing}
+                className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold text-sm transition-all cursor-pointer flex items-center justify-center gap-2"
               >
-                <i className="ri-check-line text-base"></i>
-                Continue with {foundCustomer.fullName.split(' ')[0]}
+                {processing ? <i className="ri-loader-4-line animate-spin text-base"></i> : <i className="ri-check-line text-base"></i>}
+                {processing ? 'Saving sale...' : `Continue with ${foundCustomer.fullName.split(' ')[0]}`}
               </button>
 
               <button
                 onClick={() => { setPhone(''); setStep('phone'); }}
                 className="w-full py-2 text-slate-500 text-sm font-medium hover:text-slate-700 transition-all cursor-pointer"
               >
-                Search a different number
+                Search a different customer
               </button>
             </div>
           )}
@@ -242,7 +303,7 @@ export default function CustomerSelectModal({ customers, addCustomer, onComplete
                 </div>
                 <p className="text-slate-700 font-semibold text-sm">No customer found</p>
                 <p className="text-slate-400 text-xs mt-1">
-                  No registered customer with phone <span className="font-mono font-semibold">{phone}</span>
+                  No registered customer matching <span className="font-mono font-semibold">{phone}</span>
                 </p>
               </div>
 
@@ -380,10 +441,10 @@ export default function CustomerSelectModal({ customers, addCustomer, onComplete
 
               <button
                 onClick={handleSaveNewCustomer}
-                disabled={saving}
+                disabled={saving || processing}
                 className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold text-sm transition-all cursor-pointer flex items-center justify-center gap-2 mt-1"
               >
-                {saving ? (
+                {saving || processing ? (
                   <><i className="ri-loader-4-line animate-spin"></i> Saving…</>
                 ) : (
                   <><i className="ri-check-double-line"></i> Save & Complete Sale</>

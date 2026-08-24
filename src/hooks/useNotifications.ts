@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useBusiness } from '@/contexts/BusinessContext';
+import { useAuth } from '@/hooks/useAuth';
 
 export type NotifSeverity = 'critical' | 'warning' | 'info';
 export type NotifCategory  = 'Stock' | 'Orders' | 'Sales';
@@ -18,18 +19,23 @@ export interface NotificationItem {
   route:       string;
 }
 
-const DISMISSED_KEY = 'bizzyapp_notifs_dismissed_v2';
+const DISMISSED_KEY_PREFIX = 'bizzyapp_notifs_dismissed_v3';
+const READ_KEY_PREFIX = 'bizzyapp_notifs_read_v1';
 
-function loadDismissed(): Set<string> {
+function scopedKey(prefix: string, userId: string | undefined, businessId: string | null) {
+  return `${prefix}:${userId ?? 'anonymous'}:${businessId ?? 'no-business'}`;
+}
+
+function loadSet(key: string): Set<string> {
   try {
-    const s = localStorage.getItem(DISMISSED_KEY);
+    const s = localStorage.getItem(key);
     if (s) return new Set(JSON.parse(s) as string[]);
   } catch { /* ignore */ }
   return new Set();
 }
 
-function saveDismissed(s: Set<string>) {
-  localStorage.setItem(DISMISSED_KEY, JSON.stringify([...s]));
+function saveSet(key: string, s: Set<string>) {
+  localStorage.setItem(key, JSON.stringify([...s]));
 }
 
 function initials(name: string) {
@@ -50,9 +56,18 @@ const SEV_ORDER: Record<NotifSeverity, number> = { critical: 0, warning: 1, info
 
 export function useNotifications() {
   const { activeBusinessId } = useBusiness();
+  const { currentUser } = useAuth();
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
-  const [dismissed, setDismissed]         = useState<Set<string>>(loadDismissed);
+  const [dismissed, setDismissed]         = useState<Set<string>>(new Set());
+  const [read, setRead]                   = useState<Set<string>>(new Set());
   const [loading, setLoading]             = useState(true);
+  const dismissedKey = scopedKey(DISMISSED_KEY_PREFIX, currentUser?.id, activeBusinessId);
+  const readKey = scopedKey(READ_KEY_PREFIX, currentUser?.id, activeBusinessId);
+
+  useEffect(() => {
+    setDismissed(loadSet(dismissedKey));
+    setRead(loadSet(readKey));
+  }, [dismissedKey, readKey]);
 
   useEffect(() => {
     (async () => {
@@ -209,11 +224,12 @@ export function useNotifications() {
   }, [activeBusinessId]);
 
   const active = notifications.filter((n) => !dismissed.has(n.id));
+  const unread = active.filter((n) => !read.has(n.id));
 
   const dismiss = (id: string) => {
     setDismissed((prev) => {
       const next = new Set(prev); next.add(id);
-      saveDismissed(next);
+      saveSet(dismissedKey, next);
       return next;
     });
   };
@@ -224,7 +240,17 @@ export function useNotifications() {
         ? notifications.filter((n) => n.category === cat).map((n) => n.id)
         : notifications.map((n) => n.id);
       const next = new Set([...prev, ...ids]);
-      saveDismissed(next);
+      saveSet(dismissedKey, next);
+      return next;
+    });
+  };
+
+  const markRead = (ids?: string[]) => {
+    const nextIds = ids?.length ? ids : active.map((n) => n.id);
+    if (nextIds.length === 0) return;
+    setRead((prev) => {
+      const next = new Set([...prev, ...nextIds]);
+      saveSet(readKey, next);
       return next;
     });
   };
@@ -235,7 +261,9 @@ export function useNotifications() {
     dismiss,
     dismissAll: () => dismissCategory(),
     dismissCategory,
-    criticalCount: active.filter((n) => n.severity === 'critical').length,
+    markRead,
+    unreadCount: unread.length,
+    criticalCount: unread.filter((n) => n.severity === 'critical').length,
     byCategory: (cat: NotifCategory) => active.filter((n) => n.category === cat),
   };
 }

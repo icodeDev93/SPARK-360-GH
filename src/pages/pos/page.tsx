@@ -5,10 +5,12 @@ import ProductGrid from './components/ProductGrid';
 import CartPanel from './components/CartPanel';
 import { applyPriceLevel, maxQtyForCartItem, type CartItem } from './pricing';
 import type { SalePriceLevel } from '@/types/erp';
+import { useSidebar } from '@/contexts/SidebarContext';
 
 export default function POSPage() {
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [showCart, setShowCart] = useState(false);
+  const { isCollapsed } = useSidebar();
 
   const handleAddToCart = (item: CartItem) => {
     setCartItems((prev) => {
@@ -39,7 +41,7 @@ export default function POSPage() {
   return (
     <div className="h-screen overflow-hidden bg-slate-50">
       <Sidebar />
-      <div className="lg:ml-64 flex flex-col h-full min-w-0">
+      <div className={`flex flex-col h-full min-w-0 transition-[margin] duration-200 ${isCollapsed ? 'lg:ml-20' : 'lg:ml-64'}`}>
         <Topbar />
         <div className="pt-16 flex flex-1 h-screen overflow-hidden min-w-0">
           {/* Product Browser */}

@@ -37,6 +37,12 @@ export function calcStockValue(item: Pick<InventoryItem, 'wholesaleQuantity' | '
   return packs * Math.max(0, Number(item.wholesaleCostPrice) || 0) + singles * Math.max(0, Number(item.singleCostPrice) || 0);
 }
 
+export function calcRetailStockValue(item: Pick<InventoryItem, 'wholesaleQuantity' | 'singleQuantity' | 'wholesaleSellingPrice' | 'singleSellingPrice'>): number {
+  const packs = Math.max(0, Number(item.wholesaleQuantity) || 0);
+  const singles = Math.max(0, Math.floor(item.singleQuantity || 0));
+  return packs * Math.max(0, Number(item.wholesaleSellingPrice) || 0) + singles * Math.max(0, Number(item.singleSellingPrice) || 0);
+}
+
 export function formatPackStock(item: Pick<InventoryItem, 'wholesaleQuantity' | 'singleQuantity' | 'quantityPerBox' | 'currentStock'>): string {
   const unitsPerPack = Math.max(0, Math.floor(item.quantityPerBox || 0));
   if (unitsPerPack <= 0) return `${Math.max(0, Math.floor(item.currentStock || 0))} pcs`;

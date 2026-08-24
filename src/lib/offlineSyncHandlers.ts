@@ -6,9 +6,13 @@ import type { PurchaseOrder, Supplier } from '@/mocks/suppliers';
 
 const ACTIVE_BUSINESS_KEY = 'bizzyapp:active-business-id';
 const activeBusinessId = () => localStorage.getItem(ACTIVE_BUSINESS_KEY);
+const operationBusinessId = (entity: string) => {
+  const [scope] = entity.split(':');
+  return entity.includes(':') && scope ? scope : activeBusinessId();
+};
 
-const itemRow = (item: InventoryItem) => ({
-  business_id: activeBusinessId(),
+const itemRow = (item: InventoryItem, businessId: string | null) => ({
+  business_id: businessId,
   product_code: item.itemId ? item.itemId.toUpperCase() : undefined,
   product_name: item.productName,
   category_name: item.category,
@@ -33,8 +37,8 @@ const itemRow = (item: InventoryItem) => ({
   price_levels: item.priceLevels,
 });
 
-const customerRow = (customer: Customer) => ({
-  business_id: activeBusinessId(),
+const customerRow = (customer: Customer, businessId: string | null) => ({
+  business_id: businessId,
   full_name: customer.fullName,
   phone: customer.phone,
   customer_type: customer.customerType,
@@ -47,8 +51,8 @@ const customerRow = (customer: Customer) => ({
   status: customer.statusFlag,
 });
 
-const expenseRow = (expense: ExpenseRecord) => ({
-  business_id: activeBusinessId(),
+const expenseRow = (expense: ExpenseRecord, businessId: string | null) => ({
+  business_id: businessId,
   expense_date: expense.date,
   category: expense.category,
   description: expense.description,
@@ -58,16 +62,16 @@ const expenseRow = (expense: ExpenseRecord) => ({
   proof_url: expense.proofUrl ?? null,
 });
 
-const bankRow = (bank: BankRecord) => ({
-  business_id: activeBusinessId(),
+const bankRow = (bank: BankRecord, businessId: string | null) => ({
+  business_id: businessId,
   bank_name: bank.bankName,
   branch: bank.branch,
   address: bank.address,
   telephone: bank.telephone,
 });
 
-const depositRow = (deposit: BankDepositRecord) => ({
-  business_id: activeBusinessId(),
+const depositRow = (deposit: BankDepositRecord, businessId: string | null) => ({
+  business_id: businessId,
   deposit_date: deposit.date,
   bank_id: deposit.bankId,
   bank_name: deposit.bank,
@@ -76,8 +80,8 @@ const depositRow = (deposit: BankDepositRecord) => ({
   remarks: deposit.remarks,
 });
 
-const supplierRow = (supplier: Supplier) => ({
-  business_id: activeBusinessId(),
+const supplierRow = (supplier: Supplier, businessId: string | null) => ({
+  business_id: businessId,
   supplier_code: supplier.id,
   name: supplier.name,
   contact_name: supplier.contact,
@@ -90,8 +94,8 @@ const supplierRow = (supplier: Supplier) => ({
   notes: supplier.notes,
 });
 
-const purchaseRow = (order: PurchaseOrder) => ({
-  business_id: activeBusinessId(),
+const purchaseRow = (order: PurchaseOrder, businessId: string | null) => ({
+  business_id: businessId,
   purchase_number: order.id,
   supplier_code: order.supplierId,
   supplier_name: order.supplierName,
@@ -108,15 +112,18 @@ const purchaseRow = (order: PurchaseOrder) => ({
 const saleItemsText = (invoice: InvoiceRecord) =>
   invoice.items.map((item) => `${item.productName} [${item.netQty} pcs]`).join(', ');
 
-const saleRow = (invoice: InvoiceRecord) => ({
-  business_id: activeBusinessId(),
+const saleRow = (invoice: InvoiceRecord, businessId: string | null) => ({
+  business_id: businessId,
   invoice_number: invoice.invoiceNo,
   receipt_number: invoice.receiptNo,
   sale_date: invoice.date,
+  sale_time: invoice.time || invoice.date,
   customer_id: invoice.customerId && invoice.customerId !== 'walk-in' ? invoice.customerId : null,
   customer_name: invoice.customerName,
   items: saleItemsText(invoice),
-  subtotal: invoice.netSales,
+  subtotal: invoice.subtotal ?? invoice.netSales,
+  tax_amount: invoice.taxAmount ?? 0,
+  discount_amount: invoice.discountAmount ?? 0,
   total_amount: invoice.netSales,
   total_cost: invoice.totalCost,
   gross_margin: invoice.grossMargin,
@@ -125,7 +132,8 @@ const saleRow = (invoice: InvoiceRecord) => ({
   cashier: invoice.cashier,
 });
 
-const saleItemRows = (saleId: string, items: SaleLineItem[]) => items.map((item) => ({
+const saleItemRows = (saleId: string, items: SaleLineItem[], businessId: string | null) => items.map((item) => ({
+  business_id: businessId,
   sale_id: saleId,
   product_code: item.productId,
   product_name: item.productName,
@@ -140,23 +148,30 @@ const saleItemRows = (saleId: string, items: SaleLineItem[]) => items.map((item)
   line_margin: item.grossMargin,
 }));
 
-const receiptRow = (saleId: string, invoice: InvoiceRecord) => ({
+const receiptRow = (saleId: string, invoice: InvoiceRecord, businessId: string | null) => ({
+  business_id: businessId,
   sale_id: saleId,
   receipt_number: invoice.receiptNo,
   customer_name: invoice.customerName,
   cashier: invoice.cashier,
-  subtotal: invoice.netSales,
+  subtotal: invoice.subtotal ?? invoice.netSales,
+  tax_amount: invoice.taxAmount ?? 0,
+  discount_amount: invoice.discountAmount ?? 0,
   total_amount: invoice.netSales,
   payment_method: invoice.paymentMethod,
   receipt_payload: invoice,
 });
 
-const settingsRow = (settings: StoreSettings) => ({
+const settingsRow = (settings: StoreSettings, businessId: string | null) => ({
+  business_id: businessId,
   settings_key: 'default',
   store_name: settings.storeName,
   store_address: settings.storeAddress,
   store_phone: settings.storePhone,
   store_email: settings.storeEmail,
+  store_sender_id: settings.storeSenderId,
+  invoice_sms_template: settings.invoiceSmsTemplate,
+  payment_sms_template: settings.paymentSmsTemplate,
   store_logo: settings.storeLogo,
   currency: settings.currency,
   currency_symbol: settings.currencySymbol,
@@ -178,116 +193,140 @@ function throwIfError<T>(result: { error: T }) {
 
 export const offlineSyncHandlers: Record<string, EntitySyncHandler> = {
   inventory: async (operation) => {
+    const businessId = operationBusinessId(operation.entity);
+    if (!businessId) throw new Error('Cannot sync inventory without a business scope.');
     if (operation.operation === 'delete') {
-      await throwIfError(await supabase.from('inventory').delete().eq('product_code', operation.recordId));
+      await throwIfError(await supabase.from('inventory').delete().eq('business_id', businessId).eq('product_code', operation.recordId));
       return;
     }
     const payload = operation.payload as InventoryItem;
-    const existing = await supabase.from('inventory').select('product_code').eq('product_code', operation.recordId).maybeSingle();
-    if (existing.data) await throwIfError(await supabase.from('inventory').update(itemRow(payload)).eq('product_code', operation.recordId));
-    else await throwIfError(await supabase.from('inventory').insert(itemRow(payload)));
+    const existing = await supabase.from('inventory').select('product_code').eq('business_id', businessId).eq('product_code', operation.recordId).maybeSingle();
+    if (existing.data) await throwIfError(await supabase.from('inventory').update(itemRow(payload, businessId)).eq('business_id', businessId).eq('product_code', operation.recordId));
+    else await throwIfError(await supabase.from('inventory').insert(itemRow(payload, businessId)));
   },
   inventory_categories: async (operation) => {
+    const businessId = operationBusinessId(operation.entity);
+    if (!businessId) throw new Error('Cannot sync inventory categories without a business scope.');
     if (operation.operation === 'delete') {
-      await throwIfError(await supabase.from('inventory_categories').delete().eq('name', operation.recordId));
+      await throwIfError(await supabase.from('inventory_categories').delete().eq('business_id', businessId).eq('name', operation.recordId));
       return;
     }
     const payload = operation.payload as { name?: string; original?: string };
     if (operation.operation === 'update' && payload.original) {
-      await throwIfError(await supabase.from('inventory_categories').update({ name: payload.name }).eq('name', payload.original));
+      await throwIfError(await supabase.from('inventory_categories').update({ name: payload.name }).eq('business_id', businessId).eq('name', payload.original));
     } else {
-      await throwIfError(await supabase.from('inventory_categories').insert({ name: payload.name ?? operation.recordId }));
+      await throwIfError(await supabase.from('inventory_categories').insert({ business_id: businessId, name: payload.name ?? operation.recordId }));
     }
   },
   customers: async (operation) => {
+    const businessId = operationBusinessId(operation.entity);
+    if (!businessId) throw new Error('Cannot sync customers without a business scope.');
     if (operation.operation === 'delete') {
-      await throwIfError(await supabase.from('customers').delete().eq('id', operation.recordId));
+      await throwIfError(await supabase.from('customers').delete().eq('business_id', businessId).eq('id', operation.recordId));
       return;
     }
     const payload = operation.payload as Customer;
-    const existing = await supabase.from('customers').select('id').eq('id', operation.recordId).maybeSingle();
-    if (existing.data) await throwIfError(await supabase.from('customers').update(customerRow(payload)).eq('id', operation.recordId));
-    else await throwIfError(await supabase.from('customers').insert({ id: operation.recordId, ...customerRow(payload) }));
+    const existing = await supabase.from('customers').select('id').eq('business_id', businessId).eq('id', operation.recordId).maybeSingle();
+    if (existing.data) await throwIfError(await supabase.from('customers').update(customerRow(payload, businessId)).eq('business_id', businessId).eq('id', operation.recordId));
+    else await throwIfError(await supabase.from('customers').insert({ id: operation.recordId, ...customerRow(payload, businessId) }));
   },
   expenses: async (operation) => {
+    const businessId = operationBusinessId(operation.entity);
+    if (!businessId) throw new Error('Cannot sync expenses without a business scope.');
     if (operation.operation === 'delete') {
-      await throwIfError(await supabase.from('expenses').delete().eq('id', operation.recordId));
+      await throwIfError(await supabase.from('expenses').delete().eq('business_id', businessId).eq('id', operation.recordId));
       return;
     }
     const payload = operation.payload as ExpenseRecord;
-    const existing = await supabase.from('expenses').select('id').eq('id', operation.recordId).maybeSingle();
-    if (existing.data) await throwIfError(await supabase.from('expenses').update(expenseRow(payload)).eq('id', operation.recordId));
-    else await throwIfError(await supabase.from('expenses').insert({ id: operation.recordId, ...expenseRow(payload) }));
+    const existing = await supabase.from('expenses').select('id').eq('business_id', businessId).eq('id', operation.recordId).maybeSingle();
+    if (existing.data) await throwIfError(await supabase.from('expenses').update(expenseRow(payload, businessId)).eq('business_id', businessId).eq('id', operation.recordId));
+    else await throwIfError(await supabase.from('expenses').insert({ id: operation.recordId, ...expenseRow(payload, businessId) }));
   },
   banks: async (operation) => {
+    const businessId = operationBusinessId(operation.entity);
+    if (!businessId) throw new Error('Cannot sync banks without a business scope.');
     if (operation.operation === 'delete') {
-      await throwIfError(await supabase.from('banks').delete().eq('id', operation.recordId));
+      await throwIfError(await supabase.from('banks').delete().eq('business_id', businessId).eq('id', operation.recordId));
       return;
     }
     const payload = operation.payload as BankRecord;
-    const existing = await supabase.from('banks').select('id').eq('id', operation.recordId).maybeSingle();
-    if (existing.data) await throwIfError(await supabase.from('banks').update(bankRow(payload)).eq('id', operation.recordId));
-    else await throwIfError(await supabase.from('banks').insert({ id: operation.recordId, ...bankRow(payload) }));
+    const existing = await supabase.from('banks').select('id').eq('business_id', businessId).eq('id', operation.recordId).maybeSingle();
+    if (existing.data) await throwIfError(await supabase.from('banks').update(bankRow(payload, businessId)).eq('business_id', businessId).eq('id', operation.recordId));
+    else await throwIfError(await supabase.from('banks').insert({ id: operation.recordId, ...bankRow(payload, businessId) }));
   },
   bank_deposits: async (operation) => {
+    const businessId = operationBusinessId(operation.entity);
+    if (!businessId) throw new Error('Cannot sync bank deposits without a business scope.');
     if (operation.operation === 'delete') {
-      await throwIfError(await supabase.from('bank_deposits').delete().eq('id', operation.recordId));
+      await throwIfError(await supabase.from('bank_deposits').delete().eq('business_id', businessId).eq('id', operation.recordId));
       return;
     }
     const payload = operation.payload as BankDepositRecord;
-    const existing = await supabase.from('bank_deposits').select('id').eq('id', operation.recordId).maybeSingle();
-    if (existing.data) await throwIfError(await supabase.from('bank_deposits').update(depositRow(payload)).eq('id', operation.recordId));
-    else await throwIfError(await supabase.from('bank_deposits').insert({ id: operation.recordId, ...depositRow(payload) }));
+    const existing = await supabase.from('bank_deposits').select('id').eq('business_id', businessId).eq('id', operation.recordId).maybeSingle();
+    if (existing.data) await throwIfError(await supabase.from('bank_deposits').update(depositRow(payload, businessId)).eq('business_id', businessId).eq('id', operation.recordId));
+    else await throwIfError(await supabase.from('bank_deposits').insert({ id: operation.recordId, ...depositRow(payload, businessId) }));
   },
   suppliers: async (operation) => {
+    const businessId = operationBusinessId(operation.entity);
+    if (!businessId) throw new Error('Cannot sync suppliers without a business scope.');
     if (operation.operation === 'delete') {
-      await throwIfError(await supabase.from('suppliers').delete().eq('supplier_code', operation.recordId));
+      await throwIfError(await supabase.from('suppliers').delete().eq('business_id', businessId).eq('supplier_code', operation.recordId));
       return;
     }
     const payload = operation.payload as Supplier;
-    const existing = await supabase.from('suppliers').select('supplier_code').eq('supplier_code', operation.recordId).maybeSingle();
-    if (existing.data) await throwIfError(await supabase.from('suppliers').update(supplierRow(payload)).eq('supplier_code', operation.recordId));
-    else await throwIfError(await supabase.from('suppliers').insert(supplierRow(payload)));
+    const existing = await supabase.from('suppliers').select('supplier_code').eq('business_id', businessId).eq('supplier_code', operation.recordId).maybeSingle();
+    if (existing.data) await throwIfError(await supabase.from('suppliers').update(supplierRow(payload, businessId)).eq('business_id', businessId).eq('supplier_code', operation.recordId));
+    else await throwIfError(await supabase.from('suppliers').insert(supplierRow(payload, businessId)));
   },
   purchases: async (operation) => {
+    const businessId = operationBusinessId(operation.entity);
+    if (!businessId) throw new Error('Cannot sync purchases without a business scope.');
     if (operation.operation === 'delete') {
-      await throwIfError(await supabase.from('purchases').delete().eq('purchase_number', operation.recordId));
+      await throwIfError(await supabase.from('purchases').delete().eq('business_id', businessId).eq('purchase_number', operation.recordId));
       return;
     }
     const payload = operation.payload as PurchaseOrder;
-    const existing = await supabase.from('purchases').select('purchase_number').eq('purchase_number', operation.recordId).maybeSingle();
-    if (existing.data) await throwIfError(await supabase.from('purchases').update(purchaseRow(payload)).eq('purchase_number', operation.recordId));
-    else await throwIfError(await supabase.from('purchases').insert(purchaseRow(payload)));
+    const existing = await supabase.from('purchases').select('purchase_number').eq('business_id', businessId).eq('purchase_number', operation.recordId).maybeSingle();
+    if (existing.data) await throwIfError(await supabase.from('purchases').update(purchaseRow(payload, businessId)).eq('business_id', businessId).eq('purchase_number', operation.recordId));
+    else await throwIfError(await supabase.from('purchases').insert(purchaseRow(payload, businessId)));
   },
   sales: async (operation) => {
+    const businessId = operationBusinessId(operation.entity);
+    if (!businessId) throw new Error('Cannot sync sales without a business scope.');
     if (operation.operation === 'delete') {
-      await throwIfError(await supabase.from('sales').delete().eq('invoice_number', operation.recordId));
+      await throwIfError(await supabase.from('sales').delete().eq('business_id', businessId).eq('invoice_number', operation.recordId));
       return;
     }
     const payload = operation.payload as InvoiceRecord;
-    const existing = await supabase.from('sales').select('id').eq('invoice_number', operation.recordId).maybeSingle();
+    const existing = await supabase.from('sales').select('id').eq('business_id', businessId).eq('invoice_number', operation.recordId).maybeSingle();
     if (existing.data) {
-      await throwIfError(await supabase.from('sales').update(saleRow(payload)).eq('invoice_number', operation.recordId));
+      await throwIfError(await supabase.from('sales').update(saleRow(payload, businessId)).eq('business_id', businessId).eq('invoice_number', operation.recordId));
       return;
     }
 
-    const saleResult = await supabase.from('sales').insert(saleRow(payload)).select('id').single();
+    const saleResult = await supabase.from('sales').insert(saleRow(payload, businessId)).select('id').single();
     throwIfError(saleResult);
     if (!saleResult.data) return;
     if (payload.items.length) {
-      await throwIfError(await supabase.from('sale_items').insert(saleItemRows(saleResult.data.id, payload.items)));
+      await throwIfError(await supabase.from('sale_items').insert(saleItemRows(saleResult.data.id, payload.items, businessId)));
     }
     if (payload.receiptNo) {
-      await throwIfError(await supabase.from('receipts').insert(receiptRow(saleResult.data.id, payload)));
+      await throwIfError(await supabase.from('receipts').insert(receiptRow(saleResult.data.id, payload, businessId)));
     }
   },
   credit_payments: async (operation) => {
-    await throwIfError(await supabase.from('credit_payments').insert(operation.payload));
+    const businessId = operationBusinessId(operation.entity);
+    if (!businessId) throw new Error('Cannot sync credit payments without a business scope.');
+    await throwIfError(await supabase.from('credit_payments').insert({ ...(operation.payload as Record<string, unknown>), business_id: businessId }));
   },
   store_settings: async (operation) => {
-    await throwIfError(await supabase.from('store_settings').upsert(settingsRow(operation.payload as StoreSettings), { onConflict: 'settings_key' }));
+    const businessId = operationBusinessId(operation.entity);
+    if (!businessId) throw new Error('Cannot sync store settings without a business scope.');
+    await throwIfError(await supabase.from('store_settings').upsert(settingsRow(operation.payload as StoreSettings, businessId), { onConflict: 'business_id,settings_key' }));
   },
   user_logs: async (operation) => {
-    await throwIfError(await supabase.from('user_logs').insert(operation.payload));
+    const businessId = operationBusinessId(operation.entity);
+    if (!businessId) throw new Error('Cannot sync activity logs without a business scope.');
+    await throwIfError(await supabase.from('user_logs').insert({ ...(operation.payload as Record<string, unknown>), business_id: businessId }));
   },
 };

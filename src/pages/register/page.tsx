@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import PasswordInput from '@/components/ui/PasswordInput';
 import { supabase } from '@/lib/supabase';
 import { sanitizeEmail, sanitizeText } from '@/lib/sanitize';
+import { checkClientRateLimit, rateLimitErrorMessage } from '@/lib/rateLimit';
 
 export default function RegisterPage() {
   const navigate = useNavigate();
@@ -49,6 +50,11 @@ export default function RegisterPage() {
       setError('Passwords do not match.');
       return;
     }
+    const rateError = checkClientRateLimit('auth:register', cleanEmail || 'unknown');
+    if (rateError) {
+      setError(rateError);
+      return;
+    }
 
     setSaving(true);
     const { error: signUpError } = await supabase.auth.signUp({
@@ -66,7 +72,7 @@ export default function RegisterPage() {
     setSaving(false);
 
     if (signUpError) {
-      setError(signUpError.message);
+      setError(rateLimitErrorMessage(signUpError));
       return;
     }
 

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import AppLayout from '@/components/feature/AppLayout';
 import Paginator from '@/components/ui/Paginator';
+import BulkActionBar from '@/components/ui/BulkActionBar';
 
 const PAGE_SIZE = 20;
 import { useExpenses } from '@/hooks/useExpenses';
@@ -83,6 +84,9 @@ export default function ExpensesPage() {
   const [categoryError, setCategoryError] = useState('');
   const [editingCategory, setEditingCategory] = useState<string | null>(null);
   const [editingCategoryName, setEditingCategoryName] = useState('');
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   useEffect(() => { setPage(1); }, [filterCat, search, startDate, endDate]);
 
@@ -92,6 +96,9 @@ export default function ExpensesPage() {
     return matchCat && matchSearch && isWithinDateRange(e.date, startDate, endDate);
   });
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const selectedExpenses = expenses.filter((expense) => selectedIds.includes(expense.expenseId));
+  const visibleIds = paginated.map((expense) => expense.expenseId);
+  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.includes(id));
 
   const sortedCats  = Object.entries(totalByCategory).sort((a, b) => b[1] - a[1]);
   const topCats     = sortedCats.slice(0, 3);
@@ -124,6 +131,39 @@ export default function ExpensesPage() {
 
   const handleEdit  = (exp: ExpenseRecord) => { setEditTarget(exp); setShowForm(true); };
   const handleClose = () => { setShowForm(false); setEditTarget(null); };
+
+  const toggleSelected = (id: string) => {
+    setSelectedIds((prev) => prev.includes(id) ? prev.filter((expenseId) => expenseId !== id) : [...prev, id]);
+  };
+
+  const toggleVisibleSelection = () => {
+    setSelectedIds((prev) => {
+      if (allVisibleSelected) return prev.filter((id) => !visibleIds.includes(id));
+      return Array.from(new Set([...prev, ...visibleIds]));
+    });
+  };
+
+  const handleBulkDelete = async () => {
+    if (bulkDeleting || selectedExpenses.length === 0) return;
+    setBulkDeleting(true);
+    for (const expense of selectedExpenses) {
+      await deleteExpense(expense.expenseId);
+    }
+    if (currentUser) writeLog(currentUser, {
+      category: 'expenses',
+      action: 'delete',
+      description: `Bulk deleted ${selectedExpenses.length} expense(s): ${selectedExpenses.map((expense) => expense.description).join(', ')}`,
+    });
+    showFeedback({
+      title: 'Expenses Deleted',
+      message: `${selectedExpenses.length} expense${selectedExpenses.length === 1 ? '' : 's'} removed successfully.`,
+      buttonLabel: 'Continue',
+      kind: 'deleted',
+    });
+    setSelectedIds([]);
+    setBulkDeleteOpen(false);
+    setBulkDeleting(false);
+  };
 
   const handleAddCategory = async () => {
     const result = await addCategory(newCategory);
@@ -180,7 +220,7 @@ export default function ExpensesPage() {
     });
   };
 
-  const handleSave = (data: Omit<ExpenseRecord, 'expenseId'>) => {
+  const handleSave = async (data: Omit<ExpenseRecord, 'expenseId'>) => {
     if (editTarget) {
       const changes = diffFields(
         editTarget as unknown as Record<string, unknown>,
@@ -188,14 +228,14 @@ export default function ExpensesPage() {
         { description: 'Description', category: 'Category', amountGHS: 'Amount', paidBy: 'Paid By', date: 'Date', notes: 'Notes' },
         { amountGHS: (v) => `₵${Number(v).toFixed(2)}` },
       );
-      updateExpense(editTarget.expenseId, data);
+      await updateExpense(editTarget.expenseId, data);
       if (currentUser) writeLog(currentUser, {
         category: 'expenses', action: 'edit',
         description: `Edited expense "${data.description}" (${data.category})`,
         changes,
       });
     } else {
-      addExpense(data);
+      await addExpense(data);
       if (currentUser) writeLog(currentUser, {
         category: 'expenses', action: 'create',
         description: `Added expense "${data.description}" — ${data.category}, ₵${data.amountGHS.toFixed(2)} via ${data.paidBy}`,
@@ -305,7 +345,7 @@ export default function ExpensesPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-3 mb-4">
+      <div className="flex flex-col lg:flex-row lg:flex-wrap gap-3 mb-4 min-w-0">
         <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-3 py-2 flex-1 max-w-xs">
           <i className="ri-search-line text-slate-400 text-sm"></i>
           <input
@@ -316,16 +356,16 @@ export default function ExpensesPage() {
             className="bg-transparent text-sm text-slate-600 placeholder-slate-400 outline-none flex-1"
           />
         </div>
-        <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="border border-slate-200 bg-white rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none" title="Start date" />
-        <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="border border-slate-200 bg-white rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none" title="End date" />
-        <div className="flex items-center gap-2">
-          <button onClick={() => exportExpenses('csv')} className="flex items-center gap-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap">
+        <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="border border-slate-200 bg-white rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none min-w-0" title="Start date" />
+        <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="border border-slate-200 bg-white rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none min-w-0" title="End date" />
+        <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2">
+          <button onClick={() => exportExpenses('csv')} className="flex items-center justify-center gap-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap">
             <i className="ri-file-excel-2-line text-base"></i>
-            CSV
+            Export to CSV
           </button>
-          <button onClick={() => exportExpenses('pdf')} className="flex items-center gap-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap">
+          <button onClick={() => exportExpenses('pdf')} className="flex items-center justify-center gap-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap">
             <i className="ri-file-pdf-2-line text-base"></i>
-            PDF
+            Export to PDF
           </button>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -346,11 +386,25 @@ export default function ExpensesPage() {
       </div>
 
       {/* Table */}
+      <BulkActionBar
+        selectedCount={selectedIds.length}
+        onClear={() => setSelectedIds([])}
+        onDelete={() => setBulkDeleteOpen(true)}
+      />
       <div className="bg-white rounded-xl border border-slate-100 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="bg-slate-50 border-b border-slate-100">
               <tr>
+                <th className="text-left px-5 py-3.5">
+                  <input
+                    type="checkbox"
+                    checked={allVisibleSelected}
+                    onChange={toggleVisibleSelection}
+                    className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                    aria-label="Select visible expenses"
+                  />
+                </th>
                 {['Description', 'Category', 'Date', 'Paid By', 'Notes', 'Amount (₵)', 'Actions'].map((h) => (
                   <th key={h} className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide px-5 py-3.5 whitespace-nowrap">{h}</th>
                 ))}
@@ -359,7 +413,7 @@ export default function ExpensesPage() {
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-5 py-12 text-center">
+                  <td colSpan={8} className="px-5 py-12 text-center">
                     <div className="flex flex-col items-center gap-2">
                       <i className="ri-wallet-3-line text-3xl text-slate-300"></i>
                       <p className="text-slate-400 text-sm font-medium">No expenses found</p>
@@ -370,6 +424,15 @@ export default function ExpensesPage() {
               ) : (
                 paginated.map((e, i) => (
                   <tr key={e.expenseId} className={`border-b border-slate-50 hover:bg-slate-50 transition-all ${i % 2 === 1 ? 'bg-slate-50/30' : ''}`}>
+                    <td className="px-5 py-3.5">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.includes(e.expenseId)}
+                        onChange={() => toggleSelected(e.expenseId)}
+                        className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                        aria-label={`Select ${e.description}`}
+                      />
+                    </td>
                     <td className="px-5 py-3.5">
                       <p className="text-slate-800 text-sm font-semibold">{e.description}</p>
                     </td>
@@ -428,7 +491,7 @@ export default function ExpensesPage() {
             {filtered.length > 0 && (
               <tfoot className="bg-slate-50 border-t border-slate-200">
                 <tr>
-                  <td colSpan={5} className="px-5 py-3 text-sm font-bold text-slate-600">
+                  <td colSpan={6} className="px-5 py-3 text-sm font-bold text-slate-600">
                     {filtered.length} expense{filtered.length !== 1 ? 's' : ''} shown
                   </td>
                   <td className="px-5 py-3">
@@ -610,6 +673,37 @@ export default function ExpensesPage() {
                   kind: 'deleted',
                 });
               }} className="flex-1 py-2.5 rounded-lg bg-red-500 hover:bg-red-600 text-white text-sm font-bold cursor-pointer whitespace-nowrap">Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {bulkDeleteOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm mx-4">
+            <div className="w-12 h-12 flex items-center justify-center bg-red-100 rounded-xl mb-4">
+              <i className="ri-delete-bin-line text-red-600 text-xl"></i>
+            </div>
+            <h3 className="text-slate-800 font-bold text-base mb-2">Delete Selected Expenses?</h3>
+            <p className="text-slate-500 text-sm mb-2 leading-relaxed">
+              {selectedExpenses.length} expense{selectedExpenses.length === 1 ? '' : 's'} will be permanently removed.
+            </p>
+            <p className="text-slate-400 text-xs mb-6">This action cannot be undone.</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setBulkDeleteOpen(false)}
+                disabled={bulkDeleting}
+                className="flex-1 py-2.5 rounded-lg border border-slate-200 text-slate-700 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50 cursor-pointer whitespace-nowrap"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleBulkDelete}
+                disabled={bulkDeleting}
+                className="flex-1 py-2.5 rounded-lg bg-red-500 hover:bg-red-600 disabled:opacity-60 text-white text-sm font-bold cursor-pointer whitespace-nowrap"
+              >
+                {bulkDeleting ? 'Deleting...' : 'Delete'}
+              </button>
             </div>
           </div>
         </div>

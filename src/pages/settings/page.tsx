@@ -7,14 +7,16 @@ import TaxSection from './components/TaxSection';
 import ReceiptSection from './components/ReceiptSection';
 import RolePermissionsSection from './components/RolePermissionsSection';
 import CreditSection from './components/CreditSection';
+import SmsTemplatesSection from './components/SmsTemplatesSection';
 import { useFeedbackModal } from '@/hooks/useFeedbackModal';
 
-type Tab = 'store' | 'tax' | 'receipt' | 'permissions' | 'credit';
+type Tab = 'store' | 'tax' | 'receipt' | 'sms' | 'permissions' | 'credit';
 
 const BASE_TABS: { key: Tab; label: string; icon: string; desc: string; adminOnly?: boolean }[] = [
   { key: 'store',       label: 'Store Info',        icon: 'ri-store-2-line',          desc: 'Name, address, contact' },
   { key: 'tax',         label: 'Tax & Rates',        icon: 'ri-percent-line',          desc: 'Tax rates and labels' },
   { key: 'receipt',     label: 'Receipt',            icon: 'ri-receipt-line',          desc: 'Layout and content' },
+  { key: 'sms',         label: 'SMS Templates',      icon: 'ri-message-2-line',        desc: 'Invoice and payment messages' },
   { key: 'credit',      label: 'Credit & Invoices',  icon: 'ri-hand-coin-line',        desc: 'Payment terms & due days', adminOnly: true },
   { key: 'permissions', label: 'Role Permissions',   icon: 'ri-shield-keyhole-line',   desc: 'Control access by role', adminOnly: true },
 ];
@@ -129,6 +131,9 @@ export default function SettingsPage() {
               )}
               {activeTab === 'receipt' && (
                 <ReceiptSection settings={settings} onChange={updateSettings} />
+              )}
+              {activeTab === 'sms' && (
+                <SmsTemplatesSection settings={settings} onChange={updateSettings} />
               )}
               {activeTab === 'credit' && isOwner && (
                 <CreditSection settings={settings} onChange={updateSettings} />

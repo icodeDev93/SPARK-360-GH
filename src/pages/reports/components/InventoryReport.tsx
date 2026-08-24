@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useInventory } from '@/hooks/useInventory';
+import { calcRetailStockValue, calcStockValue } from '@/services/inventoryService';
 
 const fmt  = (n: number) => `₵${n.toLocaleString('en-GH', { minimumFractionDigits: 2 })}`;
 const fmtK = (n: number) => n >= 1000 ? `₵${(n / 1000).toFixed(1)}k` : fmt(n);
@@ -26,8 +27,8 @@ export default function InventoryReport() {
 
   // Aggregates
   const totalItems     = items.length;
-  const totalStockVal  = items.reduce((s, i) => s + i.costPrice * i.currentStock, 0);
-  const totalRetailVal = items.reduce((s, i) => s + i.sellingPrice * i.currentStock, 0);
+  const totalStockVal  = items.reduce((s, i) => s + calcStockValue(i), 0);
+  const totalRetailVal = items.reduce((s, i) => s + calcRetailStockValue(i), 0);
   const lowCount       = items.filter((i) => i.stockStatus === 'LOW').length;
   const outCount       = items.filter((i) => i.stockStatus === 'OUT OF STOCK').length;
 
@@ -35,7 +36,7 @@ export default function InventoryReport() {
   const categories = Array.from(new Set(items.map((i) => i.category)));
   const catData = categories.map((cat) => {
     const catItems = items.filter((i) => i.category === cat);
-    const value    = catItems.reduce((s, i) => s + i.costPrice * i.currentStock, 0);
+    const value    = catItems.reduce((s, i) => s + calcStockValue(i), 0);
     const count    = catItems.length;
     return { cat, value, count };
   }).sort((a, b) => b.value - a.value);
@@ -50,7 +51,7 @@ export default function InventoryReport() {
     return matchSearch && matchCat && matchStock;
   });
 
-  const filteredStockVal = filtered.reduce((s, i) => s + i.costPrice * i.currentStock, 0);
+  const filteredStockVal = filtered.reduce((s, i) => s + calcStockValue(i), 0);
 
   return (
     <div className="space-y-6" id="analytics-print-area">
@@ -210,7 +211,7 @@ export default function InventoryReport() {
                 </tr>
               ) : (
                 filtered.map((item, i) => {
-                  const stockVal  = item.costPrice * item.currentStock;
+                  const stockVal  = calcStockValue(item);
                   const marginPct = item.sellingPrice > 0 ? ((item.sellingPrice - item.costPrice) / item.sellingPrice) * 100 : 0;
                   const cfg       = STATUS_CONFIG[item.stockStatus];
                   return (

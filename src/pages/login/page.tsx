@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import PasswordInput from '@/components/ui/PasswordInput';
 import { sanitizeEmail } from '@/lib/sanitize';
@@ -7,10 +7,16 @@ import { sanitizeEmail } from '@/lib/sanitize';
 export default function LoginPage() {
   const { login, authLoading } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const [error, setError] = useState(() => {
+    const reason = (location.state as { reason?: string } | null)?.reason;
+    return reason === 'business-deactivated'
+      ? 'You were signed out because this business is no longer active. Contact your business owner for access.'
+      : '';
+  });
 
   const handleSubmit = async (e: { preventDefault(): void }) => {
     e.preventDefault();

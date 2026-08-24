@@ -249,6 +249,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       const user = mapRow(profile);
+
+      if (user.role === 'cashier') {
+        const { data: accessible, error: accessError } = await supabase.rpc('get_accessible_businesses');
+        if (!accessError) {
+          const hasActiveBusiness = user.primaryBusinessId
+            && Array.isArray(accessible)
+            && accessible.some((row: { id: string }) => row.id === user.primaryBusinessId);
+          if (!hasActiveBusiness) {
+            await supabase.auth.signOut();
+            return { success: false, error: 'Your business is currently deactivated. Contact your business owner for access.' };
+          }
+        }
+      }
+
       setCurrentUser(user);
       cacheAuthUser(user);
       if (user.role !== 'cashier') setStoredActiveBusinessId(null);

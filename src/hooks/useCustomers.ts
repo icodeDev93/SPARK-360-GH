@@ -126,6 +126,7 @@ export function useCustomers() {
     if (error) {
       console.error(error);
       queueLocalMutation('customers', newCustomer.customerId, 'create', newCustomer);
+      throw new Error(error.message || 'Customer could not be saved to the database.');
     }
     if (!inserted) return newCustomer;
     const savedCustomer = toCustomer(inserted);

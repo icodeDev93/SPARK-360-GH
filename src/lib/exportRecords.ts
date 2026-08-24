@@ -1,3 +1,6 @@
+import { printHtml } from '@/lib/printDocument';
+import { ACTIVE_BUSINESS_KEY } from '@/lib/businessScope';
+
 export type ExportColumn<T> = {
   header: string;
   value: (row: T, index: number) => unknown;
@@ -10,6 +13,15 @@ type ExportOptions<T> = {
   rows: T[];
   subtitle?: string;
   totals?: { label: string; value: string }[];
+};
+
+export type ExportBusinessDetails = {
+  businessName?: string;
+  legalName?: string;
+  address?: string;
+  phone?: string;
+  email?: string;
+  logoUrl?: string;
 };
 
 export function cleanExportText(value: unknown): string {
@@ -36,6 +48,52 @@ export function formatExportDate(iso: string | null | undefined): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return cleanExportText(iso);
   return date.toLocaleDateString('en-GH', { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+export function getStoredExportBusinessDetails(): ExportBusinessDetails {
+  if (typeof window === 'undefined') return {};
+  const activeBusinessId = localStorage.getItem(ACTIVE_BUSINESS_KEY);
+  if (!activeBusinessId) return {};
+
+  for (let index = 0; index < localStorage.length; index += 1) {
+    const key = localStorage.key(index);
+    if (!key || !key.startsWith('bizzyapp:businesses:')) continue;
+    try {
+      const records = JSON.parse(localStorage.getItem(key) || '[]');
+      if (!Array.isArray(records)) continue;
+      const match = records.find((business) => business?.id === activeBusinessId);
+      if (match) {
+        return {
+          businessName: cleanExportText(match.businessName || match.business_name || ''),
+          legalName: cleanExportText(match.legalName || match.legal_name || ''),
+          address: cleanExportText(match.address || ''),
+          phone: cleanExportText(match.phone || ''),
+          email: cleanExportText(match.email || ''),
+          logoUrl: cleanExportText(match.logoUrl || match.logo_url || ''),
+        };
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return {};
+}
+
+function businessName(details: ExportBusinessDetails): string {
+  return details.businessName || details.legalName || 'Selected Business';
+}
+
+function businessContactLine(details: ExportBusinessDetails): string {
+  return [details.address, details.phone, details.email]
+    .map(cleanExportText)
+    .filter(Boolean)
+    .join(' | ');
+}
+
+function businessLogoMarkup(details: ExportBusinessDetails, fallbackInitial: string): string {
+  if (!details.logoUrl) return escapeHtml(fallbackInitial);
+  return `<img src="${escapeHtml(details.logoUrl)}" alt="${escapeHtml(businessName(details))} logo" style="width:100%;height:100%;object-fit:contain;display:block;" />`;
 }
 
 export function isWithinDateRange(iso: string | null | undefined, startDate: string, endDate: string): boolean {
@@ -72,6 +130,17 @@ function escapeHtml(value: unknown): string {
 }
 
 export function exportRowsCsv<T>({ filename, columns, rows, totals }: ExportOptions<T>): void {
+  const business = getStoredExportBusinessDetails();
+  const businessRows = [
+    ['Business Name', businessName(business)],
+    ...(business.legalName && business.legalName !== business.businessName ? [['Legal Name', business.legalName]] : []),
+    ...(business.address ? [['Address', business.address]] : []),
+    ...(business.phone ? [['Phone', business.phone]] : []),
+    ...(business.email ? [['Email', business.email]] : []),
+    ...(business.logoUrl ? [['Logo URL', business.logoUrl]] : []),
+    ['Generated At', new Date().toLocaleString('en-GH')],
+    [],
+  ];
   const body = rows.map((row, rowIndex) =>
     columns.map((column) => escapeCsv(column.value(row, rowIndex))).join(',')
   );
@@ -79,6 +148,7 @@ export function exportRowsCsv<T>({ filename, columns, rows, totals }: ExportOpti
     ? ['', ...totals.map((total) => `${escapeCsv(total.label)},${escapeCsv(total.value)}`)]
     : [];
   const csv = [
+    ...businessRows.map((row) => row.map(escapeCsv).join(',')),
     columns.map((column) => escapeCsv(column.header)).join(','),
     ...body,
     ...footer,
@@ -95,52 +165,72 @@ export function exportRowsCsv<T>({ filename, columns, rows, totals }: ExportOpti
 }
 
 export function exportRowsPdf<T>({ title, filename, subtitle, columns, rows, totals }: ExportOptions<T>): void {
+  const generatedAt = new Date().toLocaleString('en-GH');
+  const business = getStoredExportBusinessDetails();
+  const contactLine = businessContactLine(business);
+  const selectedBusinessName = businessName(business);
+  const businessInitial = selectedBusinessName.charAt(0).toUpperCase() || 'B';
+  const logoMarkup = businessLogoMarkup(business, businessInitial);
   const tableRows = rows.map((row, rowIndex) => `
     <tr>${columns.map((column) => `<td>${escapeHtml(column.value(row, rowIndex))}</td>`).join('')}</tr>
   `).join('');
   const totalRows = totals?.length
     ? `<div class="totals">${totals.map((total) => `<div><span>${escapeHtml(total.label)}</span><strong>${escapeHtml(total.value)}</strong></div>`).join('')}</div>`
     : '';
-  const doc = window.open('', '_blank', 'width=1100,height=820');
-  if (!doc) return;
-  doc.document.write(`<!doctype html>
+  printHtml(`<!doctype html>
     <html>
       <head>
         <meta charset="utf-8" />
         <title>${escapeHtml(title)}</title>
         <style>
           * { box-sizing: border-box; }
-          body { font-family: Arial, sans-serif; color: #1e293b; margin: 28px; }
-          h1 { font-size: 22px; margin: 0 0 4px; }
-          .subtitle { color: #64748b; font-size: 12px; margin-bottom: 18px; }
-          table { width: 100%; border-collapse: collapse; font-size: 11px; }
-          th { background: #eef2ff; color: #3730a3; text-align: left; padding: 8px; border: 1px solid #dbe3f0; }
-          td { padding: 7px 8px; border: 1px solid #e2e8f0; vertical-align: top; }
+          @page { size: A4 landscape; margin: 14mm; }
+          body { font-family: Arial, sans-serif; color: #1e293b; margin: 0; background: #fff; }
+          .header { display: flex; align-items: flex-start; justify-content: space-between; border-bottom: 3px solid #4f46e5; padding-bottom: 14px; margin-bottom: 18px; }
+          .brand { display: flex; align-items: center; gap: 10px; }
+          .mark { width: 40px; height: 40px; border-radius: 10px; background: #fff; border: 1px solid #dbe3f0; color: #4f46e5; display: flex; align-items: center; justify-content: center; font-weight: 800; padding: 4px; }
+          h1 { font-size: 21px; margin: 0 0 4px; }
+          .subtitle { color: #64748b; font-size: 12px; }
+          .meta { text-align: right; color: #64748b; font-size: 11px; line-height: 1.5; }
+          table { width: 100%; border-collapse: collapse; font-size: 11px; table-layout: auto; }
+          th { background: #eef2ff; color: #3730a3; text-align: left; padding: 9px 8px; border: 1px solid #dbe3f0; text-transform: uppercase; font-size: 9px; letter-spacing: .04em; }
+          td { padding: 8px; border: 1px solid #e2e8f0; vertical-align: top; }
           tr:nth-child(even) td { background: #f8fafc; }
-          .totals { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; }
-          .totals div { border: 1px solid #dbe3f0; border-radius: 8px; padding: 8px 12px; min-width: 160px; }
+          .totals { margin-top: 16px; display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; }
+          .totals div { border: 1px solid #dbe3f0; border-left: 4px solid #4f46e5; border-radius: 8px; padding: 9px 12px; min-width: 170px; }
           .totals span { color: #64748b; display: block; font-size: 10px; text-transform: uppercase; }
-          .totals strong { display: block; margin-top: 2px; font-size: 14px; }
-          @media print { body { margin: 14px; } }
+          .totals strong { display: block; margin-top: 3px; font-size: 15px; }
+          .footer { margin-top: 24px; padding-top: 10px; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; color: #94a3b8; font-size: 10px; }
+          @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
         </style>
       </head>
       <body>
-        <h1>${escapeHtml(title)}</h1>
-        <div class="subtitle">${escapeHtml(subtitle || `Generated ${new Date().toLocaleString('en-GH')}`)}</div>
+        <div class="header">
+          <div class="brand">
+            <div class="mark">${logoMarkup}</div>
+            <div>
+              <h1>${escapeHtml(selectedBusinessName)}</h1>
+              <div class="subtitle">${contactLine ? escapeHtml(contactLine) : 'Business report'}</div>
+            </div>
+          </div>
+          <div class="meta">
+            <div><strong>${escapeHtml(title)}</strong></div>
+            ${subtitle ? `<div>${escapeHtml(subtitle)}</div>` : ''}
+            <div>Generated: ${escapeHtml(generatedAt)}</div>
+            <div>Records: ${rows.length}</div>
+          </div>
+        </div>
         <table>
           <thead><tr>${columns.map((column) => `<th>${escapeHtml(column.header)}</th>`).join('')}</tr></thead>
           <tbody>${tableRows || `<tr><td colspan="${columns.length}">No records found</td></tr>`}</tbody>
         </table>
         ${totalRows}
-        <script>
-          window.onload = () => {
-            document.title = ${JSON.stringify(filename)};
-            setTimeout(() => window.print(), 300);
-          };
-        </script>
+        <div class="footer">
+          <span>Confidential - Internal Use Only</span>
+          <span>${escapeHtml(title)}</span>
+        </div>
       </body>
-    </html>`);
-  doc.document.close();
+    </html>`, { title: filename, windowFeatures: 'width=1100,height=820' });
 }
 
 export function dateRangeLabel(startDate: string, endDate: string): string {

@@ -77,20 +77,32 @@ export function buildInvoice(
   items: SaleLineItem[],
   paymentMethod: PaymentMethod,
   cashier: string,
-  status: InvoiceRecord['status'] = 'completed'
+  status: InvoiceRecord['status'] = 'completed',
+  adjustments: { subtotal?: number; taxAmount?: number; discountAmount?: number; totalAmount?: number } = {}
 ): InvoiceRecord {
   const totals = calcInvoiceTotals(items);
   const now = new Date();
+  const subtotal = adjustments.subtotal ?? totals.netSales;
+  const taxAmount = adjustments.taxAmount ?? 0;
+  const discountAmount = adjustments.discountAmount ?? 0;
+  const totalAmount = adjustments.totalAmount ?? Math.max(0, subtotal + taxAmount - discountAmount);
+  const marginBase = Math.max(0, subtotal - discountAmount);
   return {
     invoiceNo,
     receiptNo,
     date: now.toISOString().split('T')[0],
+    time: now.toISOString(),
     customerId,
     customerName,
     items,
-    ...totals,
-    amountPaid: status === 'credit' ? 0 : totals.netSales,
-    balanceDue: status === 'credit' ? totals.netSales : 0,
+    subtotal,
+    taxAmount,
+    discountAmount,
+    netSales: totalAmount,
+    totalCost: totals.totalCost,
+    grossMargin: marginBase - totals.totalCost,
+    amountPaid: status === 'credit' ? 0 : totalAmount,
+    balanceDue: status === 'credit' ? totalAmount : 0,
     paymentMethod,
     status,
     cashier,

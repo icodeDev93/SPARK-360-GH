@@ -56,12 +56,16 @@ export interface InvoiceRecord {
   invoiceNo: string;
   receiptNo: string | null;
   date: string;
+  time: string;
   customerId: string;
   customerName: string;
   items: SaleLineItem[];
-  netSales: number;          // sum of item netSales
+  subtotal?: number;         // sum of item netSales before discount/tax
+  taxAmount?: number;
+  discountAmount?: number;
+  netSales: number;          // final charged amount after tax/discount
   totalCost: number;         // sum of item totalCost
-  grossMargin: number;       // netSales - totalCost
+  grossMargin: number;       // subtotal - discountAmount - totalCost; excludes tax collected
   amountPaid: number;
   balanceDue: number;
   paymentMethod: PaymentMethod;

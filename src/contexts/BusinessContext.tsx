@@ -15,7 +15,7 @@ export interface BusinessRecord {
   email: string;
   address: string;
   logoUrl: string;
-  status: 'active' | 'archived';
+  status: 'pending' | 'active' | 'inactive' | 'archived';
   archivedAt: string | null;
   createdAt: string;
 }
@@ -51,13 +51,14 @@ type BusinessRow = {
   email: string | null;
   address: string | null;
   logo_url: string | null;
-  status: 'active' | 'archived';
+  status: 'pending' | 'active' | 'inactive' | 'archived';
   archived_at: string | null;
   created_at: string;
 };
 
 const BusinessContext = createContext<BusinessContextValue | null>(null);
 const BUSINESS_CACHE_PREFIX = 'bizzyapp:businesses:';
+const visibleBusinessStatuses = new Set<BusinessRecord['status']>(['active', 'pending', 'inactive']);
 
 const mapBusiness = (row: BusinessRow): BusinessRecord => ({
   id: row.id,
@@ -103,7 +104,7 @@ function saveCachedBusinesses(userId: string, records: BusinessRecord[]) {
 }
 
 export function BusinessProvider({ children }: { children: ReactNode }) {
-  const { currentUser, sessionLoading } = useAuth();
+  const { currentUser, sessionLoading, logout } = useAuth();
   const navigate = useNavigate();
   const [businesses, setBusinesses] = useState<BusinessRecord[]>([]);
   const [activeBusinessId, setActiveBusinessId] = useState<string | null>(() => getStoredActiveBusinessId());
@@ -120,12 +121,13 @@ export function BusinessProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    const cachedBusinesses = loadCachedBusinesses(currentUser.id);
+    const cachedBusinesses = loadCachedBusinesses(currentUser.id)
+      .filter((business) => visibleBusinessStatuses.has(business.status));
     if (cachedBusinesses.length) {
       setBusinesses(cachedBusinesses);
     }
 
-    setLoading(cachedBusinesses.length === 0);
+    setLoading(true);
     setLoadError('');
 
     let data: unknown[] | null = null;
@@ -146,46 +148,86 @@ export function BusinessProvider({ children }: { children: ReactNode }) {
 
     if (lastError && data === null) {
       console.error(lastError);
-      if (cachedBusinesses.length) {
+      if (cachedBusinesses.length && !navigator.onLine) {
         setBusinesses(cachedBusinesses);
         setLoadError('Showing the last saved business list because the live database could not be reached.');
+        const stored = getStoredActiveBusinessId();
+        const nextActive = stored && cachedBusinesses.some((business) => business.id === stored && business.status === 'active') ? stored : null;
+        setActiveBusinessId(nextActive);
+        setStoredActiveBusinessId(nextActive);
       } else {
+        setBusinesses([]);
+        setActiveBusinessId(null);
+        setStoredActiveBusinessId(null);
         setLoadError('Unable to load businesses from the live database. Check your connection and try again.');
       }
       setLoading(false);
       return;
     }
 
-    const nextBusinesses = (data ?? []).map((row) => mapBusiness(row as BusinessRow));
-
-    if (nextBusinesses.length === 0 && cachedBusinesses.length > 0) {
-      setBusinesses(cachedBusinesses);
-      setLoadError('The live database returned no businesses, so the last saved list is being shown. Use Retry to refresh.');
-      setLoading(false);
-      return;
-    }
+    const nextBusinesses = (data ?? [])
+      .map((row) => mapBusiness(row as BusinessRow))
+      .filter((business) => visibleBusinessStatuses.has(business.status));
 
     setBusinesses(nextBusinesses);
     saveCachedBusinesses(currentUser.id, nextBusinesses);
 
+    const activeBusinesses = nextBusinesses.filter((business) => business.status === 'active');
+
+    if (
+      currentUser.role === 'cashier'
+      && currentUser.primaryBusinessId
+      && !activeBusinesses.some((business) => business.id === currentUser.primaryBusinessId)
+    ) {
+      setLoading(false);
+      await logout();
+      navigate('/login', { replace: true, state: { reason: 'business-deactivated' } });
+      return;
+    }
+
     const stored = getStoredActiveBusinessId();
-    const cashierBusiness = currentUser.role === 'cashier' ? currentUser.primaryBusinessId : null;
-    const nextActive = cashierBusiness || (stored && nextBusinesses.some((business) => business.id === stored) ? stored : null);
+    const cashierBusiness = currentUser.role === 'cashier' && currentUser.primaryBusinessId
+      && activeBusinesses.some((business) => business.id === currentUser.primaryBusinessId)
+      ? currentUser.primaryBusinessId
+      : null;
+    const nextActive = cashierBusiness || (stored && activeBusinesses.some((business) => business.id === stored) ? stored : null);
     setActiveBusinessId(nextActive);
     setStoredActiveBusinessId(nextActive);
     setLoading(false);
-  }, [currentUser]);
+  }, [currentUser, logout, navigate]);
 
   useEffect(() => {
     if (sessionLoading) return;
     refreshBusinesses();
   }, [refreshBusinesses, sessionLoading]);
 
+  useEffect(() => {
+    if (sessionLoading || !currentUser) return undefined;
+
+    const refreshVisibleBusinesses = () => {
+      if (!document.hidden) void refreshBusinesses();
+    };
+
+    window.addEventListener('focus', refreshVisibleBusinesses);
+    window.addEventListener('online', refreshVisibleBusinesses);
+    document.addEventListener('visibilitychange', refreshVisibleBusinesses);
+    const intervalId = window.setInterval(refreshVisibleBusinesses, 30_000);
+
+    return () => {
+      window.removeEventListener('focus', refreshVisibleBusinesses);
+      window.removeEventListener('online', refreshVisibleBusinesses);
+      document.removeEventListener('visibilitychange', refreshVisibleBusinesses);
+      window.clearInterval(intervalId);
+    };
+  }, [currentUser, refreshBusinesses, sessionLoading]);
+
   const selectBusiness = useCallback((businessId: string) => {
+    const business = businesses.find((item) => item.id === businessId);
+    if (!business || business.status !== 'active') return;
     setActiveBusinessId(businessId);
     setStoredActiveBusinessId(businessId);
     navigate('/', { replace: true });
-  }, [navigate]);
+  }, [businesses, navigate]);
 
   const createBusiness = async (input: BusinessInput) => {
     if (!currentUser || currentUser.role !== 'owner') return { success: false, error: 'Only owner can create businesses.' };

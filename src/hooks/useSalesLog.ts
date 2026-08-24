@@ -28,6 +28,7 @@ export interface SaleRecord {
 const SEED_INVOICES: InvoiceRecord[] = [
   {
     invoiceNo: 'INV001', receiptNo: 'RCP-000001', date: '2026-04-20', customerId: 'C001', customerName: 'Asante Mini Mart',
+    time: '2026-04-20T09:00:00.000Z',
     items: [
       calcLineItem('P003', 'Milo Sachet (30g)', 100, 0, 4.00, 2.50),
       calcLineItem('P006', 'Bourbon Biscuits (150g)', 48, 0, 18.00, 12.00),
@@ -38,6 +39,7 @@ const SEED_INVOICES: InvoiceRecord[] = [
   },
   {
     invoiceNo: 'INV002', receiptNo: 'RCP-000002', date: '2026-04-21', customerId: 'C002', customerName: 'Mensah Superstore',
+    time: '2026-04-21T10:15:00.000Z',
     items: [
       calcLineItem('P009', 'Malta Guinness (330ml)', 120, 0, 9.00, 5.50),
       calcLineItem('P001', 'Pringles Original (165g)', 24, 0, 42.00, 28.00),
@@ -48,6 +50,7 @@ const SEED_INVOICES: InvoiceRecord[] = [
   },
   {
     invoiceNo: 'INV003', receiptNo: 'RCP-000003', date: '2026-04-22', customerId: 'C005', customerName: 'Boateng & Sons Dist.',
+    time: '2026-04-22T11:30:00.000Z',
     items: [
       calcLineItem('P004', 'Ovaltine Tin (400g)', 30, 0, 65.00, 45.00),
       calcLineItem('P012', "Wrigley's Spearmint Gum (10s)", 200, 0, 5.00, 3.00),
@@ -58,6 +61,7 @@ const SEED_INVOICES: InvoiceRecord[] = [
   },
   {
     invoiceNo: 'INV004', receiptNo: 'RCP-000004', date: '2026-04-23', customerId: 'C003', customerName: 'Fatima Provision Store',
+    time: '2026-04-23T12:45:00.000Z',
     items: [
       calcLineItem('P011', 'Table Water 500ml (Crate/24)', 10, 0, 48.00, 28.80),
       calcLineItem('P008', 'Choco Mallow (Pack of 6)', 20, 0, 14.00, 8.00),
@@ -68,6 +72,7 @@ const SEED_INVOICES: InvoiceRecord[] = [
   },
   {
     invoiceNo: 'INV005', receiptNo: 'RCP-000005', date: '2026-04-25', customerId: 'C007', customerName: 'Owusu Family Store',
+    time: '2026-04-25T14:00:00.000Z',
     items: [
       calcLineItem('P015', 'Coca-Cola PET 500ml (Crate/24)', 20, 0, 120.00, 72.00),
       calcLineItem('P013', 'FanChoco Bar (50g)', 100, 0, 10.00, 6.00),
@@ -78,6 +83,7 @@ const SEED_INVOICES: InvoiceRecord[] = [
   },
   {
     invoiceNo: 'INV006', receiptNo: 'RCP-000006', date: '2026-04-26', customerId: 'C004', customerName: 'Osei Kiosk Junction',
+    time: '2026-04-26T15:20:00.000Z',
     items: [
       calcLineItem('P002', "Lay's Classic Chips (80g)", 12, 0, 22.00, 15.00),
       calcLineItem('P007', 'Kit Kat 4-Finger (41.5g)', 24, 0, 16.00, 10.00),
@@ -90,8 +96,11 @@ const SEED_INVOICES: InvoiceRecord[] = [
 
 type InvoiceRow = {
   id: string; invoice_number: string | null; receipt_number: string | null; sale_date: string;
+  sale_time?: string | null;
+  created_at?: string | null;
   customer_id: string | null;
   customer_name: string; total_amount: number; total_cost: number; gross_margin: number;
+  subtotal?: number | null; tax_amount?: number | null; discount_amount?: number | null;
   payment_method: string; status: string; cashier: string | null;
   items: string | null;
   sale_items: ItemRow[];
@@ -157,11 +166,16 @@ const toInvoice = (r: InvoiceRow, paymentsByKey = new Map<string, number>()): In
   const amountPaid = paymentTotalForRow(r, paymentsByKey);
   const balanceDue = Math.max(0, r.total_amount - amountPaid);
   const isPaidSale = r.status === 'completed' || r.status === 'refunded';
+  const taxAmount = Number(r.tax_amount ?? 0);
+  const discountAmount = Number(r.discount_amount ?? 0);
+  const subtotal = Number(r.subtotal ?? Math.max(0, r.total_amount - taxAmount + discountAmount));
 
   return {
     invoiceNo: invoiceNumberFromRow(r), receiptNo: receiptNumberFromRow(r),
-    date: r.sale_date, customerId: r.customer_id ?? '',
-    customerName: r.customer_name, netSales: r.total_amount, totalCost: r.total_cost,
+    date: r.sale_date, time: r.sale_time ?? r.created_at ?? r.sale_date,
+    customerId: r.customer_id ?? '',
+    customerName: r.customer_name, subtotal, taxAmount, discountAmount,
+    netSales: r.total_amount, totalCost: r.total_cost,
     grossMargin: r.gross_margin,
     amountPaid: isPaidSale && amountPaid === 0 ? r.total_amount : amountPaid,
     balanceDue: isPaidSale ? 0 : balanceDue,
@@ -228,6 +242,7 @@ const cleanInvoice = (inv: InvoiceRecord): InvoiceRecord => ({
   invoiceNo: sanitizeText(inv.invoiceNo),
   receiptNo: inv.receiptNo ? sanitizeText(inv.receiptNo) : null,
   date: sanitizeText(inv.date),
+  time: sanitizeText(inv.time || inv.date),
   customerId: sanitizeText(inv.customerId),
   customerName: sanitizeText(inv.customerName),
   paymentMethod: sanitizeText(inv.paymentMethod) as PaymentMethod,
@@ -242,10 +257,13 @@ const saleRow = (invoice: InvoiceRecord, businessId: string) => {
   invoice_number: inv.invoiceNo,
   receipt_number: inv.receiptNo,
   sale_date: inv.date,
+  sale_time: inv.time || inv.date,
   customer_id: inv.customerId && inv.customerId !== 'walk-in' ? inv.customerId : null,
   customer_name: inv.customerName,
   items: saleItemsText(inv.items),
-  subtotal: inv.netSales,
+  subtotal: inv.subtotal ?? inv.items.reduce((sum, item) => sum + item.netSales, 0),
+  discount_amount: inv.discountAmount ?? 0,
+  tax_amount: inv.taxAmount ?? 0,
   total_amount: inv.netSales,
   total_cost: inv.totalCost,
   gross_margin: inv.grossMargin,
@@ -268,10 +286,9 @@ const insertSaleItems = async (saleId: string, items: SaleLineItem[], businessId
   const { error } = await supabase.from('sale_items').insert(rows);
   if (error) {
     console.error(error);
-    return false;
+    throw new Error(error.message || 'Sale items could not be saved.');
   }
   window.dispatchEvent(new CustomEvent('bizzyapp:inventory-refresh', { detail: { businessId } }));
-  return true;
 };
 
 // net_quantity is a generated column (quantity - returned_quantity) — never write it
@@ -304,7 +321,9 @@ const receiptRow = (
   receipt_number: sanitizeText(receiptNo),
   customer_name: sanitizeText(inv.customerName),
   cashier: sanitizeText(inv.cashier),
-  subtotal: paymentAmount,
+  subtotal: paymentAmount === inv.netSales ? (inv.subtotal ?? paymentAmount) : paymentAmount,
+  tax_amount: paymentAmount === inv.netSales ? (inv.taxAmount ?? 0) : 0,
+  discount_amount: paymentAmount === inv.netSales ? (inv.discountAmount ?? 0) : 0,
   total_amount: paymentAmount,
   payment_method: sanitizeText(paymentMethod) as PaymentMethod,
   receipt_payload: cleanInvoice({ ...inv, receiptNo, paymentMethod }),
@@ -319,7 +338,7 @@ const toSaleRecord = (inv: InvoiceRecord): SaleRecord => ({
   invoiceNo: inv.invoiceNo,
   receiptNo: inv.receiptNo,
   date: inv.date,
-  time: '00:00',
+  time: inv.time,
   cashier: inv.cashier,
   items: inv.items.map((item) => ({
     id: productNumber(item.productId),
@@ -328,9 +347,9 @@ const toSaleRecord = (inv: InvoiceRecord): SaleRecord => ({
     price: item.unitPrice,
     qty: item.netQty,
   })),
-  subtotal: inv.netSales,
-  tax: 0,
-  discountAmt: 0,
+  subtotal: inv.subtotal ?? inv.netSales,
+  tax: inv.taxAmount ?? 0,
+  discountAmt: inv.discountAmount ?? 0,
   grandTotal: inv.netSales,
   paymentMethod: inv.paymentMethod,
   status: inv.status,
@@ -363,7 +382,7 @@ const findSaleByInvoiceNo = async (invoiceNo: string, businessId: string): Promi
 };
 
 export function useSalesLog() {
-  const { activeBusinessId } = useBusiness();
+  const { activeBusinessId, activeBusiness, loading: businessLoading } = useBusiness();
   const [invoices, setInvoices] = useState<InvoiceRecord[]>([]);
   const [creditPayments, setCreditPayments] = useState<CreditPayment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -420,12 +439,26 @@ export function useSalesLog() {
     return () => { supabase.removeChannel(channel); };
   }, [activeBusinessId]);
 
-  const addInvoice = (
-    data: Omit<InvoiceRecord, 'invoiceNo' | 'receiptNo' | 'date' | 'status' | 'netSales' | 'totalCost' | 'grossMargin' | 'amountPaid' | 'balanceDue'>
-      & { receiptNo?: string | null; status?: InvoiceRecord['status'] }
-  ): InvoiceRecord => {
+  const addInvoice = async (
+    data: Omit<InvoiceRecord, 'invoiceNo' | 'receiptNo' | 'date' | 'time' | 'status' | 'netSales' | 'totalCost' | 'grossMargin' | 'amountPaid' | 'balanceDue'>
+      & { receiptNo?: string | null; status?: InvoiceRecord['status']; totalAmount?: number }
+  ): Promise<InvoiceRecord> => {
     if (!activeBusinessId) throw new Error('Select a business before recording sales.');
-    const invoiceNo = generateNextInvoiceNo(invoices);
+    if (businessLoading || !activeBusiness || activeBusiness.id !== activeBusinessId) {
+      throw new Error('This business is not confirmed for your account. Please reselect the business and try again.');
+    }
+    let invoiceNo = generateNextInvoiceNo(invoices);
+    const liveInvoices = await supabase
+      .from('sales')
+      .select('invoice_number')
+      .eq('business_id', activeBusinessId)
+      .not('invoice_number', 'is', null);
+    if (!liveInvoices.error && liveInvoices.data) {
+      invoiceNo = generateNextInvoiceNo([
+        ...invoices,
+        ...liveInvoices.data.map((row) => ({ invoiceNo: row.invoice_number ?? '' } as InvoiceRecord)),
+      ]);
+    }
     const status = data.status ?? 'completed';
     const receiptNo = status === 'credit' ? null : data.receiptNo ? sanitizeText(data.receiptNo) : generateReceiptNo();
     const cleanData = {
@@ -438,26 +471,38 @@ export function useSalesLog() {
     };
     const newInvoice = buildInvoice(
       invoiceNo, receiptNo, cleanData.customerId, cleanData.customerName,
-      cleanData.items, cleanData.paymentMethod, cleanData.cashier, status
+      cleanData.items, cleanData.paymentMethod, cleanData.cashier, status,
+      {
+        subtotal: cleanData.subtotal,
+        taxAmount: cleanData.taxAmount,
+        discountAmount: cleanData.discountAmount,
+        totalAmount: cleanData.totalAmount,
+      }
     );
     // Optimistic update
     const nextInvoices = [newInvoice, ...invoices];
     setInvoices(nextInvoices);
     saveLocalCollection('sales_invoices', nextInvoices);
-    // Background save
-    insertSale(newInvoice, activeBusinessId).then(async ({ data: sale, error }) => {
+    try {
+      const { data: sale, error } = await insertSale(newInvoice, activeBusinessId);
       if (error) {
         console.error(error);
-        queueLocalMutation('sales', newInvoice.invoiceNo, 'create', newInvoice);
-        return;
+        const isPermissionError = error.code === '42501' || error.message?.toLowerCase().includes('permission denied');
+        if (!isPermissionError) queueLocalMutation('sales', newInvoice.invoiceNo, 'create', newInvoice);
+        if (isPermissionError) {
+          throw new Error('You are not allowed to record sales for this business. Please reselect the correct business or ask the owner to assign you to it.');
+        }
+        throw new Error(error.message || 'Sale could not be saved to the database.');
       }
-      if (!sale) return;
+      if (!sale) throw new Error('Sale was not saved to the database.');
       if (newInvoice.items.length > 0) {
         await insertSaleItems(sale.id, newInvoice.items, activeBusinessId);
       }
       if (newInvoice.receiptNo) {
-        supabase.from('receipts').insert(receiptRow(sale.id, newInvoice, newInvoice.receiptNo, newInvoice.paymentMethod, newInvoice.netSales, activeBusinessId))
-          .then(({ error: e }) => { if (e) console.error(e); });
+        const receiptResult = await supabase
+          .from('receipts')
+          .insert(receiptRow(sale.id, newInvoice, newInvoice.receiptNo, newInvoice.paymentMethod, newInvoice.netSales, activeBusinessId));
+        if (receiptResult.error) throw new Error(receiptResult.error.message || 'Receipt could not be saved.');
       }
       // Stock deduction is handled by the DB trigger on sale_items INSERT
       // For credit sales, increase the customer's outstanding balance
@@ -470,7 +515,12 @@ export function useSalesLog() {
           }).eq('business_id', activeBusinessId).eq('id', newInvoice.customerId);
         }
       }
-    });
+    } catch (error) {
+      const rolledBackInvoices = invoices.filter((invoice) => invoice.invoiceNo !== newInvoice.invoiceNo);
+      setInvoices(rolledBackInvoices);
+      saveLocalCollection('sales_invoices', rolledBackInvoices);
+      throw error;
+    }
     return newInvoice;
   };
 
@@ -494,15 +544,36 @@ export function useSalesLog() {
     }
   };
 
-  const deleteInvoice = async (invoiceNo: string) => {
+  const deleteInvoice = async (invoiceNo: string): Promise<{ success: boolean; error?: string }> => {
+    const invoice = invoices.find((inv) => inv.invoiceNo === invoiceNo);
     const nextInvoices = invoices.filter((inv) => inv.invoiceNo !== invoiceNo);
     setInvoices(nextInvoices);
     saveLocalCollection('sales_invoices', nextInvoices);
-    if (!activeBusinessId) return;
+
+    const nextPayments = creditPayments.filter((payment) => payment.invoiceNo !== invoiceNo);
+    setCreditPayments(nextPayments);
+    saveLocalCollection('credit_payments', nextPayments);
+
+    if (!activeBusinessId) return { success: true };
     const sale = await findSaleByInvoiceNo(invoiceNo, activeBusinessId);
     if (sale) {
-      await supabase.from('sale_items').delete().eq('sale_id', sale.id);
-      await supabase.from('receipts').delete().eq('sale_id', sale.id);
+      await supabase.from('credit_payments').delete().eq('business_id', activeBusinessId).eq('sale_id', sale.id);
+      await supabase.from('credit_payments').delete().eq('business_id', activeBusinessId).eq('invoice_number', invoiceNo);
+      await supabase.from('sale_items').delete().eq('business_id', activeBusinessId).eq('sale_id', sale.id);
+      await supabase.from('receipts').delete().eq('business_id', activeBusinessId).eq('sale_id', sale.id);
+      if (invoice?.status === 'credit' && invoice.customerId && invoice.customerId !== 'walk-in' && invoice.balanceDue > 0) {
+        const { data: cust } = await supabase
+          .from('customers')
+          .select('outstanding_balance')
+          .eq('business_id', activeBusinessId)
+          .eq('id', invoice.customerId)
+          .maybeSingle();
+        if (cust) {
+          await supabase.from('customers').update({
+            outstanding_balance: Math.max(0, Number(cust.outstanding_balance ?? 0) - invoice.balanceDue),
+          }).eq('business_id', activeBusinessId).eq('id', invoice.customerId);
+        }
+      }
     }
     const { error } = sale
       ? await supabase.from('sales').delete().eq('id', sale.id)
@@ -510,7 +581,9 @@ export function useSalesLog() {
     if (error) {
       console.error(error);
       queueLocalMutation('sales', invoiceNo, 'delete', { invoiceNo });
+      return { success: false, error: error.message };
     }
+    return { success: true };
   };
 
   const recordCreditPayment = async (

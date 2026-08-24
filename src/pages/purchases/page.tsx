@@ -5,6 +5,8 @@ import { useSuppliers } from '@/hooks/useSuppliers';
 import { useFeedbackModal } from '@/hooks/useFeedbackModal';
 import { useAuth } from '@/hooks/useAuth';
 import { writeLog } from '@/lib/activityLog';
+import { escapePrintHtml, printHtml } from '@/lib/printDocument';
+import type { PurchaseOrder } from '@/mocks/suppliers';
 
 const PAGE_SIZE = 20;
 
@@ -26,8 +28,70 @@ function fmt(n: number) {
   return `₵${n.toLocaleString('en-GH', { minimumFractionDigits: 2 })}`;
 }
 
+function printPurchaseOrder(order: PurchaseOrder) {
+  printHtml(`<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Purchase Order ${escapePrintHtml(order.id)}</title>
+  <style>
+    @page { size: A4; margin: 16mm; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: Arial, sans-serif; color: #0f172a; background: #fff; }
+    .header { display: flex; justify-content: space-between; gap: 24px; border-bottom: 2px solid #4f46e5; padding-bottom: 18px; margin-bottom: 22px; }
+    h1 { margin: 0; font-size: 28px; color: #4f46e5; }
+    .muted { color: #64748b; font-size: 12px; line-height: 1.6; }
+    .box { border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px; margin-bottom: 16px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .label { color: #64748b; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px; }
+    .value { font-size: 14px; font-weight: 700; }
+    .summary { margin-left: auto; width: 320px; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; }
+    .row { display: flex; justify-content: space-between; padding: 11px 14px; border-bottom: 1px solid #f1f5f9; font-size: 13px; }
+    .total { background: #4f46e5; color: #fff; font-size: 16px; font-weight: 900; }
+    @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <h1>Purchase Order</h1>
+      <div class="muted">Bizzy App Business Management System</div>
+    </div>
+    <div style="text-align:right;">
+      <div class="label">Order No.</div>
+      <div class="value">${escapePrintHtml(order.id)}</div>
+      <div class="muted">Generated ${escapePrintHtml(new Date().toLocaleString('en-GH'))}</div>
+    </div>
+  </div>
+  <div class="grid">
+    <div class="box">
+      <div class="label">Supplier</div>
+      <div class="value">${escapePrintHtml(order.supplierName)}</div>
+      <div class="muted">Supplier Code: ${escapePrintHtml(order.supplierId)}</div>
+    </div>
+    <div class="box">
+      <div class="label">Order Details</div>
+      <div class="muted">Order Date: <strong>${escapePrintHtml(order.date)}</strong></div>
+      <div class="muted">Expected Date: <strong>${escapePrintHtml(order.expectedDate || 'TBD')}</strong></div>
+      <div class="muted">Status: <strong>${escapePrintHtml(order.status)}</strong></div>
+      <div class="muted">Payment: <strong>${escapePrintHtml(order.paymentStatus)}</strong></div>
+    </div>
+  </div>
+  <div class="box">
+    <div class="label">Items</div>
+    <div class="value">${order.items} item${order.items === 1 ? '' : 's'}</div>
+  </div>
+  ${order.notes ? `<div class="box"><div class="label">Notes</div><div class="muted">${escapePrintHtml(order.notes)}</div></div>` : ''}
+  <div class="summary">
+    <div class="row"><span>Total Items</span><strong>${order.items}</strong></div>
+    <div class="row total"><span>Total Amount</span><span>${fmt(order.total)}</span></div>
+  </div>
+</body>
+</html>`, { title: `Purchase Order ${order.id}`, windowFeatures: 'width=820,height=900' });
+}
+
 export default function PurchasesPage() {
-  const { suppliers, orders, loading, deleteOrder } = useSuppliers();
+  const { suppliers, orders, loading, deleteOrder, getSupplierOrders } = useSuppliers();
   const { showFeedback } = useFeedbackModal();
   const { currentUser } = useAuth();
   const [tab, setTab]                           = useState<Tab>('purchases');
@@ -131,7 +195,11 @@ export default function PurchasesPage() {
                             <button className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-indigo-50 text-slate-400 hover:text-indigo-600 transition-all cursor-pointer">
                               <i className="ri-eye-line text-sm"></i>
                             </button>
-                            <button className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-all cursor-pointer">
+                            <button
+                              onClick={() => printPurchaseOrder(p)}
+                              className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-all cursor-pointer"
+                              title="Print purchase order"
+                            >
                               <i className="ri-printer-line text-sm"></i>
                             </button>
                             <button
@@ -181,7 +249,13 @@ export default function PurchasesPage() {
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {suppliers.map((s) => (
+              {suppliers.map((s) => {
+                const supplierOrders = getSupplierOrders(s.id);
+                const supplierTotalSpent = supplierOrders
+                  .filter((order) => order.status !== 'Cancelled')
+                  .reduce((sum, order) => sum + order.total, 0);
+
+                return (
                 <div key={s.id} className="bg-white rounded-xl p-5 hover:border-indigo-200 border border-slate-100 transition-all">
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex items-center gap-3">
@@ -215,17 +289,18 @@ export default function PurchasesPage() {
 
                   <div className="flex gap-3 pt-3 border-t border-slate-100">
                     <div className="flex-1 text-center">
-                      <p className="text-slate-800 font-bold text-base">{s.totalOrders}</p>
+                      <p className="text-slate-800 font-bold text-base">{supplierOrders.length}</p>
                       <p className="text-slate-400 text-xs">Orders</p>
                     </div>
                     <div className="w-px bg-slate-100"></div>
                     <div className="flex-1 text-center">
-                      <p className="text-slate-800 font-bold text-base">{fmt(s.totalSpent)}</p>
+                      <p className="text-slate-800 font-bold text-base">{fmt(supplierTotalSpent)}</p>
                       <p className="text-slate-400 text-xs">Total Spent</p>
                     </div>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </>

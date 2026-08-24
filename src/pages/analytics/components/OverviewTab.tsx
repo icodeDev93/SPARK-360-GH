@@ -17,6 +17,10 @@ export default function OverviewTab({ filter }: Props) {
     () => sales.filter((s) => s.status === 'completed' && filter.isInRange(s.date)),
     [sales, filter]
   );
+  const completedInvoices = useMemo(
+    () => invoices.filter((inv) => inv.status === 'completed' && filter.isInRange(inv.date)),
+    [invoices, filter]
+  );
   const filteredExpenses = useMemo(
     () => expenses.filter((e) => filter.isInRange(e.date)),
     [expenses, filter]
@@ -33,11 +37,12 @@ export default function OverviewTab({ filter }: Props) {
       .slice(-14);
   }, [completedSales]);
 
-  const totalRevenue = completedSales.reduce((s, t) => s + t.grandTotal, 0);
+  const totalRevenue = completedInvoices.reduce((s, inv) => s + inv.netSales, 0);
+  const grossProfit = completedInvoices.reduce((s, inv) => s + inv.grossMargin, 0);
   const totalExpenses = filteredExpenses.reduce((s, e) => s + e.amountGHS, 0);
-  const netProfit = totalRevenue - totalExpenses;
+  const netProfit = grossProfit - totalExpenses;
   const profitMargin = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
-  const creditInvoices = invoices.filter((inv) => inv.status === 'credit' && filter.isInRange(inv.date));
+  const creditInvoices = invoices.filter((inv) => inv.balanceDue > 0.005);
   const customerReceivables = creditInvoices.reduce((s, inv) => s + inv.balanceDue, 0);
   const maxDaily = Math.max(...dailyRevenue.map((d) => d.revenue), 1);
 

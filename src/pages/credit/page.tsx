@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import AppLayout from '@/components/feature/AppLayout';
 import Paginator from '@/components/ui/Paginator';
+import BulkActionBar from '@/components/ui/BulkActionBar';
 import CreditPaymentHistory from '@/components/feature/CreditPaymentHistory';
 import { useSalesLog } from '@/hooks/useSalesLog';
 import { useCustomers } from '@/hooks/useCustomers';
@@ -9,6 +10,7 @@ import { useSettings } from '@/hooks/useSettings';
 import type { InvoiceRecord, PaymentMethod } from '@/types/erp';
 import { writeLog } from '@/lib/activityLog';
 import { useFeedbackModal } from '@/hooks/useFeedbackModal';
+import CreditInvoiceModal from './components/CreditInvoiceModal';
 import CreditPaymentReceiptModal, { type CreditPaymentReceipt } from './components/CreditPaymentReceiptModal';
 import {
   dateRangeLabel,
@@ -25,12 +27,18 @@ const CASH_METHODS: Exclude<PaymentMethod, 'Credit'>[] = ['Cash', 'MoMo', 'Chequ
 
 type SortCol = 'date' | 'amount' | 'days';
 
-function fmt(n: number) {
-  return `₵${n.toLocaleString('en-GH', { minimumFractionDigits: 2 })}`;
+function fmt(n: number, currency = '₵') {
+  return `${currency}${n.toLocaleString('en-GH', { minimumFractionDigits: 2 })}`;
 }
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function formatTime(iso: string) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '--:--';
+  return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }).toLowerCase();
 }
 
 function daysAgo(iso: string): number {
@@ -63,12 +71,13 @@ function dueBadge(iso: string, dueDays: number): { label: string; cls: string } 
 }
 
 export default function CreditPage() {
-  const { invoices, creditPayments, recordCreditPayment, processReturn } = useSalesLog();
+  const { invoices, creditPayments, recordCreditPayment, processReturn, deleteInvoice } = useSalesLog();
   const { customers } = useCustomers();
   const { currentUser } = useAuth();
   const { showFeedback } = useFeedbackModal();
   const { settings } = useSettings();
   const { invoiceDueDays } = settings;
+  const fmtMoney = (value: number) => fmt(value, settings.currencySymbol || '₵');
 
   const [searchQuery, setSearchQuery] = useState('');
   const [startDate, setStartDate] = useState('');
@@ -83,9 +92,18 @@ export default function CreditPage() {
   const [markPaidAmount, setMarkPaidAmount] = useState('');
   const [recordingPayment, setRecordingPayment] = useState(false);
   const paymentSubmitRef = useRef(false);
+  const [printInvoice, setPrintInvoice] = useState<InvoiceRecord | null>(null);
   const [paymentReceipt, setPaymentReceipt] = useState<CreditPaymentReceipt | null>(null);
   const [returnInvoice, setReturnInvoice] = useState<InvoiceRecord | null>(null);
   const [returnQtys, setReturnQtys] = useState<Record<string, number>>({});
+  const [deleteTarget, setDeleteTarget] = useState<InvoiceRecord | null>(null);
+  const [deleteError, setDeleteError] = useState('');
+  const [deletingInvoice, setDeletingInvoice] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+
+  const canDeleteCreditInvoice = currentUser?.role === 'owner' || currentUser?.role === 'manager';
 
   useEffect(() => { setPage(1); }, [searchQuery, startDate, endDate, sortBy, sortDir]);
 
@@ -116,6 +134,9 @@ export default function CreditPage() {
   }, [invoices, searchQuery, startDate, endDate, sortBy, sortDir]);
 
   const paginated = creditInvoices.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const selectedInvoices = creditInvoices.filter((invoice) => selectedIds.includes(invoice.invoiceNo));
+  const visibleIds = paginated.map((invoice) => invoice.invoiceNo);
+  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.includes(id));
 
   const totalOutstanding = creditInvoices.reduce((s, inv) => s + inv.balanceDue, 0);
   const uniqueCustomers  = new Set(creditInvoices.map((inv) => inv.customerId || inv.customerName)).size;
@@ -125,6 +146,7 @@ export default function CreditPage() {
     { header: 'Invoice No.', value: (invoice) => invoice.invoiceNo },
     { header: 'Customer', value: (invoice) => invoice.customerName },
     { header: 'Date', value: (invoice) => formatDate(invoice.date) },
+    { header: 'Time', value: (invoice) => formatTime(invoice.time) },
     { header: 'Due Date', value: (invoice) => formatDate(calcDueDate(invoice.date, invoiceDueDays).toISOString()) },
     { header: 'Age', value: (invoice) => `${daysAgo(invoice.date)} days` },
     { header: 'Items', value: (invoice) => invoice.items.map((item) => `${item.productName} [${item.netQty} pcs]`).join(', ') },
@@ -167,6 +189,44 @@ export default function CreditPage() {
     setMarkPaidAmount(invoice.balanceDue.toFixed(2));
   };
 
+  const toggleSelected = (id: string) => {
+    setSelectedIds((prev) => prev.includes(id) ? prev.filter((invoiceNo) => invoiceNo !== id) : [...prev, id]);
+  };
+
+  const toggleVisibleSelection = () => {
+    setSelectedIds((prev) => {
+      if (allVisibleSelected) return prev.filter((id) => !visibleIds.includes(id));
+      return Array.from(new Set([...prev, ...visibleIds]));
+    });
+  };
+
+  const handleBulkDelete = async () => {
+    if (bulkDeleting || selectedInvoices.length === 0) return;
+    setBulkDeleting(true);
+    for (const invoice of selectedInvoices) {
+      const result = await deleteInvoice(invoice.invoiceNo);
+      if (!result.success) {
+        setDeleteError(result.error ?? 'Unable to delete one or more credit invoices.');
+        setBulkDeleting(false);
+        return;
+      }
+    }
+    if (currentUser) writeLog(currentUser, {
+      category: 'credit',
+      action: 'delete',
+      description: `Bulk deleted ${selectedInvoices.length} credit invoice(s): ${selectedInvoices.map((invoice) => invoice.invoiceNo).join(', ')}`,
+    });
+    showFeedback({
+      title: 'Credit Invoices Deleted',
+      message: `${selectedInvoices.length} credit invoice${selectedInvoices.length === 1 ? '' : 's'} removed successfully.`,
+      buttonLabel: 'Continue',
+      kind: 'deleted',
+    });
+    setSelectedIds([]);
+    setBulkDeleteOpen(false);
+    setBulkDeleting(false);
+  };
+
   const backFromPaymentModal = () => {
     if (paymentSubmitRef.current) return;
     const backInvoice = paymentBackInvoice;
@@ -193,12 +253,12 @@ export default function CreditPage() {
       {/* Summary Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         {[
-          { label: 'Total Outstanding', value: fmt(totalOutstanding),        icon: 'ri-hand-coin-line',        color: 'bg-amber-50 text-amber-600' },
+          { label: 'Total Outstanding', value: fmtMoney(totalOutstanding),        icon: 'ri-hand-coin-line',        color: 'bg-amber-50 text-amber-600' },
           { label: 'Credit Invoices',   value: String(creditInvoices.length), icon: 'ri-file-list-3-line',      color: 'bg-indigo-50 text-indigo-600' },
           { label: 'Customers in Debt', value: String(uniqueCustomers),       icon: 'ri-group-line',            color: 'bg-violet-50 text-violet-600' },
           {
             label: 'Oldest Invoice',
-            value: oldestDays > 0 ? `${oldestDays} days` : '—',
+            value: oldestDays > 0 ? `${oldestDays} days` : '-',
             icon: 'ri-time-line',
             color: oldestDays > 30 ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600',
           },
@@ -216,8 +276,8 @@ export default function CreditPage() {
       </div>
 
       {/* Search */}
-      <div className="flex flex-col lg:flex-row lg:items-center gap-3 mb-4">
-        <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-3 py-2 max-w-sm">
+      <div className="flex flex-col lg:flex-row lg:flex-wrap lg:items-center gap-3 mb-4 min-w-0">
+        <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-3 py-2 max-w-sm min-w-0">
           <i className="ri-search-line text-slate-400 text-sm"></i>
           <input
             type="text"
@@ -227,26 +287,44 @@ export default function CreditPage() {
             className="bg-transparent text-sm text-slate-600 placeholder-slate-400 outline-none flex-1"
           />
         </div>
-        <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="border border-slate-200 bg-white rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none" title="Start date" />
-        <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="border border-slate-200 bg-white rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none" title="End date" />
-        <div className="flex items-center gap-2">
-          <button onClick={() => exportCreditInvoices('csv')} className="flex items-center gap-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap">
+        <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="border border-slate-200 bg-white rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none min-w-0" title="Start date" />
+        <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="border border-slate-200 bg-white rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none min-w-0" title="End date" />
+        <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2">
+          <button onClick={() => exportCreditInvoices('csv')} className="flex items-center justify-center gap-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap">
             <i className="ri-file-excel-2-line text-base"></i>
-            CSV
+            Export to CSV
           </button>
-          <button onClick={() => exportCreditInvoices('pdf')} className="flex items-center gap-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap">
+          <button onClick={() => exportCreditInvoices('pdf')} className="flex items-center justify-center gap-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap">
             <i className="ri-file-pdf-2-line text-base"></i>
-            PDF
+            Export to PDF
           </button>
         </div>
       </div>
 
       {/* Table */}
+      {canDeleteCreditInvoice && (
+        <BulkActionBar
+          selectedCount={selectedIds.length}
+          onClear={() => setSelectedIds([])}
+          onDelete={() => { setDeleteError(''); setBulkDeleteOpen(true); }}
+        />
+      )}
       <div className="bg-white rounded-xl border border-slate-100 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="bg-slate-50 border-b border-slate-100">
               <tr>
+                {canDeleteCreditInvoice && (
+                  <th className="text-left px-5 py-3.5">
+                    <input
+                      type="checkbox"
+                      checked={allVisibleSelected}
+                      onChange={toggleVisibleSelection}
+                      className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                      aria-label="Select visible credit invoices"
+                    />
+                  </th>
+                )}
                 <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide px-5 py-3.5 whitespace-nowrap">
                   Invoice No.
                 </th>
@@ -258,6 +336,9 @@ export default function CreditPage() {
                   className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide px-5 py-3.5 whitespace-nowrap cursor-pointer select-none hover:text-slate-600"
                 >
                   <span className="flex items-center gap-1">Date <i className={`${sortIcon('date')} text-xs`}></i></span>
+                </th>
+                <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide px-5 py-3.5 whitespace-nowrap">
+                  Time
                 </th>
                 <th
                   onClick={() => toggleSort('days')}
@@ -288,7 +369,7 @@ export default function CreditPage() {
             <tbody>
               {creditInvoices.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-5 py-16 text-center">
+                  <td colSpan={canDeleteCreditInvoice ? 11 : 10} className="px-5 py-16 text-center">
                     <div className="flex flex-col items-center gap-2">
                       <i className="ri-checkbox-circle-line text-4xl text-emerald-300"></i>
                       <p className="text-slate-500 font-semibold text-sm">No outstanding credit invoices</p>
@@ -305,6 +386,17 @@ export default function CreditPage() {
                   const db = dueBadge(inv.date, invoiceDueDays);
                   return (
                     <tr key={inv.invoiceNo} className={`border-b border-slate-50 hover:bg-slate-50 transition-all ${i % 2 !== 0 ? 'bg-slate-50/40' : ''}`}>
+                      {canDeleteCreditInvoice && (
+                        <td className="px-5 py-3.5">
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.includes(inv.invoiceNo)}
+                            onChange={() => toggleSelected(inv.invoiceNo)}
+                            className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                            aria-label={`Select ${inv.invoiceNo}`}
+                          />
+                        </td>
+                      )}
                       <td className="px-5 py-3.5">
                         <span className="text-indigo-600 font-bold text-sm font-mono">{inv.invoiceNo}</span>
                       </td>
@@ -319,6 +411,9 @@ export default function CreditPage() {
                       <td className="px-5 py-3.5 whitespace-nowrap">
                         <span className="text-slate-600 text-sm">{formatDate(inv.date)}</span>
                       </td>
+                      <td className="px-5 py-3.5 whitespace-nowrap">
+                        <span className="text-slate-600 text-sm font-mono">{formatTime(inv.time)}</span>
+                      </td>
                       <td className="px-5 py-3.5">
                         <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${badge.cls}`}>
                           {badge.label}
@@ -330,8 +425,8 @@ export default function CreditPage() {
                         </span>
                       </td>
                       <td className="px-5 py-3.5 whitespace-nowrap">
-                        <span className="text-slate-800 font-bold font-mono text-sm">{fmt(inv.balanceDue)}</span>
-                        {inv.amountPaid > 0 && <p className="text-emerald-600 text-xs font-mono">Paid {fmt(inv.amountPaid)}</p>}
+                        <span className="text-slate-800 font-bold font-mono text-sm">{fmtMoney(inv.balanceDue)}</span>
+                        {inv.amountPaid > 0 && <p className="text-emerald-600 text-xs font-mono">Paid {fmtMoney(inv.amountPaid)}</p>}
                       </td>
                       <td className="px-5 py-3.5">
                         <p className="text-slate-600 text-sm truncate max-w-[160px]">
@@ -353,6 +448,13 @@ export default function CreditPage() {
                             <i className="ri-eye-line text-sm"></i>
                           </button>
                           <button
+                            onClick={() => setPrintInvoice(inv)}
+                            className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-blue-50 text-slate-400 hover:text-blue-600 transition-all cursor-pointer"
+                            title="Print invoice"
+                          >
+                            <i className="ri-printer-line text-sm"></i>
+                          </button>
+                          <button
                             onClick={() => { setReturnInvoice(inv); setReturnQtys({}); }}
                             className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-amber-50 text-slate-400 hover:text-amber-600 transition-all cursor-pointer"
                             title="Return items"
@@ -366,6 +468,15 @@ export default function CreditPage() {
                           >
                             <i className="ri-checkbox-circle-line text-sm"></i>
                           </button>
+                          {canDeleteCreditInvoice && (
+                            <button
+                              onClick={() => { setDeleteError(''); setDeleteTarget(inv); }}
+                              className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-600 transition-all cursor-pointer"
+                              title="Delete credit invoice"
+                            >
+                              <i className="ri-delete-bin-line text-sm"></i>
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -426,40 +537,46 @@ export default function CreditPage() {
                     <div key={item.productId} className="flex items-start justify-between text-sm gap-4">
                       <div className="flex-1 min-w-0">
                         <p className="text-slate-700 font-semibold truncate">{item.productName}</p>
-                        <p className="text-slate-400 text-xs">₵{item.unitPrice.toFixed(2)} × {item.netQty} units{item.returnsQty > 0 && <span className="text-red-400 ml-1">({item.returnsQty} returned)</span>}</p>
+                        <p className="text-slate-400 text-xs">{settings.currencySymbol || 'GHS'}{item.unitPrice.toFixed(2)} x {item.netQty} units{item.returnsQty > 0 && <span className="text-red-400 ml-1">({item.returnsQty} returned)</span>}</p>
                       </div>
-                      <span className="text-slate-800 font-bold font-mono flex-shrink-0">{fmt(item.netSales)}</span>
+                      <span className="text-slate-800 font-bold font-mono flex-shrink-0">{fmtMoney(item.netSales)}</span>
                     </div>
                   ))}
                 </div>
               </div>
               <div className="bg-amber-50 rounded-xl p-4 border border-amber-100">
                 <div className="flex justify-between text-sm text-slate-500 mb-1">
-                  <span>Total Cost</span><span className="font-mono">{fmt(selectedInvoice.totalCost)}</span>
+                  <span>Total Cost</span><span className="font-mono">{fmtMoney(selectedInvoice.totalCost)}</span>
                 </div>
                 <div className="flex justify-between text-sm text-emerald-600">
-                  <span>Gross Margin</span><span className="font-mono">{fmt(selectedInvoice.grossMargin)}</span>
+                  <span>Gross Margin</span><span className="font-mono">{fmtMoney(selectedInvoice.grossMargin)}</span>
                 </div>
                 <div className="flex justify-between font-bold text-slate-800 pt-2 border-t border-amber-200 mt-2">
                   <span>Amount Due</span>
-                  <span className="font-mono text-amber-600 text-base">{fmt(selectedInvoice.balanceDue)}</span>
+                  <span className="font-mono text-amber-600 text-base">{fmtMoney(selectedInvoice.balanceDue)}</span>
                 </div>
                 {selectedInvoice.amountPaid > 0 && (
                   <div className="flex justify-between text-sm text-emerald-600 pt-1">
                     <span>Amount Paid</span>
-                    <span className="font-mono">{fmt(selectedInvoice.amountPaid)}</span>
+                    <span className="font-mono">{fmtMoney(selectedInvoice.amountPaid)}</span>
                   </div>
                 )}
               </div>
               <CreditPaymentHistory invoice={selectedInvoice} payments={creditPayments} />
               <div className="flex items-center justify-center gap-2 py-2">
                 <i className="ri-hand-coin-line text-violet-500"></i>
-                <span className="text-violet-700 text-sm font-semibold">Credit — Awaiting Payment</span>
+                <span className="text-violet-700 text-sm font-semibold">Credit - Awaiting Payment</span>
               </div>
             </div>
             <div className="px-6 py-4 border-t border-slate-100 flex gap-3">
               <button onClick={() => setSelectedInvoice(null)} className="flex-1 py-2.5 border border-slate-200 rounded-lg text-sm font-semibold text-slate-600 hover:bg-slate-50 cursor-pointer">
                 Close
+              </button>
+              <button
+                onClick={() => setPrintInvoice(selectedInvoice)}
+                className="flex-1 py-2.5 border border-slate-200 rounded-lg text-sm font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+              >
+                Print Invoice
               </button>
               <button
                 onClick={() => { openPaymentModal(selectedInvoice, selectedInvoice); setSelectedInvoice(null); }}
@@ -494,12 +611,12 @@ export default function CreditPage() {
             <p className="text-slate-500 text-sm mb-4">
               <span className="font-bold text-indigo-600">{markPaidTarget.invoiceNo}</span> — <span className="font-bold text-slate-700">{markPaidTarget.customerName}</span>
               <br />
-              <span className="text-amber-600 font-bold font-mono">{fmt(markPaidTarget.balanceDue)}</span>
+              <span className="text-amber-600 font-bold font-mono">{fmtMoney(markPaidTarget.balanceDue)}</span>
               <br />
               <span className="text-slate-400 text-xs">Each payment generates its own receipt.</span>
             </p>
             <div className="mb-4">
-              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Amount (₵)</label>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Amount ({settings.currencySymbol || 'GHS'})</label>
               <input
                 type="number"
                 min="0.01"
@@ -507,7 +624,7 @@ export default function CreditPage() {
                 max={markPaidTarget.balanceDue}
                 value={markPaidAmount}
                 onChange={(e) => setMarkPaidAmount(e.target.value)}
-                placeholder={`Max: ${fmt(markPaidTarget.balanceDue)}`}
+                placeholder={`Max: ${fmtMoney(markPaidTarget.balanceDue)}`}
                 className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 font-mono"
               />
             </div>
@@ -551,7 +668,7 @@ export default function CreditPage() {
                     if (!payment) return;
                     if (currentUser) writeLog(currentUser, {
                       category: 'credit', action: 'edit',
-                      description: `Recorded ${fmt(amount)} payment for credit invoice ${target.invoiceNo} with receipt ${payment.receiptNo} via ${markPaidMethod} (${target.customerName})`,
+                      description: `Recorded ${fmtMoney(amount)} payment for credit invoice ${target.invoiceNo} with receipt ${payment.receiptNo} via ${markPaidMethod} (${target.customerName})`,
                     });
                     setPaymentReceipt({
                       receiptNo: payment.receiptNo,
@@ -667,10 +784,119 @@ export default function CreditPage() {
         </div>
       )}
 
+      {/* Delete Credit Invoice Modal */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl">
+            <div className="w-12 h-12 flex items-center justify-center bg-red-100 rounded-xl mb-4">
+              <i className="ri-delete-bin-line text-red-500 text-xl"></i>
+            </div>
+            <h3 className="text-slate-800 font-bold text-base mb-2">Delete Credit Invoice?</h3>
+            <p className="text-slate-500 text-sm mb-2 leading-relaxed">
+              Invoice <span className="font-bold text-indigo-600">{deleteTarget.invoiceNo}</span> for{' '}
+              <span className="font-bold text-slate-700">{deleteTarget.customerName}</span> will be permanently removed.
+            </p>
+            <p className="text-slate-400 text-xs mb-4">
+              Related line items, payment records, and receipts for this invoice will also be removed.
+            </p>
+            {deleteError && (
+              <div className="mb-4 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-600">
+                {deleteError}
+              </div>
+            )}
+            <div className="flex gap-3">
+              <button
+                onClick={() => { if (!deletingInvoice) { setDeleteTarget(null); setDeleteError(''); } }}
+                disabled={deletingInvoice}
+                className="flex-1 py-2.5 rounded-lg border border-slate-200 text-slate-700 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  if (deletingInvoice || !deleteTarget) return;
+                  const target = deleteTarget;
+                  setDeleteError('');
+                  setDeletingInvoice(true);
+                  const result = await deleteInvoice(target.invoiceNo);
+                  setDeletingInvoice(false);
+                  if (!result.success) {
+                    setDeleteError(result.error ?? 'Unable to delete credit invoice.');
+                    return;
+                  }
+                  if (currentUser) writeLog(currentUser, {
+                    category: 'credit',
+                    action: 'delete',
+                    description: `Deleted credit invoice ${target.invoiceNo} for ${target.customerName} - ${fmtMoney(target.balanceDue)} outstanding`,
+                  });
+                  showFeedback({
+                    title: 'Credit Invoice Deleted',
+                    message: `${target.invoiceNo} has been removed successfully.`,
+                    buttonLabel: 'Continue',
+                    kind: 'deleted',
+                  });
+                  setDeleteTarget(null);
+                }}
+                disabled={deletingInvoice}
+                className="flex-1 py-2.5 rounded-lg bg-red-500 hover:bg-red-600 disabled:opacity-60 text-white text-sm font-bold cursor-pointer disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {deletingInvoice && <i className="ri-loader-4-line animate-spin text-base"></i>}
+                {deletingInvoice ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {bulkDeleteOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl">
+            <div className="w-12 h-12 flex items-center justify-center bg-red-100 rounded-xl mb-4">
+              <i className="ri-delete-bin-line text-red-500 text-xl"></i>
+            </div>
+            <h3 className="text-slate-800 font-bold text-base mb-2">Delete Selected Credit Invoices?</h3>
+            <p className="text-slate-500 text-sm mb-2 leading-relaxed">
+              {selectedInvoices.length} credit invoice{selectedInvoices.length === 1 ? '' : 's'} will be permanently removed.
+            </p>
+            <p className="text-slate-400 text-xs mb-4">
+              Related line items, payment records, and receipts for these invoices will also be removed.
+            </p>
+            {deleteError && (
+              <div className="mb-4 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-600">
+                {deleteError}
+              </div>
+            )}
+            <div className="flex gap-3">
+              <button
+                onClick={() => { if (!bulkDeleting) { setBulkDeleteOpen(false); setDeleteError(''); } }}
+                disabled={bulkDeleting}
+                className="flex-1 py-2.5 rounded-lg border border-slate-200 text-slate-700 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleBulkDelete}
+                disabled={bulkDeleting}
+                className="flex-1 py-2.5 rounded-lg bg-red-500 hover:bg-red-600 disabled:opacity-60 text-white text-sm font-bold cursor-pointer disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {bulkDeleting && <i className="ri-loader-4-line animate-spin text-base"></i>}
+                {bulkDeleting ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {paymentReceipt && (
         <CreditPaymentReceiptModal
           receipt={paymentReceipt}
           onClose={() => setPaymentReceipt(null)}
+        />
+      )}
+      {printInvoice && (
+        <CreditInvoiceModal
+          invoice={printInvoice}
+          onClose={() => setPrintInvoice(null)}
         />
       )}
     </AppLayout>

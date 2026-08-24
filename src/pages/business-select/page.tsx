@@ -70,6 +70,10 @@ export default function BusinessSelectPage() {
   const canManageBusiness = currentUser?.role === 'owner';
 
   useEffect(() => {
+    void refreshBusinesses();
+  }, [refreshBusinesses]);
+
+  useEffect(() => {
     const fetchStats = async () => {
       const ids = businesses.map((b) => b.id);
       if (!ids.length) { setStatsByBusiness({}); return; }
@@ -160,11 +164,22 @@ export default function BusinessSelectPage() {
     resetForm();
   };
 
-  const handleSelect = (businessId: string) => { selectBusiness(businessId); setMenuBusinessId(null); };
-  const handleManageMembers = (businessId: string) => { selectBusiness(businessId); setMenuBusinessId(null); navigate('/users'); };
+  const handleSelect = (business: BusinessRecord) => {
+    setMenuBusinessId(null);
+    if (business.status !== 'active') return;
+    selectBusiness(business.id);
+  };
+  const handleManageMembers = (business: BusinessRecord) => {
+    if (business.status !== 'active') return;
+    selectBusiness(business.id);
+    setMenuBusinessId(null);
+    navigate('/users');
+  };
 
   const handleArchive = async () => {
     if (!archiveTarget) return;
+    if (saving) return;
+    setError('');
     setSaving(true);
     const result = await archiveBusiness(archiveTarget.id);
     setSaving(false);
@@ -301,33 +316,54 @@ export default function BusinessSelectPage() {
 
               {filteredBusinesses.map((business) => {
                 const isActive = activeBusinessId === business.id;
+                const isPending = business.status === 'pending';
+                const isInactive = business.status === 'inactive';
+                const isLocked = isPending || isInactive;
+                const canOpenBusiness = business.status === 'active';
                 const stats = statsByBusiness[business.id] ?? EMPTY_STATS;
                 return (
                   <button
                     key={business.id}
                     type="button"
-                    onClick={() => handleSelect(business.id)}
-                    className={`relative bg-white border rounded-2xl p-5 text-left transition-all hover:shadow-md flex flex-col ${
+                    onClick={() => handleSelect(business)}
+                    disabled={!canOpenBusiness}
+                    className={`relative bg-white border rounded-2xl p-5 text-left transition-all flex flex-col ${
                       isActive
                         ? 'border-indigo-400 ring-1 ring-indigo-400 bg-indigo-50/20'
-                        : 'border-slate-200 hover:border-slate-300'
+                        : isPending
+                          ? 'border-amber-200 bg-amber-50/30 cursor-not-allowed'
+                          : isInactive
+                            ? 'border-slate-200 bg-slate-50/80 cursor-not-allowed opacity-90'
+                          : 'border-slate-200 hover:border-slate-300 hover:shadow-md'
                     }`}
                   >
                     {isActive && (
                       <span className="absolute left-3.5 top-3.5 inline-flex items-center bg-indigo-600 text-white text-[11px] font-bold px-2.5 py-0.5 rounded-full">
                         Selected
                       </span>
+                      )}
+                    {isPending && (
+                      <span className="absolute left-3.5 top-3.5 inline-flex items-center gap-1 bg-amber-100 text-amber-700 text-[11px] font-bold px-2.5 py-0.5 rounded-full">
+                        <i className="ri-time-line text-xs"></i>
+                        Pending Approval
+                      </span>
+                    )}
+                    {isInactive && (
+                      <span className="absolute left-3.5 top-3.5 inline-flex items-center gap-1 bg-slate-200 text-slate-700 text-[11px] font-bold px-2.5 py-0.5 rounded-full">
+                        <i className="ri-pause-circle-line text-xs"></i>
+                        Deactivated
+                      </span>
                     )}
 
                     {/* Logo + menu row */}
-                    <div className={`flex items-start justify-between mb-4 ${isActive ? 'mt-6' : ''}`}>
+                    <div className={`flex items-start justify-between mb-4 ${isActive || isLocked ? 'mt-6' : ''}`}>
                       <div className="w-11 h-11 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center text-xs font-bold overflow-hidden shrink-0">
                         {business.logoUrl
-                          ? <img src={business.logoUrl} alt={business.businessName} className="w-full h-full object-cover" />
+                          ? <img src={business.logoUrl} alt={business.businessName} className="w-full h-full object-contain p-1 bg-white" />
                           : initialsFor(business.businessName)}
                       </div>
                       <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-                        <span className="w-2 h-2 rounded-full bg-indigo-500 shrink-0"></span>
+                        <span className={`w-2 h-2 rounded-full shrink-0 ${isPending ? 'bg-amber-500' : isInactive ? 'bg-slate-400' : 'bg-indigo-500'}`}></span>
                         <div className="relative" ref={menuBusinessId === business.id ? menuRef : null}>
                           <button
                             type="button"
@@ -350,7 +386,12 @@ export default function BusinessSelectPage() {
                                   Update info
                                 </button>
                               )}
-                              <button type="button" onClick={() => handleManageMembers(business.id)} className="w-full px-3 py-2.5 flex items-center gap-3 text-sm text-slate-700 hover:bg-slate-50">
+                              <button
+                                type="button"
+                                onClick={() => handleManageMembers(business)}
+                                disabled={!canOpenBusiness}
+                                className="w-full px-3 py-2.5 flex items-center gap-3 text-sm text-slate-700 hover:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed disabled:hover:bg-white"
+                              >
                                 <i className="ri-team-line text-indigo-600"></i>
                                 Manage members
                               </button>
@@ -360,20 +401,20 @@ export default function BusinessSelectPage() {
                               </button>
                               <button
                                 type="button"
-                                onClick={() => handleSelect(business.id)}
-                                disabled={isActive}
+                                onClick={() => handleSelect(business)}
+                                disabled={isActive || !canOpenBusiness}
                                 className="w-full px-3 py-2.5 flex items-center justify-between text-sm disabled:cursor-default hover:bg-slate-50"
                               >
-                                <span className={`inline-flex items-center gap-3 ${isActive ? 'text-indigo-600' : 'text-slate-700'}`}>
-                                  <i className="ri-checkbox-circle-line text-indigo-600"></i>
-                                  Set Active
+                                <span className={`inline-flex items-center gap-3 ${isActive ? 'text-indigo-600' : isPending ? 'text-amber-600' : isInactive ? 'text-slate-500' : 'text-slate-700'}`}>
+                                  <i className={`${isPending ? 'ri-time-line' : isInactive ? 'ri-pause-circle-line' : 'ri-checkbox-circle-line'} ${isPending ? 'text-amber-600' : isInactive ? 'text-slate-500' : 'text-indigo-600'}`}></i>
+                                  {isPending ? 'Awaiting Approval' : isInactive ? 'Deactivated' : 'Set Active'}
                                 </span>
                                 {isActive && <span className="bg-indigo-50 text-indigo-600 text-xs font-bold px-2 py-0.5 rounded-full">Active</span>}
                               </button>
                               {canManageBusiness && (
                                 <button
                                   type="button"
-                                  onClick={() => { setArchiveTarget(business); setMenuBusinessId(null); }}
+                                  onClick={() => { setError(''); setArchiveTarget(business); setMenuBusinessId(null); }}
                                   className="w-full px-3 py-2.5 flex items-center gap-3 text-sm text-red-600 hover:bg-red-50 border-t border-slate-100"
                                 >
                                   <i className="ri-delete-bin-line"></i>
@@ -392,11 +433,11 @@ export default function BusinessSelectPage() {
 
                     {/* Footer */}
                     <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
-                      <span className="inline-flex items-center gap-1.5 text-slate-500 text-xs">
-                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-500"></span>
-                        Active · {relativeTime(stats.lastActive)}
+                      <span className={`inline-flex items-center gap-1.5 text-xs ${isPending ? 'text-amber-700' : isInactive ? 'text-slate-500' : 'text-slate-500'}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${isPending ? 'bg-amber-500' : isInactive ? 'bg-slate-400' : 'bg-indigo-500'}`}></span>
+                        {isPending ? 'Waiting for admin approval' : isInactive ? 'Deactivated by admin' : `Active - ${relativeTime(stats.lastActive)}`}
                       </span>
-                      <i className="ri-arrow-right-line text-slate-300 text-sm"></i>
+                      <i className={`${isPending ? 'ri-lock-line text-amber-400' : isInactive ? 'ri-lock-line text-slate-400' : 'ri-arrow-right-line text-slate-300'} text-sm`}></i>
                     </div>
                   </button>
                 );
@@ -476,6 +517,11 @@ export default function BusinessSelectPage() {
             <p className="text-slate-500 text-sm mt-2">
               {archiveTarget.businessName} will be archived and removed from active business selection.
             </p>
+            {error && (
+              <div className="mt-4 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-600">
+                {error}
+              </div>
+            )}
             <div className="flex gap-3 mt-6">
               <button type="button" onClick={() => setArchiveTarget(null)} className="flex-1 border border-slate-200 rounded-lg py-2.5 text-sm font-semibold text-slate-600">
                 Cancel

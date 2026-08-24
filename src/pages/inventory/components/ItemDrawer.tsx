@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import type { InventoryItem } from '@/types/erp';
-import { supabase } from '@/lib/supabase';
 import { sanitizeMultiline, sanitizeText } from '@/lib/sanitize';
 import { calcCurrentStockUnits, calcStockValue, formatPackStock } from '@/services/inventoryService';
+import { UPLOAD_LIMITS, validateUploadFile } from '@/lib/uploadLimits';
+import { removeUploadedFile, uploadPublicFile, type UploadedFile } from '@/lib/storageUpload';
+import { useBusiness } from '@/contexts/BusinessContext';
 
 interface ItemDrawerProps {
   open: boolean;
@@ -58,6 +60,7 @@ function RequiredMark() {
 }
 
 export default function ItemDrawer({ open, item, categories, suppliers, onClose, onSave }: ItemDrawerProps) {
+  const { activeBusinessId } = useBusiness();
   const [form, setForm] = useState<FormState>(EMPTY);
   const [supplierSearch, setSupplierSearch] = useState('');
   const [supplierOpen, setSupplierOpen] = useState(false);
@@ -120,35 +123,27 @@ export default function ItemDrawer({ open, item, categories, suppliers, onClose,
     });
 
   const uploadImage = async () => {
-    if (!selectedImage) return form.image;
-
-    const ext = selectedImage.type === 'image/png' ? 'png' : 'jpg';
-    const safeName = (form.itemId || form.productName || 'product')
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-|-$/g, '') || 'product';
-    const path = `products/${safeName}-${crypto.randomUUID()}.${ext}`;
-    const { error } = await supabase.storage.from('product-images').upload(path, selectedImage, {
-      contentType: selectedImage.type,
-      upsert: false,
+    if (!selectedImage) return null;
+    if (!activeBusinessId) throw new Error('Select a business before uploading a product image.');
+    return uploadPublicFile({
+      bucket: 'product-images',
+      file: selectedImage,
+      limitKey: 'productImage',
+      pathPrefix: `businesses/${activeBusinessId}/products`,
+      baseName: form.itemId || form.productName || 'product',
+      rateLimitKey: 'upload:product-image',
+      rateLimitScope: `${activeBusinessId}:${form.itemId || form.productName || 'product'}`,
     });
-    if (error) throw error;
-    return supabase.storage.from('product-images').getPublicUrl(path).data.publicUrl;
   };
 
   const handleImageChange = (file: File | undefined) => {
     setImageError('');
     if (!file) return;
 
-    if (!['image/jpeg', 'image/png'].includes(file.type)) {
+    const validationError = validateUploadFile(file, 'productImage');
+    if (validationError) {
       setSelectedImage(null);
-      setImageError('Upload a JPEG or PNG image.');
-      return;
-    }
-
-    if (file.size > 5 * 1024 * 1024) {
-      setSelectedImage(null);
-      setImageError('Image must be 5 MB or smaller.');
+      setImageError(validationError);
       return;
     }
 
@@ -168,11 +163,6 @@ export default function ItemDrawer({ open, item, categories, suppliers, onClose,
 
     const typedSupplier = supplierSearch.trim();
     let itemToSave = form;
-    if (!typedSupplier) {
-      setSupplierError('Supplier is required.');
-      setSupplierOpen(true);
-      return;
-    }
     if (typedSupplier && !form.supplier) {
       const exactSupplier = suppliers.find((supplier) =>
         supplier.toLowerCase() === typedSupplier.toLowerCase()
@@ -185,9 +175,11 @@ export default function ItemDrawer({ open, item, categories, suppliers, onClose,
         return;
       }
     }
+    let uploadedImage: UploadedFile | null = null;
     try {
       setSaving(true);
-      const image = await uploadImage();
+      uploadedImage = await uploadImage();
+      const image = uploadedImage?.publicUrl ?? itemToSave.image;
       const wholesaleSellingPrice = Math.max(0, itemToSave.wholesaleSellingPrice);
       const halfSellingPrice = Number((wholesaleSellingPrice / 2).toFixed(2));
       const quarterSellingPrice = Number((wholesaleSellingPrice / 4).toFixed(2));
@@ -212,7 +204,8 @@ export default function ItemDrawer({ open, item, categories, suppliers, onClose,
       } as InventoryItem);
     } catch (error) {
       console.error(error);
-      setImageError('Image upload failed. Please try again.');
+      await removeUploadedFile(uploadedImage);
+      setImageError(error instanceof Error ? error.message : 'Image upload failed. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -288,11 +281,10 @@ export default function ItemDrawer({ open, item, categories, suppliers, onClose,
           </div>
 
           <div className="relative">
-            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Supplier <RequiredMark /></label>
+            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Supplier</label>
             <div className="relative">
               <i className="ri-search-line absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
               <input
-                required
                 value={supplierSearch}
                 onFocus={() => setSupplierOpen(true)}
                 onChange={(e) => {
@@ -362,7 +354,7 @@ export default function ItemDrawer({ open, item, categories, suppliers, onClose,
                   Upload Picture
                   <input
                     type="file"
-                    accept="image/jpeg,image/png"
+                    accept={UPLOAD_LIMITS.productImage.acceptInput}
                     className="hidden"
                     onChange={(e) => handleImageChange(e.target.files?.[0])}
                   />
@@ -376,7 +368,7 @@ export default function ItemDrawer({ open, item, categories, suppliers, onClose,
                     <i className="ri-delete-bin-line text-base"></i>
                   </button>
                 )}
-                <p className="mt-2 text-xs text-slate-400">JPEG or PNG only. Max 5 MB.</p>
+                <p className="mt-2 text-xs text-slate-400">{UPLOAD_LIMITS.productImage.description}</p>
                 {imageError && <p className="mt-1 text-xs text-red-500">{imageError}</p>}
               </div>
             </div>

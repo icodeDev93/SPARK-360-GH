@@ -333,6 +333,9 @@ create table if not exists public.store_settings (
   store_address text,
   store_phone text,
   store_email text,
+  store_sender_id text not null default '' check (store_sender_id = '' or store_sender_id ~ '^[A-Za-z0-9 ]{3,11}$'),
+  invoice_sms_template text not null default '' check (char_length(invoice_sms_template) <= 320),
+  payment_sms_template text not null default '' check (char_length(payment_sms_template) <= 320),
   store_logo text,
   currency text not null default 'GHS',
   currency_symbol text not null default '₵',
@@ -346,6 +349,7 @@ create table if not exists public.store_settings (
   receipt_theme text not null default 'minimal'
     check (receipt_theme in ('minimal', 'classic', 'modern')),
   timezone text not null default 'Africa/Accra',
+  invoice_due_days integer not null default 30 check (invoice_due_days >= 0 and invoice_due_days <= 365),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );

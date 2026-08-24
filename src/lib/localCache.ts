@@ -66,7 +66,7 @@ export async function queueLocalMutation<T>(
 ) {
   try {
     if (isOfflineStoreAvailable()) {
-      await enqueueSyncOperation(entity, recordId, operation, payload);
+      await enqueueSyncOperation(scopedEntity(entity), recordId, operation, payload);
     }
   } catch (error) {
     console.warn(`Unable to queue offline mutation for ${entity}`, error);

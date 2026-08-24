@@ -1,5 +1,7 @@
 import { useSettings } from '@/hooks/useSettings';
+import { useBusiness } from '@/contexts/BusinessContext';
 import type { PaymentMethod } from '@/types/erp';
+import { escapePrintHtml, printHtml } from '@/lib/printDocument';
 
 interface CreditPaymentReceipt {
   receiptNo: string;
@@ -38,14 +40,16 @@ function formatDate(value: string) {
 
 export default function CreditPaymentReceiptModal({ receipt, onClose }: Props) {
   const { settings } = useSettings();
+  const { activeBusiness } = useBusiness();
   const currency = settings.currencySymbol || '₵';
   const fmt = (value: number) => `${currency}${value.toLocaleString('en-GH', { minimumFractionDigits: 2 })}`;
   const paidInFull = receipt.balanceLeft <= 0.005;
+  const businessLogo = settings.storeLogo || activeBusiness?.logoUrl || '';
+  const storeName = settings.storeName || activeBusiness?.businessName || 'Store';
+  const storeAddress = settings.storeAddress || activeBusiness?.address || '';
+  const storePhone = settings.storePhone || activeBusiness?.phone || '';
 
   const handlePrint = () => {
-    const win = window.open('', '_blank', 'width=420,height=800');
-    if (!win) return;
-
     const rows = [
       ['Receipt No.', receipt.receiptNo],
       ['Invoice No.', receipt.invoiceNo],
@@ -55,13 +59,11 @@ export default function CreditPaymentReceiptModal({ receipt, onClose }: Props) {
       ['Payment Method', paymentLabels[receipt.paymentMethod]],
       ['Recorded By', receipt.cashier],
     ];
-    const logoHtml = settings.receiptShowLogo
-      ? settings.storeLogo
-        ? `<img src="${settings.storeLogo}" alt="Store logo" style="width:44px;height:44px;object-fit:contain;background:#fff;border-radius:9px;display:block;margin:0 auto 8px;padding:4px;"/>`
-        : ''
+    const logoHtml = businessLogo
+      ? `<img src="${escapePrintHtml(businessLogo)}" alt="${escapePrintHtml(storeName)} logo" style="width:44px;height:44px;object-fit:contain;background:#fff;border-radius:9px;display:block;margin:0 auto 8px;padding:4px;"/>`
       : '';
 
-    win.document.write(`<!DOCTYPE html>
+    printHtml(`<!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8">
@@ -69,15 +71,15 @@ export default function CreditPaymentReceiptModal({ receipt, onClose }: Props) {
   <style>
     @page { size: 80mm auto; margin: 0; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { width: 80mm; font-family: Arial, sans-serif; color: #1e293b; background: #fff; }
+    body { width: 80mm; font-family: 'Courier New', Consolas, Monaco, monospace; font-size: 10pt; color: #1e293b; background: #fff; }
   </style>
 </head>
 <body>
   <div style="background:#4f46e5;color:#fff;text-align:center;padding:18px 14px 14px;">
     ${logoHtml}
-    <div style="font-size:15px;font-weight:800;margin-bottom:3px;">${settings.storeName}</div>
-    <div style="font-size:10px;color:rgba(255,255,255,0.82);line-height:1.5;">${settings.storeAddress}</div>
-    ${settings.storePhone ? `<div style="font-size:10px;color:rgba(255,255,255,0.82);">${settings.storePhone}</div>` : ''}
+    <div style="font-size:15px;font-weight:800;margin-bottom:3px;">${escapePrintHtml(storeName)}</div>
+    <div style="font-size:10px;color:rgba(255,255,255,0.82);line-height:1.5;">${escapePrintHtml(storeAddress)}</div>
+    ${storePhone ? `<div style="font-size:10px;color:rgba(255,255,255,0.82);">${escapePrintHtml(storePhone)}</div>` : ''}
     <div style="font-size:11px;font-weight:700;margin-top:10px;letter-spacing:0.08em;">CREDIT PAYMENT RECEIPT</div>
   </div>
 
@@ -85,7 +87,7 @@ export default function CreditPaymentReceiptModal({ receipt, onClose }: Props) {
     ${rows.map(([label, value]) => `
       <div style="display:flex;justify-content:space-between;gap:10px;margin-bottom:6px;font-size:11px;">
         <span style="color:#64748b;">${label}</span>
-        <span style="font-weight:700;color:#1e293b;text-align:right;">${value}</span>
+        <span style="font-weight:700;color:#1e293b;text-align:right;">${escapePrintHtml(value)}</span>
       </div>
     `).join('')}
   </div>
@@ -113,13 +115,11 @@ export default function CreditPaymentReceiptModal({ receipt, onClose }: Props) {
     <div style="display:inline-block;padding:4px 10px;border-radius:999px;font-size:10px;font-weight:800;background:${paidInFull ? '#dcfce7' : '#fef3c7'};color:${paidInFull ? '#15803d' : '#b45309'};">
       ${paidInFull ? 'INVOICE SETTLED' : 'PARTIAL PAYMENT'}
     </div>
-    ${settings.receiptFooter ? `<p style="font-size:10px;color:#94a3b8;line-height:1.5;margin-top:10px;">${settings.receiptFooter}</p>` : ''}
+    ${settings.receiptFooter ? `<p style="font-size:10px;color:#94a3b8;line-height:1.5;margin-top:10px;">${escapePrintHtml(settings.receiptFooter)}</p>` : ''}
   </div>
 
-  <script>window.onload = function() { window.print(); window.close(); }<\/script>
 </body>
-</html>`);
-    win.document.close();
+</html>`, { title: `Payment Receipt ${receipt.receiptNo}`, windowFeatures: 'width=420,height=800', autoClose: false });
   };
 
   return (
@@ -143,14 +143,14 @@ export default function CreditPaymentReceiptModal({ receipt, onClose }: Props) {
         <div className="p-6">
           <div className="border border-slate-200 rounded-xl overflow-hidden">
             <div className="bg-indigo-600 text-white text-center px-5 py-4">
-              {settings.receiptShowLogo && settings.storeLogo && (
+              {businessLogo && (
                 <div className="mb-2 flex justify-center">
                   <div className="w-12 h-12 rounded-lg bg-white overflow-hidden flex items-center justify-center">
-                    <img src={settings.storeLogo} alt="Store logo" className="w-full h-full object-contain p-1.5" />
+                    <img src={businessLogo} alt={`${storeName} logo`} className="w-full h-full object-contain p-1.5" />
                   </div>
                 </div>
               )}
-              <p className="font-bold text-base">{settings.storeName}</p>
+              <p className="font-bold text-base">{storeName}</p>
               <p className="text-xs text-white/80 mt-0.5">Credit Payment Receipt</p>
             </div>
 

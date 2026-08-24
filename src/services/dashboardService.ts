@@ -22,7 +22,7 @@ export function calcKpiSummary(
   const totalExpenses = grandTotalGHS(expenses);
   const netProfit = grossMargin - totalExpenses;
   const creditOutstanding = invoices
-    .filter((inv) => inv.status === 'credit')
+    .filter((inv) => inv.balanceDue > 0.005)
     .reduce((sum, inv) => sum + inv.balanceDue, 0);
 
   return {
@@ -46,12 +46,14 @@ export function calcMonthlyPerformance(
   ];
 
   const income = Array(12).fill(0) as number[];
+  const margin = Array(12).fill(0) as number[];
   const expenseArr = Array(12).fill(0) as number[];
 
   invoices.forEach((inv) => {
     const d = new Date(inv.date);
     if (d.getFullYear() === year && inv.status === 'completed') {
       income[d.getMonth()] += inv.netSales;
+      margin[d.getMonth()] += inv.grossMargin;
     }
   });
 
@@ -66,7 +68,7 @@ export function calcMonthlyPerformance(
     month,
     income: income[i],
     expenses: expenseArr[i],
-    profit: income[i] - expenseArr[i],
+    profit: margin[i] - expenseArr[i],
   }));
 }
 

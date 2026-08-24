@@ -26,7 +26,7 @@ function fmt(val: number) {
 
 function calcCreditOutstanding(invoices: ReturnType<typeof useSalesLog>['invoices']) {
   return invoices
-    .filter((inv) => inv.status === 'credit')
+    .filter((inv) => inv.balanceDue > 0.005)
     .reduce((sum, inv) => sum + inv.balanceDue, 0);
 }
 

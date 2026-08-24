@@ -67,6 +67,7 @@ export default function UsersPage() {
   const [errors, setErrors]         = useState<Record<string, string>>({});
   const [search, setSearch]         = useState('');
   const [roleFilter, setRoleFilter] = useState<'All' | UserRole>('All');
+  const activeBusinesses = businesses.filter((business) => business.status === 'active');
 
   useEffect(() => {
     (async () => {
@@ -78,7 +79,7 @@ export default function UsersPage() {
 
   const openAdd  = () => {
     setEditTarget(null);
-    setForm({ ...EMPTY_FORM, businessId: activeBusinessId ?? businesses[0]?.id ?? '' });
+    setForm({ ...EMPTY_FORM, businessId: activeBusinesses.some((business) => business.id === activeBusinessId) ? activeBusinessId ?? '' : activeBusinesses[0]?.id ?? '' });
     setErrors({});
     setFormError('');
     setShowForm(true);
@@ -100,7 +101,13 @@ export default function UsersPage() {
     setForm((p) => ({
       ...p,
       role: newRole,
-      businessId: newRole === 'cashier' ? (p.businessId || activeBusinessId || businesses[0]?.id || '') : '',
+      businessId: newRole === 'cashier'
+        ? (activeBusinesses.some((business) => business.id === p.businessId)
+            ? p.businessId
+            : activeBusinesses.some((business) => business.id === activeBusinessId)
+              ? activeBusinessId ?? ''
+              : activeBusinesses[0]?.id ?? '')
+        : '',
       overrides: EMPTY_OVERRIDES,
     }));
   }
@@ -144,6 +151,9 @@ export default function UsersPage() {
     if (!form.email.trim()) e.email = 'Email is required';
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) e.email = 'Invalid email address';
     if (!editTarget && form.role === 'cashier' && !form.businessId) e.businessId = 'Business is required for attendants';
+    if (!editTarget && form.role === 'cashier' && form.businessId && !activeBusinesses.some((business) => business.id === form.businessId)) {
+      e.businessId = 'Select an active business for attendants';
+    }
     if (!editTarget) {
       if (!form.password) e.password = 'Password is required';
       else if (form.password.length < 6) e.password = 'Minimum 6 characters';
@@ -539,7 +549,7 @@ export default function UsersPage() {
                     className={`w-full border rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 bg-white cursor-pointer ${errors.businessId ? 'border-red-400' : 'border-slate-200'}`}
                   >
                     <option value="">Select business</option>
-                    {businesses.map((business) => (
+                    {activeBusinesses.map((business) => (
                       <option key={business.id} value={business.id}>{business.businessName}</option>
                     ))}
                   </select>

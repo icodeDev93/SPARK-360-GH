@@ -51,6 +51,8 @@ export default function CartPanel({ items, onUpdateQty, onUpdatePriceLevel, onRe
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [receiptCustomerName, setReceiptCustomerName] = useState('');
   const [creditInvoice, setCreditInvoice] = useState<{ invoiceNo: string; customerName: string; amount: number } | null>(null);
+  const [processingSale, setProcessingSale] = useState(false);
+  const [saleError, setSaleError] = useState('');
 
   const taxRate    = settings.taxEnabled ? settings.taxRate / 100 : 0;
   const subtotal   = items.reduce((sum, i) => sum + i.price * i.qty, 0);
@@ -68,44 +70,64 @@ export default function CartPanel({ items, onUpdateQty, onUpdatePriceLevel, onRe
     if (items.length > 0) setShowCustomerModal(true);
   };
 
-  const handleCustomerConfirm = (customerId: string | null, customerName: string) => {
-    setShowCustomerModal(false);
+  const handleCustomerConfirm = async (customerId: string | null, customerName: string) => {
+    if (processingSale) return;
+    setSaleError('');
     const saleItems = items.map((item) =>
       calcLineItem(item.id, item.name, item.qty, 0, item.price, item.costPrice, item.priceLevel, item.stockUnitsPerQty)
     );
     const isCreditSale = paymentMethod === 'Credit';
     const nextReceiptNo = isCreditSale ? null : generateReceiptNo();
-    setReceiptCustomerName(customerName);
-    const invoice = addInvoice({
-      receiptNo:    nextReceiptNo,
-      customerId:   customerId ?? 'walk-in',
-      customerName,
-      items:        saleItems,
-      paymentMethod,
-      cashier:      currentUser.name,
-      status:       isCreditSale ? 'credit' : 'completed',
-    });
-    window.dispatchEvent(new CustomEvent('bizzyapp:inventory-stock-adjusted', {
-      detail: {
-        businessId: activeBusinessId,
-        items: saleItems.map((item) => ({
-          productId: item.productId,
-          stockUnitsDeducted: item.stockUnitsDeducted,
-        })),
-      },
-    }));
-    if (nextReceiptNo) setReceiptNo(nextReceiptNo);
-    const saleDescription = isCreditSale
-      ? `Created credit invoice ${invoice.invoiceNo} for ${customerName} — ₵${grandTotal.toFixed(2)} (${saleItems.length} item${saleItems.length !== 1 ? 's' : ''})`
-      : `Completed sale ${nextReceiptNo} for ${customerName} — ₵${grandTotal.toFixed(2)} via ${paymentMethod} (${saleItems.length} item${saleItems.length !== 1 ? 's' : ''})`;
-    writeLog(currentUser, {
-      category: isCreditSale ? 'credit' : 'sales', action: 'complete',
-      description: saleDescription,
-    });
-    if (isCreditSale) {
-      setCreditInvoice({ invoiceNo: invoice.invoiceNo, customerName, amount: grandTotal });
-    } else {
-      setShowPaymentComplete(true);
+
+    try {
+      setProcessingSale(true);
+      setReceiptCustomerName(customerName);
+      const invoice = await addInvoice({
+        receiptNo:    nextReceiptNo,
+        customerId:   customerId ?? 'walk-in',
+        customerName,
+        items:        saleItems,
+        subtotal,
+        taxAmount:    tax,
+        discountAmount: discountAmt,
+        totalAmount:  grandTotal,
+        paymentMethod,
+        cashier:      currentUser?.name ?? 'Unknown',
+        status:       isCreditSale ? 'credit' : 'completed',
+      });
+
+      setShowCustomerModal(false);
+      window.dispatchEvent(new CustomEvent('bizzyapp:inventory-stock-adjusted', {
+        detail: {
+          businessId: activeBusinessId,
+          items: saleItems.map((item) => ({
+            productId: item.productId,
+            stockUnitsDeducted: item.stockUnitsDeducted,
+          })),
+        },
+      }));
+      if (nextReceiptNo) setReceiptNo(nextReceiptNo);
+
+      const saleDescription = isCreditSale
+        ? `Created credit invoice ${invoice.invoiceNo} for ${customerName} - ${settings.currencySymbol}${grandTotal.toFixed(2)} (${saleItems.length} item${saleItems.length !== 1 ? 's' : ''})`
+        : `Completed sale ${nextReceiptNo} for ${customerName} - ${settings.currencySymbol}${grandTotal.toFixed(2)} via ${paymentMethod} (${saleItems.length} item${saleItems.length !== 1 ? 's' : ''})`;
+      if (currentUser) {
+        writeLog(currentUser, {
+          category: isCreditSale ? 'credit' : 'sales', action: 'complete',
+          description: saleDescription,
+        });
+      }
+
+      if (isCreditSale) {
+        setCreditInvoice({ invoiceNo: invoice.invoiceNo, customerName, amount: grandTotal });
+      } else {
+        setShowPaymentComplete(true);
+      }
+    } catch (error) {
+      console.error(error);
+      setSaleError(error instanceof Error ? error.message : 'Sale could not be saved. Please try again.');
+    } finally {
+      setProcessingSale(false);
     }
   };
 
@@ -279,9 +301,9 @@ export default function CartPanel({ items, onUpdateQty, onUpdatePriceLevel, onRe
             </div>
             <button
               onClick={handleCreditSale}
-              disabled={items.length === 0}
+              disabled={items.length === 0 || processingSale}
               className={`w-full flex items-center justify-center gap-2 py-2 rounded-lg border text-xs font-semibold transition-all cursor-pointer ${
-                items.length === 0
+                items.length === 0 || processingSale
                   ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
                   : paymentMethod === 'Credit'
                   ? 'bg-violet-600 border-violet-600 text-white'
@@ -299,9 +321,9 @@ export default function CartPanel({ items, onUpdateQty, onUpdatePriceLevel, onRe
           {/* Complete Sale */}
           <button
             onClick={handleCompleteSale}
-            disabled={items.length === 0}
+            disabled={items.length === 0 || processingSale}
             className={`w-full py-4 rounded-xl font-bold text-base transition-all cursor-pointer whitespace-nowrap flex items-center justify-center gap-2 ${
-              items.length === 0
+              items.length === 0 || processingSale
                 ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
                 : 'bg-emerald-600 hover:bg-emerald-700 text-white'
             }`}
@@ -318,8 +340,14 @@ export default function CartPanel({ items, onUpdateQty, onUpdatePriceLevel, onRe
           customers={customers}
           addCustomer={addCustomer}
           onComplete={handleCustomerConfirm}
-          onCancel={() => setShowCustomerModal(false)}
+          onCancel={() => {
+            if (processingSale) return;
+            setSaleError('');
+            setShowCustomerModal(false);
+          }}
           paymentMethod={paymentMethod}
+          processing={processingSale}
+          error={saleError}
         />
       )}
 

@@ -42,7 +42,8 @@ export async function syncPendingChanges({ batchSize = 50, handlers }: SyncEngin
   let failed = 0;
 
   for (const operation of operations) {
-    const handler = handlers[operation.entity];
+    const entityName = operation.entity.includes(':') ? operation.entity.split(':').pop() ?? operation.entity : operation.entity;
+    const handler = handlers[operation.entity] ?? handlers[entityName];
     if (!handler) {
       failed += 1;
       await markSyncOperationFailed(operation.id, `No sync handler registered for "${operation.entity}".`);

@@ -1,13 +1,15 @@
 import { useState, useRef } from 'react';
 import type { ExpenseRecord, ExpensePaymentMethod } from '@/types/erp';
 import { PAYMENT_METHODS } from '@/mocks/expenses';
-import { supabase } from '@/lib/supabase';
 import { sanitizeText, sanitizeMultiline } from '@/lib/sanitize';
+import { UPLOAD_LIMITS, validateUploadFile } from '@/lib/uploadLimits';
+import { removeUploadedFile, uploadPublicFile, type UploadedFile } from '@/lib/storageUpload';
+import { useBusiness } from '@/contexts/BusinessContext';
 
 interface Props {
   initial?: ExpenseRecord;
   categories: string[];
-  onSave: (data: Omit<ExpenseRecord, 'expenseId'>) => void;
+  onSave: (data: Omit<ExpenseRecord, 'expenseId'>) => void | Promise<void>;
   onClose: () => void;
 }
 
@@ -19,6 +21,7 @@ const PAYMENT_ICONS: Record<ExpensePaymentMethod, string> = {
 };
 
 export default function ExpenseForm({ initial, categories, onSave, onClose }: Props) {
+  const { activeBusinessId } = useBusiness();
   const [form, setForm] = useState({
     description: initial?.description ?? '',
     category:    initial?.category    ?? categories[0] ?? '',
@@ -34,10 +37,14 @@ export default function ExpenseForm({ initial, categories, onSave, onClose }: Pr
   const [dragOver, setDragOver]     = useState(false);
   const fileInputRef                = useRef<HTMLInputElement>(null);
 
-  const ACCEPTED = ['image/jpeg', 'image/png', 'application/pdf'];
-
   const handleFileSelect = (file: File) => {
-    if (!ACCEPTED.includes(file.type)) return;
+    const validationError = validateUploadFile(file, 'expenseProof');
+    if (validationError) {
+      setProofFile(null);
+      setErrors((prev) => ({ ...prev, proof: validationError }));
+      return;
+    }
+    setErrors((prev) => ({ ...prev, proof: '' }));
     setProofFile(file);
   };
 
@@ -60,26 +67,36 @@ export default function ExpenseForm({ initial, categories, onSave, onClose }: Pr
   const handleSubmit = async () => {
     if (!validate()) return;
     setUploading(true);
+    let uploadedProof: UploadedFile | null = null;
     try {
       let proofUrl = form.proofUrl;
       if (proofFile) {
-        const ext  = proofFile.name.split('.').pop();
-        const path = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-        const { error: upErr } = await supabase.storage
-          .from('expense-proofs')
-          .upload(path, proofFile, { upsert: false });
-        if (!upErr) {
-          const { data } = supabase.storage.from('expense-proofs').getPublicUrl(path);
-          proofUrl = data.publicUrl;
-        }
+        if (!activeBusinessId) throw new Error('Select a business before uploading expense proof.');
+        uploadedProof = await uploadPublicFile({
+          bucket: 'expense-proofs',
+          file: proofFile,
+          limitKey: 'expenseProof',
+          pathPrefix: `businesses/${activeBusinessId}/proofs`,
+          baseName: form.description || 'expense',
+          rateLimitKey: 'upload:expense-proof',
+          rateLimitScope: `${activeBusinessId}:${form.description || 'expense'}`,
+        });
+        proofUrl = uploadedProof.publicUrl;
       }
-      onSave({
+      await onSave({
         ...form,
         description: sanitizeText(form.description),
         notes: sanitizeMultiline(form.notes),
         proofUrl,
       });
       onClose();
+    } catch (error) {
+      console.error(error);
+      await removeUploadedFile(uploadedProof);
+      setErrors((prev) => ({
+        ...prev,
+        proof: error instanceof Error ? error.message : 'Proof upload failed. Please try again.',
+      }));
     } finally {
       setUploading(false);
     }
@@ -208,7 +225,7 @@ export default function ExpenseForm({ initial, categories, onSave, onClose }: Pr
           <div>
             <label className="block text-sm font-semibold text-slate-700 mb-1.5">
               Proof of Payment
-              <span className="text-slate-400 text-xs font-normal ml-2">JPEG, PNG or PDF · max 10 MB</span>
+              <span className="text-slate-400 text-xs font-normal ml-2">{UPLOAD_LIMITS.expenseProof.description}</span>
             </label>
 
             {/* Show existing saved proof */}
@@ -256,15 +273,16 @@ export default function ExpenseForm({ initial, categories, onSave, onClose }: Pr
                 </div>
                 <div className="text-center">
                   <p className="text-slate-600 text-sm font-semibold">Click to upload or drag & drop</p>
-                  <p className="text-slate-400 text-xs mt-0.5">JPEG, PNG or PDF up to 10 MB</p>
+                  <p className="text-slate-400 text-xs mt-0.5">{UPLOAD_LIMITS.expenseProof.description}</p>
                 </div>
               </div>
             )}
+            {errors.proof && <p className="text-red-500 text-xs mt-1">{errors.proof}</p>}
 
             <input
               ref={fileInputRef}
               type="file"
-              accept=".jpg,.jpeg,.png,.pdf"
+              accept={UPLOAD_LIMITS.expenseProof.acceptInput}
               className="hidden"
               onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFileSelect(f); }}
             />

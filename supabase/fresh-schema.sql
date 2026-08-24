@@ -221,7 +221,7 @@ create table if not exists public.businesses (
   email text,
   address text not null check (btrim(address) <> ''),
   logo_url text,
-  status text not null default 'active' check (status in ('active', 'archived')),
+  status text not null default 'pending' check (status in ('pending', 'active', 'inactive', 'archived')),
   archived_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -234,6 +234,13 @@ create table if not exists public.business_users (
   role text not null check (role in ('owner', 'manager', 'cashier')),
   created_at timestamptz not null default now(),
   unique (business_id, user_id)
+);
+
+create table if not exists public.platform_admins (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  role text not null default 'super_admin' check (role in ('super_admin', 'support')),
+  is_active boolean not null default true,
+  created_at timestamptz not null default now()
 );
 
 alter table public.profiles
@@ -617,6 +624,9 @@ create table if not exists public.store_settings (
   store_address text,
   store_phone text,
   store_email text,
+  store_sender_id text not null default '' check (store_sender_id = '' or store_sender_id ~ '^[A-Za-z0-9 ]{3,11}$'),
+  invoice_sms_template text not null default '' check (char_length(invoice_sms_template) <= 320),
+  payment_sms_template text not null default '' check (char_length(payment_sms_template) <= 320),
   store_logo text,
   currency text not null default 'GHS',
   currency_symbol text not null default '₵',
@@ -629,6 +639,7 @@ create table if not exists public.store_settings (
   receipt_show_barcode boolean not null default true,
   receipt_theme text not null default 'minimal' check (receipt_theme in ('minimal', 'classic', 'modern')),
   timezone text not null default 'Africa/Accra',
+  invoice_due_days integer not null default 30 check (invoice_due_days >= 0 and invoice_due_days <= 365),
   sync_device_id text,
   sync_version bigint not null default 1,
   sync_deleted_at timestamptz,
@@ -636,6 +647,29 @@ create table if not exists public.store_settings (
   updated_at timestamptz not null default now(),
   unique (business_id, settings_key)
 );
+
+create or replace function public.sync_business_logo_from_store_settings()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update public.businesses
+  set
+    logo_url = coalesce(new.store_logo, ''),
+    updated_at = now()
+  where id = new.business_id
+    and coalesce(logo_url, '') is distinct from coalesce(new.store_logo, '');
+
+  return new;
+end;
+$$;
+
+drop trigger if exists sync_store_settings_logo_to_business on public.store_settings;
+create trigger sync_store_settings_logo_to_business
+after insert or update of store_logo on public.store_settings
+for each row execute function public.sync_business_logo_from_store_settings();
 
 create table if not exists public.user_logs (
   id uuid primary key default gen_random_uuid(),
@@ -678,6 +712,7 @@ create table if not exists public.stock_transfers (
 
 -- ---------- indexes ----------
 create index if not exists idx_businesses_owner_id on public.businesses(owner_id);
+create index if not exists idx_businesses_status on public.businesses(status);
 create index if not exists idx_business_users_business_id on public.business_users(business_id);
 create index if not exists idx_business_users_user_id on public.business_users(user_id);
 create index if not exists idx_inventory_business_id on public.inventory(business_id);
@@ -744,6 +779,11 @@ drop trigger if exists ensure_owner_business_user on public.businesses;
 create trigger ensure_owner_business_user
 after insert or update of owner_id on public.businesses
 for each row execute function public.ensure_owner_business_user();
+
+drop trigger if exists guard_business_status_change on public.businesses;
+create trigger guard_business_status_change
+before insert or update of status on public.businesses
+for each row execute function public.guard_business_status_change();
 
 drop trigger if exists set_supplier_code on public.suppliers;
 create trigger set_supplier_code before insert on public.suppliers
@@ -825,6 +865,22 @@ security definer
 set search_path = public
 as $$ select public.current_app_role() in ('owner', 'manager', 'cashier') $$;
 
+create or replace function public.is_platform_admin()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(auth.role(), '') = 'service_role'
+    or exists (
+      select 1
+      from public.platform_admins pa
+      where pa.user_id = auth.uid()
+        and pa.is_active = true
+    )
+$$;
+
 create or replace function public.can_access_business(target_business_id uuid)
 returns boolean
 language sql
@@ -835,17 +891,23 @@ as $$
   select exists (
     select 1
     from public.profiles p
-    left join public.businesses b on b.owner_id = p.id
+    left join public.businesses b
+      on b.owner_id = p.id
+      and b.id = target_business_id
+      and b.status = 'active'
     left join public.business_users bu on bu.user_id = p.id and bu.business_id = target_business_id
+    left join public.businesses target_b on target_b.id = target_business_id
     where p.id = auth.uid()
       and coalesce(p.status, 'Active') = 'Active'
+      and target_b.status = 'active'
       and (
         (p.role = 'owner' and b.id = target_business_id)
         or (p.role = 'manager' and p.business_access = 'all' and exists (
           select 1
           from public.businesses ob
           join public.business_users obu on obu.business_id = ob.id and obu.user_id = p.id
-          where ob.owner_id = (select owner_id from public.businesses where id = target_business_id)
+          where ob.status = 'active'
+            and ob.owner_id = target_b.owner_id
         ))
         or bu.id is not null
       )
@@ -861,8 +923,47 @@ set search_path = public
 as $$
   select exists (
     select 1 from public.businesses b
-    where b.id = target_business_id and b.owner_id = auth.uid()
+    where b.id = target_business_id
+      and b.status = 'active'
+      and b.owner_id = auth.uid()
   )
+$$;
+
+create or replace function public.guard_business_status_change()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if public.is_platform_admin() then
+    if new.status = 'archived' and new.archived_at is null then
+      new.archived_at := now();
+    elsif new.status <> 'archived' then
+      new.archived_at := null;
+    end if;
+    return new;
+  end if;
+
+  if tg_op = 'INSERT' then
+    if coalesce(new.status, 'pending') <> 'pending' then
+      raise exception 'New businesses must be approved by the platform admin before activation';
+    end if;
+    new.status := 'pending';
+    new.archived_at := null;
+    return new;
+  end if;
+
+  if tg_op = 'UPDATE' and new.status is distinct from old.status then
+    if old.owner_id = auth.uid() and new.status = 'archived' then
+      new.archived_at := coalesce(new.archived_at, now());
+      return new;
+    end if;
+    raise exception 'Only the platform admin can activate or deactivate businesses';
+  end if;
+
+  return new;
+end;
 $$;
 
 create or replace function public.ensure_owner_business_user()
@@ -912,6 +1013,7 @@ as $$
     from public.businesses b
     join public.business_users bu on bu.business_id = b.id
     join actor a on a.id = bu.user_id
+    where b.status = 'active'
   )
   select
     b.id,
@@ -930,13 +1032,15 @@ as $$
   left join public.business_users bu
     on bu.business_id = b.id
     and bu.user_id = a.id
-  where b.status = 'active'
+  where b.status in ('active', 'pending', 'inactive')
     and (
       (a.role = 'owner' and b.owner_id = a.id)
-      or (a.role = 'manager' and a.business_access = 'all' and b.owner_id in (select owner_id from actor_owner_scope))
-      or bu.id is not null
+      or (b.status = 'active' and a.role = 'manager' and a.business_access = 'all' and b.owner_id in (select owner_id from actor_owner_scope))
+      or (b.status = 'active' and bu.id is not null)
     )
-  order by b.business_name;
+  order by
+    case b.status when 'active' then 0 when 'pending' then 1 when 'inactive' then 2 else 3 end,
+    b.business_name;
 $$;
 
 create or replace function public.can_access_profile(target_profile_id uuid)
@@ -1251,6 +1355,8 @@ grant execute on function public.is_active_app_user() to authenticated;
 grant execute on function public.is_backoffice_user() to authenticated;
 grant execute on function public.is_owner_user() to authenticated;
 grant execute on function public.is_admin_user() to authenticated;
+grant execute on function public.is_platform_admin() to authenticated;
+grant execute on function public.is_platform_admin() to service_role;
 grant execute on function public.can_access_business(uuid) to authenticated;
 grant execute on function public.get_accessible_businesses() to authenticated;
 grant execute on function public.transfer_stock(uuid, uuid, text, integer, text) to authenticated;
@@ -1264,7 +1370,7 @@ declare
   policy_name text;
 begin
   foreach table_name in array array[
-    'profiles','businesses','business_users','customers','suppliers','inventory_categories','expense_categories',
+    'profiles','platform_admins','businesses','business_users','customers','suppliers','inventory_categories','expense_categories',
     'inventory','sales','sale_items','receipts','credit_payments','purchases','purchase_items',
     'expenses','banks','bank_deposits','store_settings','user_logs','role_permissions','stock_transfers'
   ]
@@ -1283,6 +1389,10 @@ create policy profiles_select_self_or_owner_manager
 on public.profiles for select to authenticated
 using (public.can_access_profile(id));
 
+create policy profiles_select_platform_admin
+on public.profiles for select to authenticated
+using (public.is_platform_admin());
+
 create policy profiles_update_owner_manager
 on public.profiles for update to authenticated
 using (public.can_manage_profile(id))
@@ -1296,18 +1406,35 @@ create policy businesses_select_accessible
 on public.businesses for select to authenticated
 using (public.can_access_business(id));
 
+create policy platform_admins_select_self
+on public.platform_admins for select to authenticated
+using (user_id = auth.uid() or public.is_platform_admin());
+
 create policy businesses_insert_owner
 on public.businesses for insert to authenticated
-with check (owner_id = auth.uid() and public.current_app_role() = 'owner');
+with check (owner_id = auth.uid() and public.current_app_role() = 'owner' and status = 'pending');
 
 create policy businesses_update_owner
 on public.businesses for update to authenticated
-using (public.can_manage_business_records(id))
-with check (public.can_manage_business_records(id));
+using (owner_id = auth.uid() and public.current_app_role() = 'owner' and status = 'active')
+with check (owner_id = auth.uid() and public.current_app_role() = 'owner' and status in ('active', 'archived'));
+
+create policy businesses_select_platform_admin
+on public.businesses for select to authenticated
+using (public.is_platform_admin());
+
+create policy businesses_update_platform_admin
+on public.businesses for update to authenticated
+using (public.is_platform_admin())
+with check (public.is_platform_admin());
 
 create policy business_users_select_accessible
 on public.business_users for select to authenticated
 using (public.can_access_business(business_id));
+
+create policy business_users_select_platform_admin
+on public.business_users for select to authenticated
+using (public.is_platform_admin());
 
 create policy business_users_manage_owner_manager
 on public.business_users for all to authenticated
@@ -1416,10 +1543,10 @@ on conflict (role) do update set permissions = excluded.permissions, updated_at 
 -- ---------- storage ----------
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values
-  ('product-images', 'product-images', true, 5242880, array['image/jpeg', 'image/png']),
-  ('profile-images', 'profile-images', true, 2097152, array['image/jpeg', 'image/png']),
-  ('store-logos', 'store-logos', true, 2097152, array['image/jpeg', 'image/png']),
-  ('expense-proofs', 'expense-proofs', true, 10485760, array['image/jpeg', 'image/png', 'application/pdf'])
+  ('product-images', 'product-images', true, 3145728, array['image/jpeg', 'image/png', 'image/webp']),
+  ('profile-images', 'profile-images', true, 2097152, array['image/jpeg', 'image/png', 'image/webp']),
+  ('store-logos', 'store-logos', true, 2097152, array['image/jpeg', 'image/png', 'image/webp']),
+  ('expense-proofs', 'expense-proofs', true, 5242880, array['image/jpeg', 'image/png', 'image/webp', 'application/pdf'])
 on conflict (id) do update set
   public = excluded.public,
   file_size_limit = excluded.file_size_limit,
@@ -1433,7 +1560,7 @@ drop policy if exists product_images_authenticated_write on storage.objects;
 create policy product_images_authenticated_write on storage.objects
 for all to authenticated
 using (bucket_id = 'product-images')
-with check (bucket_id = 'product-images' and lower(storage.extension(name)) in ('jpg', 'jpeg', 'png'));
+with check (bucket_id = 'product-images' and lower(storage.extension(name)) in ('jpg', 'jpeg', 'png', 'webp'));
 
 drop policy if exists profile_images_public_read on storage.objects;
 create policy profile_images_public_read on storage.objects
@@ -1445,7 +1572,7 @@ for all to authenticated
 using (bucket_id = 'profile-images' and split_part(name, '/', 1) = auth.uid()::text)
 with check (
   bucket_id = 'profile-images'
-  and lower(storage.extension(name)) in ('jpg', 'jpeg', 'png')
+  and lower(storage.extension(name)) in ('jpg', 'jpeg', 'png', 'webp')
   and split_part(name, '/', 1) = auth.uid()::text
 );
 
@@ -1459,7 +1586,7 @@ for all to authenticated
 using (bucket_id = 'store-logos')
 with check (
   bucket_id = 'store-logos'
-  and lower(storage.extension(name)) in ('jpg', 'jpeg', 'png')
+  and lower(storage.extension(name)) in ('jpg', 'jpeg', 'png', 'webp')
 );
 
 drop policy if exists expense_proofs_public_read on storage.objects;
@@ -1472,7 +1599,245 @@ for all to authenticated
 using (bucket_id = 'expense-proofs')
 with check (
   bucket_id = 'expense-proofs'
-  and lower(storage.extension(name)) in ('jpg', 'jpeg', 'png', 'pdf')
+  and lower(storage.extension(name)) in ('jpg', 'jpeg', 'png', 'webp', 'pdf')
 );
+
+-- ---------- rate limits ----------
+create table if not exists public.rate_limit_counters (
+  actor_id uuid not null,
+  business_scope text not null default 'global',
+  action_key text not null,
+  window_seconds integer not null,
+  window_start timestamptz not null,
+  request_count integer not null default 0,
+  updated_at timestamptz not null default now(),
+  primary key (actor_id, business_scope, action_key, window_start)
+);
+
+alter table public.rate_limit_counters enable row level security;
+
+drop policy if exists rate_limit_counters_owner_read on public.rate_limit_counters;
+create policy rate_limit_counters_owner_read
+on public.rate_limit_counters for select to authenticated
+using (public.current_app_role() = 'owner');
+
+create or replace function public.check_rate_limit(
+  action_key text,
+  max_requests integer,
+  window_seconds integer default 60,
+  target_business_id uuid default null
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_actor uuid := auth.uid();
+  v_scope text := coalesce(target_business_id::text, 'global');
+  v_window_start timestamptz;
+  v_next_count integer;
+begin
+  if v_actor is null then
+    return;
+  end if;
+
+  if coalesce(max_requests, 0) <= 0 or coalesce(window_seconds, 0) <= 0 then
+    raise exception 'Invalid rate limit configuration';
+  end if;
+
+  v_window_start := to_timestamp(
+    floor(extract(epoch from now()) / window_seconds) * window_seconds
+  );
+
+  insert into public.rate_limit_counters (
+    actor_id, business_scope, action_key, window_seconds,
+    window_start, request_count, updated_at
+  )
+  values (
+    v_actor, v_scope, btrim(action_key), window_seconds,
+    v_window_start, 1, now()
+  )
+  on conflict on constraint rate_limit_counters_pkey
+  do update set
+    request_count = public.rate_limit_counters.request_count + 1,
+    updated_at = now()
+  returning request_count into v_next_count;
+
+  if v_next_count > max_requests then
+    raise exception 'Rate limit exceeded. Please wait a moment and try again.'
+      using errcode = 'P0001';
+  end if;
+end;
+$$;
+
+revoke all on function public.check_rate_limit(text, integer, integer, uuid) from public;
+grant execute on function public.check_rate_limit(text, integer, integer, uuid) to authenticated;
+
+create or replace function public.check_rate_limit_for_actor(
+  actor_id uuid,
+  action_key text,
+  max_requests integer,
+  window_seconds integer default 60,
+  target_business_id uuid default null
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_scope text := coalesce(target_business_id::text, 'global');
+  v_window_start timestamptz;
+  v_next_count integer;
+begin
+  if actor_id is null then
+    return;
+  end if;
+
+  if coalesce(max_requests, 0) <= 0 or coalesce(window_seconds, 0) <= 0 then
+    raise exception 'Invalid rate limit configuration';
+  end if;
+
+  v_window_start := to_timestamp(
+    floor(extract(epoch from now()) / window_seconds) * window_seconds
+  );
+
+  insert into public.rate_limit_counters (
+    actor_id, business_scope, action_key, window_seconds,
+    window_start, request_count, updated_at
+  )
+  values (
+    actor_id, v_scope, btrim(action_key), window_seconds,
+    v_window_start, 1, now()
+  )
+  on conflict on constraint rate_limit_counters_pkey
+  do update set
+    request_count = public.rate_limit_counters.request_count + 1,
+    updated_at = now()
+  returning request_count into v_next_count;
+
+  if v_next_count > max_requests then
+    raise exception 'Rate limit exceeded. Please wait a moment and try again.'
+      using errcode = 'P0001';
+  end if;
+end;
+$$;
+
+revoke all on function public.check_rate_limit_for_actor(uuid, text, integer, integer, uuid) from public;
+grant execute on function public.check_rate_limit_for_actor(uuid, text, integer, integer, uuid) to authenticated;
+
+create or replace function public.rate_limit_business_write()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  row_business_id uuid;
+  action text := tg_table_name || ':' || lower(tg_op);
+  max_requests integer := 60;
+  window_seconds integer := 60;
+begin
+  case tg_table_name
+    when 'businesses' then
+      row_business_id := case when tg_op = 'DELETE' then old.id else new.id end;
+      max_requests := 20;
+      window_seconds := 300;
+    when 'business_users' then
+      row_business_id := case when tg_op = 'DELETE' then old.business_id else new.business_id end;
+      max_requests := 60;
+    when 'sales' then max_requests := case when tg_op = 'INSERT' then 40 else 80 end;
+    when 'sale_items' then max_requests := 600;
+    when 'receipts' then max_requests := 120;
+    when 'credit_payments' then max_requests := 30;
+    when 'stock_transfers' then max_requests := 30;
+    when 'inventory' then max_requests := 120;
+    when 'inventory_categories' then max_requests := 60;
+    when 'expense_categories' then max_requests := 60;
+    when 'expenses' then max_requests := 60;
+    when 'bank_deposits' then max_requests := 60;
+    when 'banks' then max_requests := 60;
+    when 'customers' then max_requests := 80;
+    when 'suppliers' then max_requests := 80;
+    when 'purchases' then max_requests := 80;
+    else max_requests := 60;
+  end case;
+
+  if row_business_id is null then
+    row_business_id := case when tg_op = 'DELETE' then old.business_id else new.business_id end;
+  end if;
+
+  perform public.check_rate_limit(action, max_requests, window_seconds, row_business_id);
+  return case when tg_op = 'DELETE' then old else new end;
+end;
+$$;
+
+create or replace function public.rate_limit_global_write()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  action text := tg_table_name || ':' || lower(tg_op);
+  max_requests integer := 30;
+  window_seconds integer := 60;
+begin
+  case tg_table_name
+    when 'profiles' then
+      max_requests := case when tg_op = 'INSERT' then 5 else 30 end;
+      window_seconds := case when tg_op = 'INSERT' then 600 else 60 end;
+    when 'user_logs' then
+      max_requests := case when tg_op = 'DELETE' then 30 else 300 end;
+    else
+      max_requests := 30;
+  end case;
+
+  perform public.check_rate_limit(action, max_requests, window_seconds, null);
+  return case when tg_op = 'DELETE' then old else new end;
+end;
+$$;
+
+do $$
+declare
+  table_name text;
+begin
+  foreach table_name in array array[
+    'businesses', 'business_users', 'customers', 'suppliers', 'purchases',
+    'inventory', 'inventory_categories', 'expense_categories', 'expenses',
+    'banks', 'bank_deposits', 'sales', 'sale_items', 'receipts',
+    'credit_payments', 'stock_transfers'
+  ] loop
+    execute format('drop trigger if exists rate_limit_%I_write on public.%I', table_name, table_name);
+    execute format(
+      'create trigger rate_limit_%I_write before insert or update or delete on public.%I for each row execute function public.rate_limit_business_write()',
+      table_name,
+      table_name
+    );
+  end loop;
+
+  foreach table_name in array array['profiles', 'user_logs'] loop
+    execute format('drop trigger if exists rate_limit_%I_write on public.%I', table_name, table_name);
+    execute format(
+      'create trigger rate_limit_%I_write before insert or update or delete on public.%I for each row execute function public.rate_limit_global_write()',
+      table_name,
+      table_name
+    );
+  end loop;
+end $$;
+
+create or replace function public.prune_rate_limit_counters()
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  delete from public.rate_limit_counters
+  where window_start < now() - interval '24 hours';
+$$;
+
+revoke all on function public.prune_rate_limit_counters() from public;
+grant execute on function public.prune_rate_limit_counters() to authenticated;
 
 notify pgrst, 'reload schema';

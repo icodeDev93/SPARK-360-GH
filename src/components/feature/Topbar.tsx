@@ -3,7 +3,8 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth, ROLE_LABELS } from '@/hooks/useAuth';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useSidebar } from '@/contexts/SidebarContext';
-import { supabase } from '@/lib/supabase';
+import { UPLOAD_LIMITS, validateUploadFile } from '@/lib/uploadLimits';
+import { removeUploadedFile, uploadPublicFile } from '@/lib/storageUpload';
 import PasswordInput from '@/components/ui/PasswordInput';
 import GlobalSearch from '@/components/feature/GlobalSearch';
 import NotificationsDropdown from '@/components/feature/NotificationsDropdown';
@@ -53,12 +54,11 @@ export default function Topbar() {
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
   }, []);
-  const { notifications, dismiss, dismissCategory, criticalCount } = useNotifications();
-  const { toggle } = useSidebar();
-  const totalAlerts = notifications.length;
+  const { notifications, dismiss, dismissCategory, markRead, unreadCount, criticalCount } = useNotifications();
+  const { isCollapsed, toggle } = useSidebar();
 
   return (
-    <header className="fixed top-0 left-0 lg:left-64 right-0 h-16 bg-white border-b border-slate-200 flex items-center px-4 lg:px-6 z-20">
+    <header className={`fixed top-0 left-0 right-0 h-16 bg-white border-b border-slate-200 flex items-center px-4 lg:px-6 z-20 transition-[left] duration-200 ${isCollapsed ? 'lg:left-20' : 'lg:left-64'}`}>
       {/* Hamburger — mobile only */}
       <button
         onClick={toggle}
@@ -83,13 +83,19 @@ export default function Topbar() {
         {/* Stock Alert Bell */}
         <div className="relative" ref={notifRef}>
           <button
-            onClick={() => setShowNotif(!showNotif)}
+            onClick={() => {
+              setShowNotif((open) => {
+                const next = !open;
+                if (next) markRead();
+                return next;
+              });
+            }}
             className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-all cursor-pointer relative"
           >
             <i className="ri-notification-3-line text-lg"></i>
-            {totalAlerts > 0 && (
+            {unreadCount > 0 && (
               <span className={`absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full text-white text-xs font-bold px-1 ${criticalCount > 0 ? 'bg-red-500' : 'bg-amber-500'}`}>
-                {totalAlerts}
+                {unreadCount}
               </span>
             )}
           </button>
@@ -184,12 +190,9 @@ function AccountSettingsModal({ onClose }: { onClose: () => void }) {
     setAvatarMessage('');
 
     if (!file) return;
-    if (!['image/jpeg', 'image/png'].includes(file.type)) {
-      setError('Avatar image must be a JPEG or PNG file.');
-      return;
-    }
-    if (file.size > 2 * 1024 * 1024) {
-      setError('Avatar image must be 2MB or smaller.');
+    const validationError = validateUploadFile(file, 'avatar');
+    if (validationError) {
+      setError(validationError);
       return;
     }
 
@@ -206,31 +209,30 @@ function AccountSettingsModal({ onClose }: { onClose: () => void }) {
     setAvatarMessage('');
 
     try {
-      const ext = avatarFile.type === 'image/png' ? 'png' : 'jpg';
-      const path = `${currentUser.id}/${Date.now()}.${ext}`;
-      const { error: uploadError } = await supabase.storage
-        .from('profile-images')
-        .upload(path, avatarFile, {
-          cacheControl: '3600',
-          upsert: true,
-          contentType: avatarFile.type,
-        });
+      const uploadedAvatar = await uploadPublicFile({
+        bucket: 'profile-images',
+        file: avatarFile,
+        limitKey: 'avatar',
+        pathPrefix: currentUser.id,
+        baseName: 'avatar',
+        rateLimitKey: 'upload:avatar',
+        rateLimitScope: currentUser.id,
+        upsert: true,
+      });
 
-      if (uploadError) {
-        setError(uploadError.message);
-        return;
-      }
-
-      const { data } = supabase.storage.from('profile-images').getPublicUrl(path);
-      const result = await updateAvatar(data.publicUrl);
+      const result = await updateAvatar(uploadedAvatar.publicUrl);
       if (!result.success) {
+        await removeUploadedFile(uploadedAvatar);
         setError(result.error ?? 'Unable to update avatar.');
         return;
       }
 
       setAvatarFile(null);
-      setAvatarPreview(data.publicUrl);
+      setAvatarPreview(uploadedAvatar.publicUrl);
       setAvatarMessage('Avatar updated.');
+    } catch (error) {
+      console.error(error);
+      setError(error instanceof Error ? error.message : 'Avatar upload failed. Please try again.');
     } finally {
       setSavingAvatar(false);
     }
@@ -297,7 +299,7 @@ function AccountSettingsModal({ onClose }: { onClose: () => void }) {
           <section className="space-y-3">
             <div>
               <h3 className="text-slate-800 text-sm font-bold">Avatar</h3>
-              <p className="text-slate-400 text-xs">Upload a JPEG or PNG image, up to 2MB.</p>
+              <p className="text-slate-400 text-xs">{UPLOAD_LIMITS.avatar.description}</p>
             </div>
 
             <div className="flex items-center gap-4">
@@ -313,7 +315,7 @@ function AccountSettingsModal({ onClose }: { onClose: () => void }) {
                 <label className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:border-indigo-300 hover:text-indigo-600 cursor-pointer">
                   <i className="ri-image-add-line text-base"></i>
                   Choose image
-                  <input type="file" accept="image/jpeg,image/png" onChange={handleAvatarChange} className="hidden" />
+                  <input type="file" accept={UPLOAD_LIMITS.avatar.acceptInput} onChange={handleAvatarChange} className="hidden" />
                 </label>
                 {avatarFile && <p className="text-slate-400 text-xs mt-1 truncate">{avatarFile.name}</p>}
                 {avatarMessage && <p className="text-emerald-600 text-xs mt-1 font-semibold">{avatarMessage}</p>}

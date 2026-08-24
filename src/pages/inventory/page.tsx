@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import AppLayout from '@/components/feature/AppLayout';
 import Paginator from '@/components/ui/Paginator';
+import BulkActionBar from '@/components/ui/BulkActionBar';
 
 const PAGE_SIZE = 20;
 import ItemDrawer from './components/ItemDrawer';
@@ -100,6 +101,9 @@ export default function InventoryPage() {
   const [endDate, setEndDate]               = useState('');
   const [deleteId, setDeleteId]             = useState<string | null>(null);
   const [page, setPage]                     = useState(1);
+  const [selectedIds, setSelectedIds]       = useState<string[]>([]);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkDeleting, setBulkDeleting]     = useState(false);
 
   useEffect(() => { setPage(1); }, [search, categoryFilter, stockFilter, startDate, endDate]);
 
@@ -116,6 +120,9 @@ export default function InventoryPage() {
     return matchSearch && matchCat && matchStock && isWithinDateRange(itemDate, startDate, endDate);
   });
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const selectedItems = items.filter((item) => selectedIds.includes(item.itemId));
+  const visibleIds = paginated.map((item) => item.itemId);
+  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.includes(id));
 
   const productColumns: ExportColumn<InventoryItem>[] = [
     { header: 'Product Code', value: (item) => item.itemId },
@@ -138,8 +145,11 @@ export default function InventoryPage() {
     { header: 'Half Selling Price', value: (item) => formatCurrency(item.halfSellingPrice) },
     { header: 'Quarter Selling Price', value: (item) => formatCurrency(item.quarterSellingPrice) },
     { header: 'Single Selling Price', value: (item) => formatCurrency(item.singleSellingPrice) },
+    { header: 'Margin Per Unit', value: (item) => formatCurrency(item.marginPerUnit) },
     { header: 'Expiry Date', value: (item) => formatExportDate(item.expiryDate) || 'No expiry' },
+    { header: 'Description', value: (item) => item.description },
     { header: 'Date Added', value: (item) => formatExportDate(item.createdAt) },
+    { header: 'Last Updated', value: (item) => formatExportDate(item.updatedAt) },
   ];
 
   const exportProducts = (format: 'csv' | 'pdf') => {
@@ -208,6 +218,41 @@ export default function InventoryPage() {
     });
   };
 
+  const toggleSelected = (id: string) => {
+    setSelectedIds((prev) => prev.includes(id) ? prev.filter((itemId) => itemId !== id) : [...prev, id]);
+  };
+
+  const toggleVisibleSelection = () => {
+    setSelectedIds((prev) => {
+      if (allVisibleSelected) return prev.filter((id) => !visibleIds.includes(id));
+      return Array.from(new Set([...prev, ...visibleIds]));
+    });
+  };
+
+  const handleBulkDelete = async () => {
+    if (bulkDeleting || selectedItems.length === 0) return;
+    setBulkDeleting(true);
+    for (const item of selectedItems) {
+      await deleteItem(item.itemId);
+    }
+    if (currentUser) {
+      writeLog(currentUser, {
+        category: 'inventory',
+        action: 'delete',
+        description: `Bulk deleted ${selectedItems.length} inventory item(s): ${selectedItems.map((item) => item.productName).join(', ')}`,
+      });
+    }
+    showFeedback({
+      title: 'Items Deleted',
+      message: `${selectedItems.length} inventory item${selectedItems.length === 1 ? '' : 's'} removed successfully.`,
+      buttonLabel: 'Continue',
+      kind: 'deleted',
+    });
+    setSelectedIds([]);
+    setBulkDeleteOpen(false);
+    setBulkDeleting(false);
+  };
+
   const lowCount = items.filter((i) => i.stockStatus === 'LOW').length;
   const outCount = items.filter((i) => i.stockStatus === 'OUT OF STOCK').length;
 
@@ -238,8 +283,8 @@ export default function InventoryPage() {
       {pageTab === 'items' && (
         <>
           {/* Top Bar */}
-          <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-6">
-            <div className="flex flex-1 flex-col sm:flex-row gap-3">
+          <div className="flex flex-col xl:flex-row xl:items-center gap-3 mb-6 min-w-0">
+            <div className="flex flex-1 flex-col sm:flex-row sm:flex-wrap gap-3 min-w-0">
               <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-4 py-2.5 w-full sm:w-72">
                 <i className="ri-search-line text-slate-400 text-sm"></i>
                 <input
@@ -253,36 +298,36 @@ export default function InventoryPage() {
               <select
                 value={categoryFilter}
                 onChange={(e) => setCategoryFilter(e.target.value)}
-                className="border border-slate-200 bg-white rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none cursor-pointer"
+                className="border border-slate-200 bg-white rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none cursor-pointer min-w-0"
               >
                 {allFilterCategories.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
               <select
                 value={stockFilter}
                 onChange={(e) => setStockFilter(e.target.value)}
-                className="border border-slate-200 bg-white rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none cursor-pointer"
+                className="border border-slate-200 bg-white rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none cursor-pointer min-w-0"
               >
                 <option value="All">All Stock</option>
                 <option value="Low">Low Stock</option>
                 <option value="Out">Out of Stock</option>
                 <option value="OK">In Stock</option>
               </select>
-              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="border border-slate-200 bg-white rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none" title="Start date" />
-              <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="border border-slate-200 bg-white rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none" title="End date" />
+              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="border border-slate-200 bg-white rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none min-w-0" title="Start date" />
+              <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="border border-slate-200 bg-white rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none min-w-0" title="End date" />
             </div>
-            <div className="flex items-center gap-2">
-              <button onClick={() => exportProducts('csv')} className="flex items-center gap-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap">
+            <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2">
+              <button onClick={() => exportProducts('csv')} className="flex items-center justify-center gap-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap">
                 <i className="ri-file-excel-2-line text-base"></i>
-                CSV
+                Export to CSV
               </button>
-              <button onClick={() => exportProducts('pdf')} className="flex items-center gap-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap">
+              <button onClick={() => exportProducts('pdf')} className="flex items-center justify-center gap-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap">
                 <i className="ri-file-pdf-2-line text-base"></i>
-                PDF
+                Export to PDF
               </button>
             </div>
             <button
               onClick={() => { setEditItem(null); setDrawerOpen(true); }}
-              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap"
+              className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap"
             >
               <i className="ri-add-line text-base"></i>
               Add New Item
@@ -310,27 +355,56 @@ export default function InventoryPage() {
           </div>
 
           {/* Table */}
+          <BulkActionBar
+            selectedCount={selectedIds.length}
+            onClear={() => setSelectedIds([])}
+            onDelete={() => setBulkDeleteOpen(true)}
+          />
           <div className="bg-white rounded-xl overflow-hidden border border-slate-100">
             <div className="overflow-x-auto">
-              <table className="w-full">
+              <table className="w-full min-w-[2100px]">
                 <thead className="bg-slate-50 border-b border-slate-100">
                   <tr>
-                    <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide px-5 py-3.5">Item</th>
+                    <th className="text-left px-5 py-3.5">
+                      <input
+                        type="checkbox"
+                        checked={allVisibleSelected}
+                        onChange={toggleVisibleSelection}
+                        className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                        aria-label="Select visible inventory items"
+                      />
+                    </th>
+                    <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide px-5 py-3.5">Picture</th>
+                    <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">Product Name</th>
                     <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">Product Code</th>
                     <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">Category</th>
-                    <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">Stock</th>
-                    <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">Expiry</th>
                     <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">Supplier</th>
-                    <th className="text-right text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">Stock Value</th>
+                    <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">Stock Breakdown</th>
+                    <th className="text-right text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">Wholesale Qty</th>
+                    <th className="text-right text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">Single Qty</th>
+                    <th className="text-right text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">Units/Pack</th>
+                    <th className="text-right text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">Current Stock</th>
+                    <th className="text-right text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">Stock Limit</th>
+                    <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">Status</th>
                     <th className="text-right text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">Wholesale CP</th>
+                    <th className="text-right text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">Single CP</th>
+                    <th className="text-right text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">Wholesale SP</th>
+                    <th className="text-right text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">Half SP</th>
+                    <th className="text-right text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">Quarter SP</th>
                     <th className="text-right text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">Single SP</th>
+                    <th className="text-right text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">Stock Value</th>
+                    <th className="text-right text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">Margin/Unit</th>
+                    <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">Expiry Date</th>
+                    <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">Description</th>
+                    <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">Date Added</th>
+                    <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide px-4 py-3.5">Last Updated</th>
                     <th className="text-right text-xs font-semibold text-slate-400 uppercase tracking-wide px-5 py-3.5">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.length === 0 ? (
                     <tr>
-                      <td colSpan={10} className="px-5 py-14 text-center">
+                      <td colSpan={26} className="px-5 py-14 text-center">
                         <div className="flex flex-col items-center gap-2">
                           <i className="ri-archive-drawer-line text-3xl text-slate-300"></i>
                           <p className="text-slate-400 text-sm">No items found</p>
@@ -341,37 +415,72 @@ export default function InventoryPage() {
                     paginated.map((item, i) => (
                       <tr key={item.itemId} className={`border-b border-slate-50 hover:bg-slate-50 transition-all ${i % 2 === 1 ? 'bg-slate-50/40' : ''}`}>
                         <td className="px-5 py-3.5">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 flex-shrink-0 rounded-lg overflow-hidden bg-slate-100 flex items-center justify-center">
-                              {item.image
-                                ? <img src={item.image} alt={item.productName} className="w-full h-full object-cover" />
-                                : <i className="ri-box-3-line text-slate-400 text-lg"></i>}
-                            </div>
-                            <span className="text-slate-800 text-sm font-semibold">{item.productName}</span>
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.includes(item.itemId)}
+                            onChange={() => toggleSelected(item.itemId)}
+                            className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                            aria-label={`Select ${item.productName}`}
+                          />
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <div className="w-12 h-12 flex-shrink-0 rounded-lg overflow-hidden bg-slate-100 flex items-center justify-center">
+                            {item.image
+                              ? <img src={item.image} alt={item.productName} className="w-full h-full object-cover" />
+                              : <i className="ri-box-3-line text-slate-400 text-lg"></i>}
                           </div>
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <span className="text-slate-800 text-sm font-semibold block max-w-[180px] truncate" title={item.productName}>
+                            {item.productName}
+                          </span>
                         </td>
                         <td className="px-4 py-3.5"><span className="text-slate-400 text-xs font-mono">{item.itemId}</span></td>
                         <td className="px-4 py-3.5">
                           <span className="bg-slate-100 text-slate-600 text-xs font-semibold px-2.5 py-1 rounded-full">{item.category}</span>
                         </td>
                         <td className="px-4 py-3.5">
+                          <span className="text-slate-500 text-xs truncate max-w-[150px] block" title={item.supplier || 'No supplier'}>
+                            {item.supplier || 'No supplier'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3.5">
                           <div className="space-y-1">
                             <StockBar current={item.currentStock} reorder={item.reorderLevel} />
                             <p className="text-[11px] text-slate-400 font-semibold whitespace-nowrap">
-                              {formatPackStock(item)} · {item.currentStock} units
+                              {formatPackStock(item)}
                             </p>
                           </div>
                         </td>
+                        <td className="px-4 py-3.5 text-right"><span className="text-slate-600 text-sm font-mono">{item.wholesaleQuantity}</span></td>
+                        <td className="px-4 py-3.5 text-right"><span className="text-slate-600 text-sm font-mono">{item.singleQuantity}</span></td>
+                        <td className="px-4 py-3.5 text-right"><span className="text-slate-600 text-sm font-mono">{item.quantityPerBox}</span></td>
+                        <td className="px-4 py-3.5 text-right"><span className="text-slate-800 text-sm font-bold font-mono">{item.currentStock}</span></td>
+                        <td className="px-4 py-3.5 text-right"><span className="text-slate-600 text-sm font-mono">{item.stockLimit}</span></td>
                         <td className="px-4 py-3.5">
-                          <span className="text-slate-500 text-xs font-mono">
-                            {item.expiryDate || 'No expiry'}
+                          <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-bold ${
+                            item.stockStatus === 'OK'
+                              ? 'bg-emerald-50 text-emerald-600'
+                              : item.stockStatus === 'LOW'
+                                ? 'bg-amber-50 text-amber-600'
+                                : 'bg-red-50 text-red-500'
+                          }`}>
+                            {item.stockStatus}
                           </span>
                         </td>
-                        <td className="px-4 py-3.5"><span className="text-slate-500 text-xs truncate max-w-[140px] block">{item.supplier}</span></td>
-                        <td className="px-4 py-3.5 text-right"><span className="text-slate-800 text-sm font-bold font-mono">₵{calcStockValue(item).toFixed(2)}</span></td>
-                        <td className="px-4 py-3.5 text-right"><span className="text-slate-500 text-sm font-mono">₵{item.wholesaleCostPrice.toFixed(2)}</span></td>
-                        <td className="px-4 py-3.5 text-right"><span className="text-slate-800 text-sm font-bold font-mono">₵{item.singleSellingPrice.toFixed(2)}</span></td>
-                        <td className="px-5 py-3.5 text-right">
+                        <td className="px-4 py-3.5 text-right"><span className="text-slate-600 text-sm font-mono">{formatCurrency(item.wholesaleCostPrice)}</span></td>
+                        <td className="px-4 py-3.5 text-right"><span className="text-slate-600 text-sm font-mono">{formatCurrency(item.singleCostPrice)}</span></td>
+                        <td className="px-4 py-3.5 text-right"><span className="text-slate-600 text-sm font-mono">{formatCurrency(item.wholesaleSellingPrice)}</span></td>
+                        <td className="px-4 py-3.5 text-right"><span className="text-slate-600 text-sm font-mono">{formatCurrency(item.halfSellingPrice)}</span></td>
+                        <td className="px-4 py-3.5 text-right"><span className="text-slate-600 text-sm font-mono">{formatCurrency(item.quarterSellingPrice)}</span></td>
+                        <td className="px-4 py-3.5 text-right"><span className="text-slate-800 text-sm font-bold font-mono">{formatCurrency(item.singleSellingPrice)}</span></td>
+                        <td className="px-4 py-3.5 text-right"><span className="text-slate-800 text-sm font-bold font-mono">{formatCurrency(calcStockValue(item))}</span></td>
+                        <td className="px-4 py-3.5 text-right"><span className={`text-sm font-bold font-mono ${item.marginPerUnit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{formatCurrency(item.marginPerUnit)}</span></td>
+                        <td className="px-4 py-3.5"><span className="text-slate-500 text-xs font-mono whitespace-nowrap">{item.expiryDate || 'No expiry'}</span></td>
+                        <td className="px-4 py-3.5"><span className="text-slate-500 text-xs block max-w-[220px] truncate" title={item.description || 'No description'}>{item.description || 'No description'}</span></td>
+                        <td className="px-4 py-3.5"><span className="text-slate-500 text-xs font-mono whitespace-nowrap">{formatExportDate(item.createdAt) || '-'}</span></td>
+                        <td className="px-4 py-3.5"><span className="text-slate-500 text-xs font-mono whitespace-nowrap">{formatExportDate(item.updatedAt) || '-'}</span></td>
+                        <td className="px-5 py-3.5 text-right sticky right-0 bg-white shadow-[-8px_0_12px_-12px_rgba(15,23,42,0.35)]">
                           <div className="flex items-center justify-end gap-1">
                             <button
                               onClick={() => { setEditItem(item); setDrawerOpen(true); }}
@@ -599,6 +708,36 @@ export default function InventoryPage() {
             <div className="flex gap-3">
               <button onClick={() => setDeleteId(null)} className="flex-1 py-2.5 border border-slate-200 rounded-lg text-sm font-semibold text-slate-600 hover:bg-slate-50 cursor-pointer whitespace-nowrap">Cancel</button>
               <button onClick={() => handleDelete(deleteId)} className="flex-1 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-semibold cursor-pointer whitespace-nowrap">Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {bulkDeleteOpen && (
+        <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl p-6 w-full max-w-sm shadow-xl">
+            <div className="w-12 h-12 flex items-center justify-center bg-red-100 rounded-full mx-auto mb-4">
+              <i className="ri-delete-bin-line text-red-500 text-xl"></i>
+            </div>
+            <h3 className="text-slate-800 font-bold text-center mb-2">Delete Selected Items?</h3>
+            <p className="text-slate-500 text-sm text-center mb-5">
+              {selectedItems.length} inventory item{selectedItems.length === 1 ? '' : 's'} will be permanently removed.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setBulkDeleteOpen(false)}
+                disabled={bulkDeleting}
+                className="flex-1 py-2.5 border border-slate-200 rounded-lg text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 cursor-pointer whitespace-nowrap"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleBulkDelete}
+                disabled={bulkDeleting}
+                className="flex-1 py-2.5 bg-red-500 hover:bg-red-600 disabled:opacity-60 text-white rounded-lg text-sm font-semibold cursor-pointer whitespace-nowrap"
+              >
+                {bulkDeleting ? 'Deleting...' : 'Delete'}
+              </button>
             </div>
           </div>
         </div>

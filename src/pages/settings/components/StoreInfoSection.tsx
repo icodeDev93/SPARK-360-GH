@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { StoreSettings } from '@/hooks/useSettings';
 import { sanitizeText, sanitizeEmail, sanitizeMultiline } from '@/lib/sanitize';
-import { supabase } from '@/lib/supabase';
+import { UPLOAD_LIMITS, validateUploadFile } from '@/lib/uploadLimits';
+import { removeUploadedFile, uploadPublicFile } from '@/lib/storageUpload';
+import { useBusiness } from '@/contexts/BusinessContext';
 
 interface Props {
   settings: StoreSettings;
-  onChange: (updates: Partial<StoreSettings>) => void;
+  onChange: (updates: Partial<StoreSettings>) => void | Promise<void>;
 }
 
 const currencies = [
@@ -28,8 +30,10 @@ const timezones = [
 ];
 
 export default function StoreInfoSection({ settings, onChange }: Props) {
+  const { activeBusinessId } = useBusiness();
   const [draft, setDraft] = useState(settings);
   const [logoError, setLogoError] = useState('');
+  const [senderIdError, setSenderIdError] = useState('');
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -41,49 +45,58 @@ export default function StoreInfoSection({ settings, onChange }: Props) {
     setDraft((prev) => ({ ...prev, [key]: value }));
   };
 
-  const saveField = <K extends keyof StoreSettings>(key: K, value: StoreSettings[K]) => {
+  const saveField = async <K extends keyof StoreSettings>(key: K, value: StoreSettings[K]) => {
     setField(key, value);
-    onChange({ [key]: value } as Partial<StoreSettings>);
+    await onChange({ [key]: value } as Partial<StoreSettings>);
+  };
+
+  const queueSaveField = <K extends keyof StoreSettings>(key: K, value: StoreSettings[K]) => {
+    void saveField(key, value).catch((error) => {
+      console.error(error);
+    });
   };
 
   const handleCurrencyChange = (code: string) => {
     const found = currencies.find((c) => c.code === code);
     if (found) {
       setDraft((prev) => ({ ...prev, currency: found.code, currencySymbol: found.symbol }));
-      onChange({ currency: found.code, currencySymbol: found.symbol });
+      const result = onChange({ currency: found.code, currencySymbol: found.symbol });
+      if (result && typeof result === 'object' && 'catch' in result) {
+        void result.catch((error: unknown) => console.error(error));
+      }
     }
   };
 
   const handleLogoFile = async (file: File | undefined) => {
     setLogoError('');
     if (!file) return;
-    if (!['image/jpeg', 'image/png'].includes(file.type)) {
-      setLogoError('Upload a JPEG or PNG logo.');
-      return;
-    }
-    if (file.size > 2 * 1024 * 1024) {
-      setLogoError('Logo must be 2 MB or smaller.');
+    const validationError = validateUploadFile(file, 'storeLogo');
+    if (validationError) {
+      setLogoError(validationError);
       return;
     }
 
     setUploadingLogo(true);
     try {
-      const ext = file.type === 'image/png' ? 'png' : 'jpg';
-      const safeName = (draft.storeName || 'store')
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-|-$/g, '') || 'store';
-      const path = `${safeName}-${crypto.randomUUID()}.${ext}`;
-      const { error } = await supabase.storage.from('store-logos').upload(path, file, {
-        contentType: file.type,
-        upsert: false,
+      if (!activeBusinessId) throw new Error('Select a business before uploading a store logo.');
+      const uploadedLogo = await uploadPublicFile({
+        bucket: 'store-logos',
+        file,
+        limitKey: 'storeLogo',
+        pathPrefix: `businesses/${activeBusinessId}/logos`,
+        baseName: draft.storeName || 'store',
+        rateLimitKey: 'upload:store-logo',
+        rateLimitScope: `${activeBusinessId}:${draft.storeName || 'store'}`,
       });
-      if (error) throw error;
-      const logoUrl = supabase.storage.from('store-logos').getPublicUrl(path).data.publicUrl;
-      saveField('storeLogo', logoUrl);
+      try {
+        await saveField('storeLogo', uploadedLogo.publicUrl);
+      } catch (saveError) {
+        await removeUploadedFile(uploadedLogo);
+        throw saveError;
+      }
     } catch (error) {
       console.error(error);
-      setLogoError('Logo upload failed. Please try again.');
+      setLogoError(error instanceof Error ? error.message : 'Logo upload failed. Please try again.');
     } finally {
       setUploadingLogo(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -92,7 +105,20 @@ export default function StoreInfoSection({ settings, onChange }: Props) {
 
   const removeLogo = () => {
     setLogoError('');
-    saveField('storeLogo', '');
+    queueSaveField('storeLogo', '');
+  };
+
+  const cleanSenderId = (value: string) => sanitizeText(value).replace(/[^a-zA-Z0-9 ]/g, '').slice(0, 11);
+
+  const saveSenderId = (value: string) => {
+    const next = cleanSenderId(value);
+    setField('storeSenderId', next);
+    if (next && next.length < 3) {
+      setSenderIdError('Sender ID must be at least 3 characters or left empty.');
+      return;
+    }
+    setSenderIdError('');
+    queueSaveField('storeSenderId', next);
   };
 
   return (
@@ -115,7 +141,7 @@ export default function StoreInfoSection({ settings, onChange }: Props) {
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold text-slate-700">Receipt logo</p>
-              <p className="text-xs text-slate-400 mt-0.5">Upload a JPEG or PNG logo up to 2 MB.</p>
+              <p className="text-xs text-slate-400 mt-0.5">{UPLOAD_LIMITS.storeLogo.description}</p>
               {logoError && <p className="text-xs text-red-500 mt-1">{logoError}</p>}
               <div className="mt-3 flex flex-wrap gap-2">
                 <button
@@ -141,7 +167,7 @@ export default function StoreInfoSection({ settings, onChange }: Props) {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".jpg,.jpeg,.png"
+                accept={UPLOAD_LIMITS.storeLogo.acceptInput}
                 className="hidden"
                 onChange={(event) => handleLogoFile(event.target.files?.[0])}
               />
@@ -155,7 +181,7 @@ export default function StoreInfoSection({ settings, onChange }: Props) {
             type="text"
             value={draft.storeName}
             onChange={(e) => setField('storeName', e.target.value)}
-            onBlur={(e) => saveField('storeName', sanitizeText(e.target.value))}
+            onBlur={(e) => queueSaveField('storeName', sanitizeText(e.target.value))}
             placeholder="e.g. Bizzy App Business Management System Store"
             maxLength={100}
             className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all"
@@ -168,7 +194,7 @@ export default function StoreInfoSection({ settings, onChange }: Props) {
             type="email"
             value={draft.storeEmail}
             onChange={(e) => setField('storeEmail', e.target.value)}
-            onBlur={(e) => saveField('storeEmail', sanitizeEmail(e.target.value))}
+            onBlur={(e) => queueSaveField('storeEmail', sanitizeEmail(e.target.value))}
             placeholder="store@example.com"
             maxLength={200}
             className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all"
@@ -181,11 +207,32 @@ export default function StoreInfoSection({ settings, onChange }: Props) {
             type="tel"
             value={draft.storePhone}
             onChange={(e) => setField('storePhone', e.target.value)}
-            onBlur={(e) => saveField('storePhone', sanitizeText(e.target.value))}
+            onBlur={(e) => queueSaveField('storePhone', sanitizeText(e.target.value))}
             placeholder="+1 (555) 000-0000"
             maxLength={30}
             className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all"
           />
+        </div>
+
+        <div>
+          <label className="block text-sm font-semibold text-slate-700 mb-1.5">Store Sender ID</label>
+          <input
+            type="text"
+            value={draft.storeSenderId}
+            onChange={(e) => {
+              setSenderIdError('');
+              setField('storeSenderId', cleanSenderId(e.target.value));
+            }}
+            onBlur={(e) => saveSenderId(e.target.value)}
+            placeholder="e.g. BIZZYAPP"
+            maxLength={11}
+            className={`w-full border rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:ring-2 transition-all ${
+              senderIdError ? 'border-red-300 focus:border-red-400 focus:ring-red-100' : 'border-slate-200 focus:border-indigo-400 focus:ring-indigo-100'
+            }`}
+          />
+          <p className={`text-xs mt-1 ${senderIdError ? 'text-red-500' : 'text-slate-400'}`}>
+            {senderIdError || 'Used as the SMS sender name. Letters, numbers and spaces only. Max 11 characters.'}
+          </p>
         </div>
 
         <div>
@@ -208,7 +255,7 @@ export default function StoreInfoSection({ settings, onChange }: Props) {
           <textarea
             value={draft.storeAddress}
             onChange={(e) => setField('storeAddress', e.target.value)}
-            onBlur={(e) => saveField('storeAddress', sanitizeMultiline(e.target.value))}
+            onBlur={(e) => queueSaveField('storeAddress', sanitizeMultiline(e.target.value))}
             placeholder="Full store address..."
             rows={2}
             maxLength={500}
@@ -220,7 +267,7 @@ export default function StoreInfoSection({ settings, onChange }: Props) {
           <label className="block text-sm font-semibold text-slate-700 mb-1.5">Timezone</label>
           <select
             value={draft.timezone}
-            onChange={(e) => saveField('timezone', e.target.value)}
+            onChange={(e) => queueSaveField('timezone', e.target.value)}
             className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all bg-white cursor-pointer"
           >
             {timezones.map((tz) => (

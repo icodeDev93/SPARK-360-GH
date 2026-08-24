@@ -47,7 +47,7 @@ export default function StockTransferPage() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
 
-  const availableTargets = businesses.filter((business) => business.id !== activeBusinessId);
+  const availableTargets = businesses.filter((business) => business.status === 'active' && business.id !== activeBusinessId);
   const firstTargetId = availableTargets[0]?.id ?? '';
   const selectedItem = useMemo(
     () => items.find((item) => item.itemId === productCode),
@@ -133,6 +133,15 @@ export default function StockTransferPage() {
     if (!activeBusinessId || !currentUser) return;
     if (!targetBusinessId) {
       showWarning('Choose a receiving business.');
+      return;
+    }
+    if (!availableTargets.some((business) => business.id === targetBusinessId)) {
+      showFeedback({
+        title: 'Invalid Receiving Business',
+        message: 'Select an active receiving business before transferring stock.',
+        kind: 'warning',
+        buttonLabel: 'Continue',
+      });
       return;
     }
     if (!productCode) {
@@ -287,11 +296,11 @@ export default function StockTransferPage() {
               <div className="flex items-center gap-2">
                 <button onClick={() => exportTransfers('csv')} className="flex items-center gap-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap">
                   <i className="ri-file-excel-2-line text-base"></i>
-                  CSV
+                  Export to CSV
                 </button>
                 <button onClick={() => exportTransfers('pdf')} className="flex items-center gap-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap">
                   <i className="ri-file-pdf-2-line text-base"></i>
-                  PDF
+                  Export to PDF
                 </button>
               </div>
             </div>

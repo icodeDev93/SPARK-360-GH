@@ -34,7 +34,7 @@ export default function ProtectedRoute({
   adminOnly?: boolean;
 }) {
   const { currentUser, isAuthenticated, sessionLoading, hasPermission } = useAuth();
-  const { activeBusinessId, loading: businessLoading } = useBusiness();
+  const { activeBusiness, activeBusinessId, loading: businessLoading } = useBusiness();
   const location = useLocation();
 
   if (sessionLoading || (isAuthenticated && businessLoading)) {
@@ -58,7 +58,7 @@ export default function ProtectedRoute({
     return <Navigate to={defaultPathForRole(currentUser!.role)} replace />;
   }
 
-  if (!activeBusinessId) {
+  if (!activeBusinessId || activeBusiness?.status !== 'active') {
     return <Navigate to="/businesses" state={{ from: location }} replace />;
   }
 

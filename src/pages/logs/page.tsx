@@ -5,6 +5,7 @@ import { ROLE_LABELS, useAuth } from '@/hooks/useAuth';
 import { cleanLogText, type LogCategory, type LogAction, type LogChange } from '@/lib/activityLog';
 import { loadLocalCollection, saveLocalCollection } from '@/lib/localCache';
 import { useBusiness } from '@/contexts/BusinessContext';
+import { printHtml } from '@/lib/printDocument';
 
 interface LogRow {
   id: string;
@@ -146,9 +147,6 @@ function expandedLogRows(rows: LogRow[]) {
 }
 
 function printLogsPdf(rows: LogRow[], dateFrom: string, dateTo: string, businessName?: string) {
-  const win = window.open('', '_blank', 'width=1100,height=820');
-  if (!win) return;
-
   const suffix = dateFrom && dateTo ? `${dateFrom} to ${dateTo}` : dateFrom ? `From ${dateFrom}` : dateTo ? `To ${dateTo}` : 'All dates';
   const reportRows = expandedLogRows(rows);
   const generatedAt = new Date().toLocaleString('en-GH', {
@@ -156,7 +154,7 @@ function printLogsPdf(rows: LogRow[], dateFrom: string, dateTo: string, business
     hour: '2-digit', minute: '2-digit',
   });
 
-  win.document.write(`
+  printHtml(`
 <!doctype html>
 <html>
 <head>
@@ -230,10 +228,8 @@ function printLogsPdf(rows: LogRow[], dateFrom: string, dateTo: string, business
     </tbody>
   </table>
   `}
-  <script>window.onload = function () { setTimeout(function () { window.print(); }, 300); };<\/script>
 </body>
-</html>`);
-  win.document.close();
+</html>`, { title: 'Activity Log Report', windowFeatures: 'width=1100,height=820' });
 }
 
 function getInitials(name: string) {
@@ -386,7 +382,7 @@ export default function LogsPage() {
             className="flex items-center gap-2 bg-white border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 hover:text-indigo-700 px-4 py-2 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap"
           >
             <i className="ri-printer-line text-base"></i>
-            Export PDF
+            Export to PDF
           </button>
           <button
             onClick={() => exportToCsv(filtered, dateFrom, dateTo, activeBusiness?.businessName)}
@@ -394,7 +390,7 @@ export default function LogsPage() {
             className="flex items-center gap-2 bg-white border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 hover:text-indigo-700 px-4 py-2 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap"
           >
             <i className="ri-download-2-line text-base"></i>
-            Export CSV
+            Export to CSV
           </button>
           <div className="flex items-center gap-2 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2">
             <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span>

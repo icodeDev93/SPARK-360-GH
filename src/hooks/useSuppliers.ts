@@ -65,6 +65,34 @@ const toPurchaseOrder = (r: PurchaseRow): PurchaseOrder => ({
   notes: r.notes ?? '',
 });
 
+const normalizeKey = (value: string) => sanitizeText(value).toLowerCase();
+
+const orderBelongsToSupplier = (order: PurchaseOrder, supplier: Supplier) => {
+  const supplierCode = normalizeKey(supplier.id);
+  const supplierName = normalizeKey(supplier.name);
+  const orderSupplierCode = normalizeKey(order.supplierId);
+  const orderSupplierName = normalizeKey(order.supplierName);
+
+  return Boolean(
+    (orderSupplierCode && orderSupplierCode === supplierCode) ||
+    (orderSupplierName && orderSupplierName === supplierName)
+  );
+};
+
+const applySupplierStats = (supplierRows: Supplier[], orderRows: PurchaseOrder[]): Supplier[] =>
+  supplierRows.map((supplier) => {
+    const supplierOrders = orderRows.filter((order) => orderBelongsToSupplier(order, supplier));
+    const totalSpent = supplierOrders
+      .filter((order) => order.status !== 'Cancelled')
+      .reduce((sum, order) => sum + order.total, 0);
+
+    return {
+      ...supplier,
+      totalOrders: supplierOrders.length,
+      totalSpent,
+    };
+  });
+
 const cleanSupplier = (supplier: Omit<Supplier, 'id' | 'totalOrders' | 'totalSpent'>): Omit<Supplier, 'id' | 'totalOrders' | 'totalSpent'> => ({
   ...supplier,
   name: sanitizeText(supplier.name),
@@ -116,7 +144,9 @@ export function useSuppliers() {
         loadLocalCollection<Supplier>('suppliers'),
         loadLocalCollection<PurchaseOrder>('purchases'),
       ]);
-      if (cachedSuppliers.length) setSuppliers(cachedSuppliers);
+      if (cachedSuppliers.length) {
+        setSuppliers(applySupplierStats(cachedSuppliers, cachedOrders));
+      }
       if (cachedOrders.length) setOrders(cachedOrders);
       const [supRes, ordRes] = await Promise.all([
         supabase.from('suppliers').select('*').eq('business_id', activeBusinessId).order('name'),
@@ -124,15 +154,20 @@ export function useSuppliers() {
       ]);
       if (supRes.error) console.error(supRes.error);
       if (ordRes.error) console.error(ordRes.error);
-      if (!supRes.error && supRes.data) {
-        const nextSuppliers = supRes.data.map((r) => toSupplier(r as SupplierRow));
-        setSuppliers(nextSuppliers);
-        saveLocalCollection('suppliers', nextSuppliers);
-      }
-      if (!ordRes.error && ordRes.data) {
-        const nextOrders = ordRes.data.map((r) => toPurchaseOrder(r as PurchaseRow));
+      const nextOrders = !ordRes.error && ordRes.data
+        ? ordRes.data.map((r) => toPurchaseOrder(r as PurchaseRow))
+        : null;
+      const nextSuppliers = !supRes.error && supRes.data
+        ? supRes.data.map((r) => toSupplier(r as SupplierRow))
+        : null;
+      if (nextOrders) {
         setOrders(nextOrders);
         saveLocalCollection('purchases', nextOrders);
+      }
+      if (nextSuppliers) {
+        const suppliersWithStats = applySupplierStats(nextSuppliers, nextOrders ?? cachedOrders);
+        setSuppliers(suppliersWithStats);
+        saveLocalCollection('suppliers', suppliersWithStats);
       }
       setLoading(false);
     };
@@ -166,7 +201,10 @@ export function useSuppliers() {
     }
     if (inserted) {
       const savedSupplier = toSupplier(inserted as SupplierRow);
-      const syncedSuppliers = nextSuppliers.map((supplier) => supplier.id === newSup.id ? savedSupplier : supplier);
+      const syncedSuppliers = applySupplierStats(
+        nextSuppliers.map((supplier) => supplier.id === newSup.id ? savedSupplier : supplier),
+        orders,
+      );
       setSuppliers(syncedSuppliers);
       saveLocalCollection('suppliers', syncedSuppliers);
     }
@@ -204,11 +242,7 @@ export function useSuppliers() {
     const cleanData = cleanOrder(data);
     const newOrder: PurchaseOrder = { ...cleanData, id: `PUR${Date.now()}` };
     const nextOrders = [newOrder, ...orders];
-    const nextSuppliers = suppliers.map((s) =>
-      s.id === cleanData.supplierId
-        ? { ...s, totalOrders: s.totalOrders + 1, totalSpent: s.totalSpent + cleanData.total }
-        : s
-    );
+    const nextSuppliers = applySupplierStats(suppliers, nextOrders);
     setOrders(nextOrders);
     setSuppliers(nextSuppliers);
     saveLocalCollection('purchases', nextOrders);
@@ -229,15 +263,21 @@ export function useSuppliers() {
     if (inserted) {
       const savedOrder = toPurchaseOrder(inserted as PurchaseRow);
       const syncedOrders = nextOrders.map((order) => order.id === newOrder.id ? savedOrder : order);
+      const syncedSuppliers = applySupplierStats(suppliers, syncedOrders);
       setOrders(syncedOrders);
+      setSuppliers(syncedSuppliers);
       saveLocalCollection('purchases', syncedOrders);
+      saveLocalCollection('suppliers', syncedSuppliers);
     }
   };
 
   const deleteOrder = async (id: string) => {
     const nextOrders = orders.filter((o) => o.id !== id);
+    const nextSuppliers = applySupplierStats(suppliers, nextOrders);
     setOrders(nextOrders);
+    setSuppliers(nextSuppliers);
     saveLocalCollection('purchases', nextOrders);
+    saveLocalCollection('suppliers', nextSuppliers);
     const { error } = await supabase.from('purchases').delete().eq('business_id', activeBusinessId).eq('purchase_number', id);
     if (error) {
       console.error(error);
@@ -247,8 +287,11 @@ export function useSuppliers() {
 
   const updateOrderStatus = async (id: string, status: PurchaseOrder['status'], paymentStatus: PurchaseOrder['paymentStatus']) => {
     const nextOrders = orders.map((o) => o.id === id ? { ...o, status, paymentStatus } : o);
+    const nextSuppliers = applySupplierStats(suppliers, nextOrders);
     setOrders(nextOrders);
+    setSuppliers(nextSuppliers);
     saveLocalCollection('purchases', nextOrders);
+    saveLocalCollection('suppliers', nextSuppliers);
     const { error } = await supabase.from('purchases')
       .update({ status, payment_status: paymentStatus }).eq('business_id', activeBusinessId).eq('purchase_number', id);
     if (error) {
@@ -257,7 +300,11 @@ export function useSuppliers() {
     }
   };
 
-  const getSupplierOrders = (supplierId: string) => orders.filter((o) => o.supplierId === supplierId);
+  const getSupplierOrders = (supplierId: string) => {
+    const supplier = suppliers.find((s) => normalizeKey(s.id) === normalizeKey(supplierId));
+    if (!supplier) return orders.filter((o) => normalizeKey(o.supplierId) === normalizeKey(supplierId));
+    return orders.filter((order) => orderBelongsToSupplier(order, supplier));
+  };
 
   return { suppliers, orders, loading, addSupplier, updateSupplier, deleteSupplier, addOrder, deleteOrder, updateOrderStatus, getSupplierOrders };
 }

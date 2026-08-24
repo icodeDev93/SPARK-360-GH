@@ -7,4 +7,6 @@ out/
 *.map
 vite-dev.log
 vite-dev.err.log
+vite-dev-live.log
+vite-dev-live.err.log
 .claude/

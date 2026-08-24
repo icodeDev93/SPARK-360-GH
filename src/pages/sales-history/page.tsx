@@ -6,6 +6,7 @@ import { useAuth } from '@/hooks/useAuth';
 import type { InvoiceRecord, PaymentMethod } from '@/types/erp';
 import { writeLog } from '@/lib/activityLog';
 import Paginator from '@/components/ui/Paginator';
+import BulkActionBar from '@/components/ui/BulkActionBar';
 import { useFeedbackModal } from '@/hooks/useFeedbackModal';
 import CreditPaymentReceiptModal, { type CreditPaymentReceipt } from '@/pages/credit/components/CreditPaymentReceiptModal';
 import ReceiptModal from '@/pages/pos/components/ReceiptModal';
@@ -36,6 +37,12 @@ function formatDate(iso: string) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+function formatTime(iso: string) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '--:--';
+  return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }).toLowerCase();
+}
+
 function fmt(n: number) {
   return `₵${n.toLocaleString('en-GH', { minimumFractionDigits: 2 })}`;
 }
@@ -63,6 +70,9 @@ export default function SalesHistoryPage() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [page, setPage] = useState(1);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   useEffect(() => { setPage(1); }, [filterStatus, filterPayment, searchQuery, startDate, endDate]);
 
@@ -89,6 +99,42 @@ export default function SalesHistoryPage() {
   });
 
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const selectedInvoices = baseInvoices.filter((invoice) => selectedIds.includes(invoice.invoiceNo));
+  const visibleIds = paginated.map((invoice) => invoice.invoiceNo);
+  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.includes(id));
+
+  const toggleSelected = (id: string) => {
+    setSelectedIds((prev) => prev.includes(id) ? prev.filter((invoiceNo) => invoiceNo !== id) : [...prev, id]);
+  };
+
+  const toggleVisibleSelection = () => {
+    setSelectedIds((prev) => {
+      if (allVisibleSelected) return prev.filter((id) => !visibleIds.includes(id));
+      return Array.from(new Set([...prev, ...visibleIds]));
+    });
+  };
+
+  const handleBulkDelete = async () => {
+    if (bulkDeleting || selectedInvoices.length === 0) return;
+    setBulkDeleting(true);
+    for (const invoice of selectedInvoices) {
+      await deleteInvoice(invoice.invoiceNo);
+    }
+    if (currentUser) writeLog(currentUser, {
+      category: 'sales',
+      action: 'delete',
+      description: `Bulk deleted ${selectedInvoices.length} sale record(s): ${selectedInvoices.map((invoice) => invoice.invoiceNo).join(', ')}`,
+    });
+    showFeedback({
+      title: 'Sales Deleted',
+      message: `${selectedInvoices.length} sale record${selectedInvoices.length === 1 ? '' : 's'} removed successfully.`,
+      buttonLabel: 'Continue',
+      kind: 'deleted',
+    });
+    setSelectedIds([]);
+    setBulkDeleteOpen(false);
+    setBulkDeleting(false);
+  };
 
   const totalRevenue    = baseInvoices.filter((i) => i.status === 'completed').reduce((s, i) => s + i.netSales, 0);
   const todayCount      = baseInvoices.filter((i) => i.date === today).length;
@@ -99,6 +145,7 @@ export default function SalesHistoryPage() {
     { header: 'Invoice No.', value: (invoice) => invoice.invoiceNo },
     { header: 'Receipt No.', value: (invoice) => invoice.receiptNo ?? 'Pending payment' },
     { header: 'Date', value: (invoice) => formatDate(invoice.date) },
+    { header: 'Time', value: (invoice) => formatTime(invoice.time) },
     { header: 'Customer', value: (invoice) => invoice.customerName },
     { header: 'Items', value: (invoice) => invoice.items.map((item) => `${item.productName} [${item.netQty} pcs]`).join(', ') },
     { header: 'Cashier', value: (invoice) => invoice.cashier },
@@ -190,8 +237,8 @@ export default function SalesHistoryPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-3 mb-4">
-        <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-3 py-2 flex-1 max-w-xs">
+      <div className="flex flex-col lg:flex-row lg:flex-wrap gap-3 mb-4 min-w-0">
+        <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-3 py-2 flex-1 max-w-xs min-w-0">
           <i className="ri-search-line text-slate-400 text-sm"></i>
           <input
             type="text"
@@ -205,30 +252,30 @@ export default function SalesHistoryPage() {
           type="date"
           value={startDate}
           onChange={(e) => setStartDate(e.target.value)}
-          className="border border-slate-200 bg-white rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none"
+          className="border border-slate-200 bg-white rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none min-w-0"
           title="Start date"
         />
         <input
           type="date"
           value={endDate}
           onChange={(e) => setEndDate(e.target.value)}
-          className="border border-slate-200 bg-white rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none"
+          className="border border-slate-200 bg-white rounded-lg px-4 py-2.5 text-sm text-slate-700 outline-none min-w-0"
           title="End date"
         />
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2">
           <button
             onClick={() => exportSalesHistory('csv')}
-            className="flex items-center gap-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap"
+            className="flex items-center justify-center gap-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap"
           >
             <i className="ri-file-excel-2-line text-base"></i>
-            CSV
+            Export to CSV
           </button>
           <button
             onClick={() => exportSalesHistory('pdf')}
-            className="flex items-center gap-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap"
+            className="flex items-center justify-center gap-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap"
           >
             <i className="ri-file-pdf-2-line text-base"></i>
-            PDF
+            Export to PDF
           </button>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -261,12 +308,26 @@ export default function SalesHistoryPage() {
       </div>
 
       {/* Table */}
+      <BulkActionBar
+        selectedCount={selectedIds.length}
+        onClear={() => setSelectedIds([])}
+        onDelete={() => setBulkDeleteOpen(true)}
+      />
       <div className="bg-white rounded-xl border border-slate-100 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="bg-slate-50 border-b border-slate-100">
               <tr>
-                {['Invoice No.', 'Receipt No.', 'Date', 'Customer', 'Items', 'Cashier', 'Payment', 'Net Sales', 'Margin', 'Status', 'Actions'].map((h) => (
+                <th className="text-left px-5 py-3.5">
+                  <input
+                    type="checkbox"
+                    checked={allVisibleSelected}
+                    onChange={toggleVisibleSelection}
+                    className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                    aria-label="Select visible sales"
+                  />
+                </th>
+                {['Invoice No.', 'Receipt No.', 'Date', 'Time', 'Customer', 'Items', 'Cashier', 'Payment', 'Net Sales', 'Margin', 'Status', 'Actions'].map((h) => (
                   <th key={h} className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide px-5 py-3.5 whitespace-nowrap">
                     {h}
                   </th>
@@ -276,7 +337,7 @@ export default function SalesHistoryPage() {
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="px-5 py-12 text-center">
+                  <td colSpan={13} className="px-5 py-12 text-center">
                     <div className="flex flex-col items-center gap-2">
                       <i className="ri-receipt-line text-3xl text-slate-300"></i>
                       <p className="text-slate-400 text-sm font-medium">No receipts found</p>
@@ -290,6 +351,15 @@ export default function SalesHistoryPage() {
                   return (
                     <tr key={inv.invoiceNo} className={`border-b border-slate-50 hover:bg-slate-50 transition-all ${i % 2 !== 0 ? 'bg-slate-50/40' : ''}`}>
                       <td className="px-5 py-3.5">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.includes(inv.invoiceNo)}
+                          onChange={() => toggleSelected(inv.invoiceNo)}
+                          className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                          aria-label={`Select ${inv.invoiceNo}`}
+                        />
+                      </td>
+                      <td className="px-5 py-3.5">
                         <span className="text-indigo-600 font-bold text-sm font-mono">{inv.invoiceNo}</span>
                       </td>
                       <td className="px-5 py-3.5">
@@ -301,6 +371,9 @@ export default function SalesHistoryPage() {
                       </td>
                       <td className="px-5 py-3.5 whitespace-nowrap">
                         <p className="text-slate-700 text-sm font-semibold">{formatDate(inv.date)}</p>
+                      </td>
+                      <td className="px-5 py-3.5 whitespace-nowrap">
+                        <p className="text-slate-600 text-sm font-mono">{formatTime(inv.time)}</p>
                       </td>
                       <td className="px-5 py-3.5">
                         <p className="text-slate-700 text-sm font-medium">{inv.customerName}</p>
@@ -586,6 +659,37 @@ export default function SalesHistoryPage() {
         </div>
       )}
 
+      {bulkDeleteOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm mx-4">
+            <div className="w-12 h-12 flex items-center justify-center bg-red-100 rounded-xl mb-4">
+              <i className="ri-delete-bin-line text-red-500 text-xl"></i>
+            </div>
+            <h3 className="text-slate-800 font-bold text-base mb-2">Delete Selected Sales?</h3>
+            <p className="text-slate-500 text-sm mb-2 leading-relaxed">
+              {selectedInvoices.length} sale record{selectedInvoices.length === 1 ? '' : 's'} will be permanently removed.
+            </p>
+            <p className="text-slate-400 text-xs mb-6">Related line items, receipts, and credit payments will also be removed.</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setBulkDeleteOpen(false)}
+                disabled={bulkDeleting}
+                className="flex-1 py-2.5 rounded-lg border border-slate-200 text-slate-700 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleBulkDelete}
+                disabled={bulkDeleting}
+                className="flex-1 py-2.5 rounded-lg bg-red-500 hover:bg-red-600 disabled:opacity-60 text-white text-sm font-bold cursor-pointer"
+              >
+                {bulkDeleting ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Mark as Paid Modal */}
       {markPaidTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
@@ -842,9 +946,9 @@ export default function SalesHistoryPage() {
             stock: item.netQty,
             image: '',
           }))}
-          subtotal={printReceiptInvoice.netSales}
-          tax={0}
-          discountAmt={0}
+          subtotal={printReceiptInvoice.subtotal ?? printReceiptInvoice.netSales}
+          tax={printReceiptInvoice.taxAmount ?? 0}
+          discountAmt={printReceiptInvoice.discountAmount ?? 0}
           grandTotal={printReceiptInvoice.netSales}
           discount={0}
           receiptNo={printReceiptInvoice.receiptNo}

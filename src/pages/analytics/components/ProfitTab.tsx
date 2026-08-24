@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useSalesLog } from '@/hooks/useSalesLog';
 import { useExpenses } from '@/hooks/useExpenses';
-import { inventoryItems } from '@/mocks/inventory';
+import { useInventory } from '@/hooks/useInventory';
 import type { AnalyticsFilter } from '@/hooks/useAnalyticsFilter';
 
 interface Props { filter: AnalyticsFilter; }
@@ -16,48 +16,68 @@ function parseDate(dateStr: string): Date {
   try { return new Date(dateStr); } catch { return new Date(); }
 }
 
-export default function ProfitTab({ filter }: Props) {
-  const { sales } = useSalesLog();
-  const { expenses } = useExpenses();
+function normalizeProductCode(value: string): string {
+  return value.trim().toLowerCase();
+}
 
-  const completedSales = useMemo(
-    () => sales.filter((s) => s.status === 'completed' && filter.isInRange(s.date)),
-    [sales, filter]
+function normalizeProductName(value: string): string {
+  return value.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+export default function ProfitTab({ filter }: Props) {
+  const { invoices } = useSalesLog();
+  const { expenses } = useExpenses();
+  const { items } = useInventory();
+
+  const completedInvoices = useMemo(
+    () => invoices.filter((invoice) => invoice.status === 'completed' && filter.isInRange(invoice.date)),
+    [invoices, filter]
   );
   const filteredExpenses = useMemo(
     () => expenses.filter((e) => filter.isInRange(e.date)),
     [expenses, filter]
   );
+  const categoryByProduct = useMemo(() => {
+    const map = new Map<string, string>();
+    items.forEach((item) => {
+      map.set(normalizeProductCode(item.itemId), item.category || 'Other');
+    });
+    return map;
+  }, [items]);
+  const categoryByProductName = useMemo(() => {
+    const map = new Map<string, string>();
+    items.forEach((item) => {
+      map.set(normalizeProductName(item.productName), item.category || 'Other');
+    });
+    return map;
+  }, [items]);
 
-  const totalCOGS = useMemo(() => completedSales.reduce((sum, sale) =>
-    sum + sale.items.reduce((itemSum, item) => {
-      const inv = inventoryItems.find((i) => Number(i.itemId.replace(/\D/g, '')) === item.id);
-      return itemSum + (inv ? inv.costPrice * item.qty : 0);
-    }, 0), 0), [completedSales]);
-
-  const totalRevenue = completedSales.reduce((s, t) => s + t.grandTotal, 0);
+  const totalRevenue = completedInvoices.reduce((sum, invoice) => sum + invoice.netSales, 0);
+  const totalCOGS = completedInvoices.reduce((sum, invoice) => sum + invoice.totalCost, 0);
   const totalExpenses = filteredExpenses.reduce((s, e) => s + e.amountGHS, 0);
-  const grossProfit = totalRevenue - totalCOGS;
+  const grossProfit = completedInvoices.reduce((sum, invoice) => sum + invoice.grossMargin, 0);
   const netProfit = grossProfit - totalExpenses;
   const grossMargin = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0;
   const netMargin = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
 
   const profitByCategory = useMemo(() => {
     const map: Record<string, { revenue: number; cogs: number; grossProfit: number }> = {};
-    completedSales.forEach((sale) => {
-      sale.items.forEach((item) => {
-        const inv = inventoryItems.find((i) => Number(i.itemId.replace(/\D/g, '')) === item.id);
-        const category = inv?.category || 'Other';
-        const revenue = item.price * item.qty;
-        const cogs = inv ? inv.costPrice * item.qty : 0;
+    completedInvoices.forEach((invoice) => {
+      invoice.items.forEach((item) => {
+        const category =
+          categoryByProduct.get(normalizeProductCode(item.productId)) ||
+          categoryByProductName.get(normalizeProductName(item.productName)) ||
+          'Other';
+        const revenue = item.netSales;
+        const cogs = item.totalCost;
         if (!map[category]) map[category] = { revenue: 0, cogs: 0, grossProfit: 0 };
         map[category].revenue += revenue;
         map[category].cogs += cogs;
-        map[category].grossProfit += revenue - cogs;
+        map[category].grossProfit += item.grossMargin;
       });
     });
     return Object.entries(map).map(([category, data]) => ({ category, ...data })).sort((a, b) => b.grossProfit - a.grossProfit);
-  }, [completedSales]);
+  }, [categoryByProduct, categoryByProductName, completedInvoices]);
 
   const expenseByCategory = useMemo(() => {
     const map: Record<string, number> = {};
@@ -70,14 +90,14 @@ export default function ProfitTab({ filter }: Props) {
 
   const dailyProfit = useMemo(() => {
     const map = new Map<string, { revenue: number; cogs: number; expenses: number }>();
-    completedSales.forEach((sale) => {
-      const key = sale.date;
+    completedInvoices.forEach((invoice) => {
+      const key = invoice.date;
       const existing = map.get(key) || { revenue: 0, cogs: 0, expenses: 0 };
-      const saleCogs = sale.items.reduce((sum, item) => {
-        const inv = inventoryItems.find((i) => Number(i.itemId.replace(/\D/g, '')) === item.id);
-        return sum + (inv ? inv.costPrice * item.qty : 0);
-      }, 0);
-      map.set(key, { revenue: existing.revenue + sale.grandTotal, cogs: existing.cogs + saleCogs, expenses: existing.expenses });
+      map.set(key, {
+        revenue: existing.revenue + invoice.netSales,
+        cogs: existing.cogs + invoice.totalCost,
+        expenses: existing.expenses,
+      });
     });
     filteredExpenses.forEach((e) => {
       const d = new Date(e.date);
@@ -89,7 +109,7 @@ export default function ProfitTab({ filter }: Props) {
       .map(([date, data]) => ({ date, grossProfit: data.revenue - data.cogs, netProfit: data.revenue - data.cogs - data.expenses }))
       .sort((a, b) => parseDate(a.date).getTime() - parseDate(b.date).getTime())
       .slice(-14);
-  }, [completedSales, filteredExpenses]);
+  }, [completedInvoices, filteredExpenses]);
 
   const maxDailyProfit = Math.max(...dailyProfit.map((d) => Math.max(d.grossProfit, d.netProfit)), 1);
   const minDailyProfit = Math.min(...dailyProfit.map((d) => Math.min(d.grossProfit, d.netProfit)), 0);

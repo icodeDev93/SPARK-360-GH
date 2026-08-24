@@ -1,6 +1,8 @@
 import { useRef } from 'react';
 import { useSettings } from '@/hooks/useSettings';
+import { useBusiness } from '@/contexts/BusinessContext';
 import type { PaymentMethod } from '@/types/erp';
+import { escapePrintHtml, printHtml } from '@/lib/printDocument';
 
 interface CartItem {
   id: string;
@@ -56,15 +58,17 @@ export default function ReceiptModal({
   newSaleLabel = 'New Sale',
 }: ReceiptModalProps) {
   const { settings } = useSettings();
+  const { activeBusiness } = useBusiness();
   const receiptRef = useRef<HTMLDivElement>(null);
   const now = new Date();
   const dateStr = now.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
   const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+  const businessLogo = settings.storeLogo || activeBusiness?.logoUrl || '';
+  const storeName = settings.storeName || activeBusiness?.businessName || 'Store';
+  const storeAddress = settings.storeAddress || activeBusiness?.address || '';
+  const storePhone = settings.storePhone || activeBusiness?.phone || '';
 
   const handlePrint = () => {
-    const win = window.open('', '_blank', 'width=420,height=800');
-    if (!win) return;
-
     const headerBg  = settings.receiptTheme === 'classic' ? '#1e293b' : settings.receiptTheme === 'minimal' ? '#f1f5f9' : '#4f46e5';
     const headerTxt = settings.receiptTheme === 'minimal' ? '#1e293b' : '#ffffff';
     const headerSub = settings.receiptTheme === 'minimal' ? '#64748b' : 'rgba(255,255,255,0.82)';
@@ -73,7 +77,7 @@ export default function ReceiptModal({
     const itemsHtml = items.map((item) => `
       <div style="display:flex;align-items:flex-start;margin-bottom:8px;font-size:11px;">
         <div style="flex:1;padding-right:6px;">
-          <div style="font-weight:700;color:#1e293b;">${item.name}</div>
+          <div style="font-weight:700;color:#1e293b;">${escapePrintHtml(item.name)}</div>
           <div style="color:#94a3b8;font-size:10px;margin-top:1px;">${settings.currencySymbol}${item.price.toFixed(2)} each</div>
         </div>
         <div style="width:36px;text-align:center;color:#475569;">x${item.qty}</div>
@@ -82,7 +86,7 @@ export default function ReceiptModal({
 
     const taxHtml = settings.receiptShowTax && settings.taxEnabled
       ? `<div style="display:flex;justify-content:space-between;font-size:11px;color:#64748b;margin-bottom:5px;">
-           <span>${settings.taxLabel} (${settings.taxRate}%)</span>
+           <span>${escapePrintHtml(settings.taxLabel)} (${settings.taxRate}%)</span>
            <span>${settings.currencySymbol}${tax.toFixed(2)}</span>
          </div>` : '';
 
@@ -116,16 +120,16 @@ export default function ReceiptModal({
 
     const footerHtml = settings.receiptFooter
       ? `<div style="border-top:1px dashed #e2e8f0;padding:8px 14px 14px;text-align:center;">
-           <p style="font-size:10px;color:#94a3b8;line-height:1.6;font-style:italic;">${settings.receiptFooter}</p>
+           <p style="font-size:10px;color:#94a3b8;line-height:1.6;font-style:italic;">${escapePrintHtml(settings.receiptFooter)}</p>
          </div>` : '';
 
-    const logoHtml = settings.receiptShowLogo
-      ? settings.storeLogo
-        ? `<img src="${settings.storeLogo}" alt="Store logo" style="width:44px;height:44px;object-fit:contain;background:#fff;border-radius:9px;display:block;margin:0 auto 8px;padding:4px;"/>`
-        : `<div style="width:38px;height:38px;background:rgba(255,255,255,0.2);border-radius:9px;display:flex;align-items:center;justify-content:center;margin:0 auto 8px;font-size:10px;font-weight:800;color:#fff;">LOGO</div>`
-      : '';
+    const logoHtml = businessLogo
+      ? `<img src="${escapePrintHtml(businessLogo)}" alt="${escapePrintHtml(storeName)} logo" style="width:44px;height:44px;object-fit:contain;background:#fff;border-radius:9px;display:block;margin:0 auto 8px;padding:4px;"/>`
+      : settings.receiptShowLogo
+        ? `<div style="width:38px;height:38px;background:rgba(255,255,255,0.2);border-radius:9px;display:flex;align-items:center;justify-content:center;margin:0 auto 8px;font-size:10px;font-weight:800;color:#fff;">LOGO</div>`
+        : '';
 
-    win.document.write(`<!DOCTYPE html>
+    printHtml(`<!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8">
@@ -133,27 +137,27 @@ export default function ReceiptModal({
   <style>
     @page { size: 80mm auto; margin: 0; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 80mm; font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif; background: #fff; color: #1e293b; }
+    html, body { width: 80mm; font-family: 'Courier New', Consolas, Monaco, monospace; font-size: 10pt; background: #fff; color: #1e293b; }
   </style>
 </head>
 <body>
   <!-- Header -->
   <div style="background:${headerBg};color:${headerTxt};text-align:center;padding:18px 14px 14px;">
     ${logoHtml}
-    <div style="font-size:15px;font-weight:800;margin-bottom:3px;">${settings.storeName}</div>
-    <div style="font-size:10px;color:${headerSub};line-height:1.6;">${settings.storeAddress}</div>
-    ${settings.storePhone ? `<div style="font-size:10px;color:${headerSub};">${settings.storePhone}</div>` : ''}
+    <div style="font-size:15px;font-weight:800;margin-bottom:3px;">${escapePrintHtml(storeName)}</div>
+    <div style="font-size:10px;color:${headerSub};line-height:1.6;">${escapePrintHtml(storeAddress)}</div>
+    ${storePhone ? `<div style="font-size:10px;color:${headerSub};">${escapePrintHtml(storePhone)}</div>` : ''}
   </div>
 
   <!-- Meta -->
   <div style="padding:10px 14px;border-top:1px dashed #e2e8f0;">
     <div style="display:flex;justify-content:space-between;margin-bottom:5px;font-size:11px;">
       <span style="color:#64748b;">Receipt No.</span>
-      <span style="font-weight:700;color:#1e293b;">${receiptNo}</span>
+      <span style="font-weight:700;color:#1e293b;">${escapePrintHtml(receiptNo)}</span>
     </div>
     ${customerName ? `<div style="display:flex;justify-content:space-between;margin-bottom:5px;font-size:11px;">
       <span style="color:#64748b;">Customer</span>
-      <span style="color:#1e293b;font-weight:500;">${customerName}</span>
+      <span style="color:#1e293b;font-weight:500;">${escapePrintHtml(customerName)}</span>
     </div>` : ''}
     <div style="display:flex;justify-content:space-between;margin-bottom:5px;font-size:11px;">
       <span style="color:#64748b;">Date</span>
@@ -165,7 +169,7 @@ export default function ReceiptModal({
     </div>
     <div style="display:flex;justify-content:space-between;font-size:11px;">
       <span style="color:#64748b;">Payment</span>
-      <span style="color:#1e293b;font-weight:500;">${paymentLabels[paymentMethod]}</span>
+      <span style="color:#1e293b;font-weight:500;">${escapePrintHtml(paymentLabels[paymentMethod])}</span>
     </div>
   </div>
 
@@ -196,10 +200,8 @@ export default function ReceiptModal({
   ${barcodeHtml}
   ${footerHtml}
 
-  <script>window.onload = function() { window.print(); window.close(); }<\/script>
 </body>
-</html>`);
-    win.document.close();
+</html>`, { title: `Receipt ${receiptNo}`, windowFeatures: 'width=420,height=800', autoClose: false });
   };
 
   const themeClasses = {
@@ -240,11 +242,11 @@ export default function ReceiptModal({
           >
             {/* Receipt Header */}
             <div className={`px-5 py-4 text-center ${settings.receiptTheme === 'minimal' ? 'bg-slate-50' : settings.receiptTheme === 'classic' ? 'bg-slate-800 text-white' : 'bg-indigo-600 text-white'}`}>
-              {settings.receiptShowLogo && (
+              {(businessLogo || settings.receiptShowLogo) && (
                 <div className="flex justify-center mb-2">
-                  {settings.storeLogo ? (
+                  {businessLogo ? (
                     <div className="w-12 h-12 rounded-lg bg-white border border-white/20 overflow-hidden flex items-center justify-center">
-                      <img src={settings.storeLogo} alt="Store logo" className="w-full h-full object-contain p-1.5" />
+                      <img src={businessLogo} alt={`${storeName} logo`} className="w-full h-full object-contain p-1.5" />
                     </div>
                   ) : (
                     <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${settings.receiptTheme === 'minimal' ? 'bg-indigo-600' : 'bg-white/20'}`}>
@@ -254,14 +256,14 @@ export default function ReceiptModal({
                 </div>
               )}
               <p className={`font-bold text-base ${settings.receiptTheme === 'minimal' ? 'text-slate-800' : 'text-white'}`}>
-                {settings.storeName}
+                {storeName}
               </p>
               <p className={`text-xs mt-0.5 ${settings.receiptTheme === 'minimal' ? 'text-slate-500' : 'text-white/80'}`}>
-                {settings.storeAddress}
+                {storeAddress}
               </p>
-              {settings.storePhone && (
+              {storePhone && (
                 <p className={`text-xs ${settings.receiptTheme === 'minimal' ? 'text-slate-500' : 'text-white/80'}`}>
-                  {settings.storePhone}
+                  {storePhone}
                 </p>
               )}
             </div>

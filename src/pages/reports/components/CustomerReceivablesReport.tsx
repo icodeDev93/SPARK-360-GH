@@ -17,9 +17,9 @@ export default function CustomerReceivablesReport({ filter }: { filter: Analytic
 
   const creditInvoices = useMemo(
     () => invoices
-      .filter((inv) => inv.status === 'credit' && filter.isInRange(inv.date))
+      .filter((inv) => inv.balanceDue > 0.005)
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
-    [invoices, filter]
+    [invoices]
   );
 
   const totals = useMemo(() => {
@@ -56,7 +56,7 @@ export default function CustomerReceivablesReport({ filter }: { filter: Analytic
         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
           <div>
             <h3 className="text-slate-800 font-bold text-sm">Customer Receivables</h3>
-            <p className="text-slate-400 text-xs mt-0.5">{filter.label}</p>
+            <p className="text-slate-400 text-xs mt-0.5">All open customer balances</p>
           </div>
           <span className="text-rose-600 font-bold font-mono text-sm">{fmt(totals.outstandingTotal)}</span>
         </div>
