@@ -27,7 +27,7 @@ interface BusinessContextValue {
   loading: boolean;
   loadError: string;
   selectBusiness: (businessId: string) => void;
-  refreshBusinesses: () => Promise<void>;
+  refreshBusinesses: (showLoading?: boolean) => Promise<void>;
   createBusiness: (input: BusinessInput) => Promise<{ success: boolean; error?: string }>;
   updateBusiness: (businessId: string, input: BusinessInput) => Promise<{ success: boolean; error?: string }>;
   archiveBusiness: (businessId: string) => Promise<{ success: boolean; error?: string }>;
@@ -85,6 +85,13 @@ const cleanBusiness = (input: BusinessInput) => ({
 
 const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
 
+function isUserBusy(): boolean {
+  const el = document.activeElement as HTMLElement | null;
+  if (!el) return false;
+  if (el.isContentEditable) return true;
+  return el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT';
+}
+
 function businessCacheKey(userId: string) {
   return `${BUSINESS_CACHE_PREFIX}${userId}`;
 }
@@ -111,7 +118,7 @@ export function BusinessProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
 
-  const refreshBusinesses = useCallback(async () => {
+  const refreshBusinesses = useCallback(async (showLoading = true) => {
     if (!currentUser) {
       setBusinesses([]);
       setActiveBusinessId(null);
@@ -127,7 +134,7 @@ export function BusinessProvider({ children }: { children: ReactNode }) {
       setBusinesses(cachedBusinesses);
     }
 
-    setLoading(true);
+    if (showLoading) setLoading(true);
     setLoadError('');
 
     let data: unknown[] | null = null;
@@ -205,7 +212,7 @@ export function BusinessProvider({ children }: { children: ReactNode }) {
     if (sessionLoading || !currentUser) return undefined;
 
     const refreshVisibleBusinesses = () => {
-      if (!document.hidden) void refreshBusinesses();
+      if (!document.hidden && !isUserBusy()) void refreshBusinesses(false);
     };
 
     window.addEventListener('focus', refreshVisibleBusinesses);
