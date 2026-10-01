@@ -3,6 +3,7 @@ import { useAuth, ALL_PERMISSIONS, type DynamicPermissions } from '@/hooks/useAu
 import { supabase } from '@/lib/supabase';
 import { writeLog } from '@/lib/activityLog';
 import { useFeedbackModal } from '@/hooks/useFeedbackModal';
+import { useBusiness } from '@/contexts/BusinessContext';
 
 type ConfigRole = 'manager' | 'cashier';
 
@@ -25,6 +26,7 @@ const ROLE_META: Record<ConfigRole, { label: string; color: string; bg: string; 
 
 export default function RolePermissionsSection() {
   const { rolePermissions, currentUser } = useAuth();
+  const { activeBusinessId } = useBusiness();
   const { showFeedback } = useFeedbackModal();
   const [activeRole, setActiveRole]   = useState<ConfigRole>('manager');
   const [localPerms, setLocalPerms]   = useState<DynamicPermissions>(rolePermissions);
@@ -48,17 +50,21 @@ export default function RolePermissionsSection() {
   }
 
   async function handleSave() {
+    if (!activeBusinessId || !currentUser) {
+      setError('Select an active business before saving permissions.');
+      return;
+    }
     setSaving(true);
     setError('');
     try {
       const { error: err } = await supabase
-        .from('role_permissions')
+        .from('business_role_permissions')
         .upsert(
           [
-            { role: 'manager', permissions: localPerms.manager, updated_at: new Date().toISOString() },
-            { role: 'cashier', permissions: localPerms.cashier, updated_at: new Date().toISOString() },
+            { business_id: activeBusinessId, role: 'manager', permissions: localPerms.manager, updated_at: new Date().toISOString(), updated_by: currentUser.id },
+            { business_id: activeBusinessId, role: 'cashier', permissions: localPerms.cashier, updated_at: new Date().toISOString(), updated_by: currentUser.id },
           ],
-          { onConflict: 'role' },
+          { onConflict: 'business_id,role' },
         );
       if (err) { setError(err.message); return; }
       if (currentUser) {

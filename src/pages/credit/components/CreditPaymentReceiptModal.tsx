@@ -59,10 +59,6 @@ export default function CreditPaymentReceiptModal({ receipt, onClose }: Props) {
       ['Payment Method', paymentLabels[receipt.paymentMethod]],
       ['Recorded By', receipt.cashier],
     ];
-    const logoHtml = businessLogo
-      ? `<img src="${escapePrintHtml(businessLogo)}" alt="${escapePrintHtml(storeName)} logo" style="width:44px;height:44px;object-fit:contain;background:#fff;border-radius:9px;display:block;margin:0 auto 8px;padding:4px;"/>`
-      : '';
-
     printHtml(`<!DOCTYPE html>
 <html>
 <head>
@@ -71,55 +67,71 @@ export default function CreditPaymentReceiptModal({ receipt, onClose }: Props) {
   <style>
     @page { size: 80mm auto; margin: 0; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { width: 80mm; font-family: 'Courier New', Consolas, Monaco, monospace; font-size: 10pt; color: #1e293b; background: #fff; }
+    html, body { width: 80mm; background: #fff; color: #000; }
+    body { font-family: 'Courier New', Courier, monospace; font-size: 10pt; }
+    .receipt { width: 72mm; margin: 0 auto; padding: 2mm 0 4mm; }
+    .header { text-align: center; }
+    .logo { width: 12mm; height: 12mm; object-fit: contain; display: block; margin: 0 auto 2mm; }
+    .store-name { font-size: 12pt; font-weight: 700; line-height: 1.2; }
+    .store-detail { font-size: 8pt; line-height: 1.35; }
+    .title { margin-top: 2mm; font-size: 10pt; font-weight: 700; }
+    .rule { border: 0; border-top: 1px dashed #000; margin: 2mm 0; }
+    .meta-row, .summary-row { display: flex; justify-content: space-between; gap: 3mm; margin-bottom: 1.2mm; }
+    .meta-row { font-size: 8pt; }
+    .meta-row span:last-child, .summary-row span:last-child { text-align: right; font-weight: 700; }
+    .summary-row { font-size: 10pt; }
+    .amount-paid { display: flex; justify-content: space-between; align-items: center; gap: 3mm; margin: 2mm 0; padding: 2mm; border: 2px solid #000; font-size: 17pt; font-weight: 700; line-height: 1.1; }
+    .amount-paid .label { font-size: 10pt; text-transform: uppercase; }
+    .balance { padding-top: 1.5mm; border-top: 1px solid #000; font-weight: 700; }
+    .stamp { width: fit-content; margin: 3mm auto 0; padding: 1.5mm 3mm; border: 2px solid #000; font-size: 11pt; font-weight: 700; text-align: center; }
+    .thank-you { margin-top: 3mm; font-size: 9pt; font-weight: 700; text-align: center; }
+    .footer { margin-top: 1.5mm; font-size: 8pt; line-height: 1.35; text-align: center; }
   </style>
 </head>
 <body>
-  <div style="background:#4f46e5;color:#fff;text-align:center;padding:18px 14px 14px;">
-    ${logoHtml}
-    <div style="font-size:15px;font-weight:800;margin-bottom:3px;">${escapePrintHtml(storeName)}</div>
-    <div style="font-size:10px;color:rgba(255,255,255,0.82);line-height:1.5;">${escapePrintHtml(storeAddress)}</div>
-    ${storePhone ? `<div style="font-size:10px;color:rgba(255,255,255,0.82);">${escapePrintHtml(storePhone)}</div>` : ''}
-    <div style="font-size:11px;font-weight:700;margin-top:10px;letter-spacing:0.08em;">CREDIT PAYMENT RECEIPT</div>
-  </div>
-
-  <div style="padding:12px 14px;border-top:1px dashed #cbd5e1;">
+  <main class="receipt">
+    <header class="header">
+      ${businessLogo ? `<img class="logo" src="${escapePrintHtml(businessLogo)}" alt="${escapePrintHtml(storeName)} logo">` : ''}
+      <div class="store-name">${escapePrintHtml(storeName)}</div>
+      ${storeAddress ? `<div class="store-detail">${escapePrintHtml(storeAddress)}</div>` : ''}
+      ${storePhone ? `<div class="store-detail">${escapePrintHtml(storePhone)}</div>` : ''}
+      <div class="title">PAYMENT RECEIPT</div>
+    </header>
+    <hr class="rule">
+    <section>
     ${rows.map(([label, value]) => `
-      <div style="display:flex;justify-content:space-between;gap:10px;margin-bottom:6px;font-size:11px;">
-        <span style="color:#64748b;">${label}</span>
-        <span style="font-weight:700;color:#1e293b;text-align:right;">${escapePrintHtml(value)}</span>
+      <div class="meta-row">
+        <span>${label}</span>
+        <span>${escapePrintHtml(value)}</span>
       </div>
     `).join('')}
-  </div>
-
-  <div style="background:#f8fafc;padding:12px 14px;border-top:1px dashed #cbd5e1;">
-    <div style="display:flex;justify-content:space-between;font-size:11px;color:#64748b;margin-bottom:6px;">
+    </section>
+    <hr class="rule">
+    <section>
+    <div class="summary-row">
       <span>Invoice Total</span><span>${fmt(receipt.invoiceTotal)}</span>
     </div>
-    <div style="display:flex;justify-content:space-between;font-size:11px;color:#64748b;margin-bottom:6px;">
+    <div class="summary-row">
       <span>Previously Paid</span><span>${fmt(receipt.previousPaid)}</span>
     </div>
-    <div style="display:flex;justify-content:space-between;font-size:12px;color:#059669;margin-bottom:6px;font-weight:800;">
-      <span>Payment Received</span><span>${fmt(receipt.amountPaid)}</span>
+    <div class="amount-paid">
+      <span class="label">Amount Paid</span><span>${fmt(receipt.amountPaid)}</span>
     </div>
-    <div style="display:flex;justify-content:space-between;font-size:11px;color:#64748b;margin-bottom:7px;">
+    <div class="summary-row">
       <span>Total Paid</span><span>${fmt(receipt.totalPaid)}</span>
     </div>
-    <div style="display:flex;justify-content:space-between;padding-top:8px;border-top:1px solid #cbd5e1;">
-      <span style="font-size:13px;font-weight:800;color:#1e293b;">BALANCE LEFT</span>
-      <span style="font-size:15px;font-weight:900;color:${paidInFull ? '#059669' : '#dc2626'};">${fmt(receipt.balanceLeft)}</span>
+    <div class="summary-row balance">
+      <span>BALANCE LEFT</span><span>${fmt(receipt.balanceLeft)}</span>
     </div>
-  </div>
-
-  <div style="padding:10px 14px;text-align:center;border-top:1px dashed #cbd5e1;">
-    <div style="display:inline-block;padding:4px 10px;border-radius:999px;font-size:10px;font-weight:800;background:${paidInFull ? '#dcfce7' : '#fef3c7'};color:${paidInFull ? '#15803d' : '#b45309'};">
-      ${paidInFull ? 'INVOICE SETTLED' : 'PARTIAL PAYMENT'}
+    </section>
+    <div class="stamp">
+      ${paidInFull ? '*** SETTLED ***' : '*** PARTIAL PAYMENT ***'}
     </div>
-    ${settings.receiptFooter ? `<p style="font-size:10px;color:#94a3b8;line-height:1.5;margin-top:10px;">${escapePrintHtml(settings.receiptFooter)}</p>` : ''}
-  </div>
-
+    <p class="thank-you">Thank you!</p>
+    ${settings.receiptFooter ? `<p class="footer">${escapePrintHtml(settings.receiptFooter)}</p>` : ''}
+  </main>
 </body>
-</html>`, { title: `Payment Receipt ${receipt.receiptNo}`, windowFeatures: 'width=420,height=800', autoClose: false });
+</html>`, { title: `Payment Receipt ${receipt.receiptNo}`, windowFeatures: 'width=360,height=720', autoClose: false });
   };
 
   return (

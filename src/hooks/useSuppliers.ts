@@ -176,8 +176,8 @@ export function useSuppliers() {
 
     const channel = supabase
       .channel('suppliers-purchases-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'suppliers' }, fetchAll)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'purchases' }, fetchAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'suppliers', filter: `business_id=eq.${activeBusinessId}` }, fetchAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'purchases', filter: `business_id=eq.${activeBusinessId}` }, fetchAll)
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };

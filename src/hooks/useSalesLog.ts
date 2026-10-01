@@ -430,10 +430,10 @@ export function useSalesLog() {
 
     const channel = supabase
       .channel('sales-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'sales' }, fetchSales)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'sale_items' }, fetchSales)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'receipts' }, fetchSales)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'credit_payments' }, fetchSales)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sales', filter: `business_id=eq.${activeBusinessId}` }, fetchSales)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sale_items', filter: `business_id=eq.${activeBusinessId}` }, fetchSales)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'receipts', filter: `business_id=eq.${activeBusinessId}` }, fetchSales)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'credit_payments', filter: `business_id=eq.${activeBusinessId}` }, fetchSales)
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };

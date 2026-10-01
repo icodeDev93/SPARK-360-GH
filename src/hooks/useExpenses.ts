@@ -86,8 +86,8 @@ export function useExpenses() {
 
     const channel = supabase
       .channel('expenses-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'expenses' }, fetchExpenses)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'expense_categories' }, fetchExpenses)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'expenses', filter: `business_id=eq.${activeBusinessId}` }, fetchExpenses)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'expense_categories', filter: `business_id=eq.${activeBusinessId}` }, fetchExpenses)
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };

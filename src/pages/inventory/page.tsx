@@ -33,16 +33,16 @@ const CAT_COLORS = [
   'bg-teal-100 text-teal-600',
 ];
 
-const CAT_ICONS = [
-  'ri-price-tag-3-line',
-  'ri-leaf-line',
-  'ri-cup-line',
-  'ri-cake-line',
-  'ri-gift-line',
-  'ri-store-line',
-  'ri-box-3-line',
-  'ri-archive-line',
-];
+function categoryInitials(name: string) {
+  return name
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => word[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase() || 'CA';
+}
 
 function StockBar({ current, reorder }: { current: number; reorder: number }) {
   const pct   = Math.min(100, Math.round((current / Math.max(reorder * 2, 1)) * 100));
@@ -549,7 +549,6 @@ export default function InventoryPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {categories.map((cat, idx) => {
                 const colorClass = CAT_COLORS[idx % CAT_COLORS.length];
-                const iconClass  = CAT_ICONS[idx % CAT_ICONS.length];
                 const itemCount  = items.filter((i) => i.category === cat).length;
                 const lowItems   = items.filter((i) => i.category === cat && i.stockStatus === 'LOW').length;
                 const outItems   = items.filter((i) => i.category === cat && i.stockStatus === 'OUT OF STOCK').length;
@@ -558,7 +557,9 @@ export default function InventoryPage() {
                   <div key={cat} className="bg-white rounded-xl border border-slate-100 hover:border-indigo-200 transition-all p-5">
                     <div className="flex items-start justify-between mb-4">
                       <div className={`w-12 h-12 flex items-center justify-center rounded-xl flex-shrink-0 ${colorClass}`}>
-                        <i className={`${iconClass} text-xl`}></i>
+                        <span className="text-sm font-extrabold tracking-wide" aria-hidden="true">
+                          {categoryInitials(cat)}
+                        </span>
                       </div>
                       <div className="flex gap-1">
                         <button

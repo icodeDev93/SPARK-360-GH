@@ -86,7 +86,7 @@ export function useBankDeposits() {
 
     const channel = supabase
       .channel('bank-deposits-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'bank_deposits' }, fetchDeposits)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bank_deposits', filter: `business_id=eq.${activeBusinessId}` }, fetchDeposits)
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };

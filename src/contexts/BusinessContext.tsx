@@ -98,7 +98,7 @@ function businessCacheKey(userId: string) {
 
 function loadCachedBusinesses(userId: string): BusinessRecord[] {
   try {
-    const raw = localStorage.getItem(businessCacheKey(userId));
+    const raw = sessionStorage.getItem(businessCacheKey(userId));
     const parsed = raw ? JSON.parse(raw) : [];
     return Array.isArray(parsed) ? parsed : [];
   } catch {
@@ -107,7 +107,7 @@ function loadCachedBusinesses(userId: string): BusinessRecord[] {
 }
 
 function saveCachedBusinesses(userId: string, records: BusinessRecord[]) {
-  localStorage.setItem(businessCacheKey(userId), JSON.stringify(records));
+  sessionStorage.setItem(businessCacheKey(userId), JSON.stringify(records));
 }
 
 export function BusinessProvider({ children }: { children: ReactNode }) {
@@ -145,7 +145,9 @@ export function BusinessProvider({ children }: { children: ReactNode }) {
 
       if (!response.error) {
         data = response.data ?? [];
-        if (data.length > 0 || cachedBusinesses.length === 0 || attempt === 3) break;
+        const assignedBusinessVisible = currentUser.role !== 'cashier'
+          || data.some((row) => (row as BusinessRow).id === currentUser.primaryBusinessId);
+        if ((data.length > 0 && assignedBusinessVisible) || attempt === 3) break;
       } else {
         lastError = response.error;
       }

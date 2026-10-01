@@ -247,8 +247,8 @@ function AccountSettingsModal({ onClose }: { onClose: () => void }) {
       setError('Fill in both password fields.');
       return;
     }
-    if (nextPassword.length < 6) {
-      setError('New password must be at least 6 characters.');
+    if (nextPassword.length < 10) {
+      setError('New password must be at least 10 characters.');
       return;
     }
     if (nextPassword !== confirmPassword) {

@@ -17,6 +17,7 @@ interface AppUser {
   initials: string;
   avatarColor: string;
   status: 'Active' | 'Inactive';
+  primaryBusinessId: string | null;
   permissionOverrides: PermissionOverrides;
 }
 
@@ -34,6 +35,7 @@ function mapRow(r: Record<string, unknown>): AppUser {
     initials:            r.initials as string,
     avatarColor:         r.avatar_color as string,
     status:              (r.status as 'Active' | 'Inactive') ?? 'Active',
+    primaryBusinessId:   (r.primary_business_id as string | null) ?? null,
     permissionOverrides: { granted: raw?.granted ?? [], revoked: raw?.revoked ?? [] },
   };
 }
@@ -89,7 +91,7 @@ export default function UsersPage() {
     setForm({
       name: u.name, email: u.email, role: u.role, status: u.status,
       password: '', confirmPassword: '',
-      businessId: u.role === 'cashier' ? '' : '',
+      businessId: u.role === 'cashier' ? u.primaryBusinessId ?? '' : '',
       overrides: { granted: [...u.permissionOverrides.granted], revoked: [...u.permissionOverrides.revoked] },
     });
     setErrors({}); setFormError(''); setShowForm(true);
@@ -150,17 +152,17 @@ export default function UsersPage() {
     if (!form.name.trim()) e.name = 'Name is required';
     if (!form.email.trim()) e.email = 'Email is required';
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) e.email = 'Invalid email address';
-    if (!editTarget && form.role === 'cashier' && !form.businessId) e.businessId = 'Business is required for attendants';
-    if (!editTarget && form.role === 'cashier' && form.businessId && !activeBusinesses.some((business) => business.id === form.businessId)) {
+    if (form.role === 'cashier' && !form.businessId) e.businessId = 'Business is required for attendants';
+    if (form.role === 'cashier' && form.businessId && !activeBusinesses.some((business) => business.id === form.businessId)) {
       e.businessId = 'Select an active business for attendants';
     }
     if (!editTarget) {
       if (!form.password) e.password = 'Password is required';
-      else if (form.password.length < 6) e.password = 'Minimum 6 characters';
+      else if (form.password.length < 10) e.password = 'Minimum 10 characters';
       if (!form.confirmPassword) e.confirmPassword = 'Please confirm the password';
       else if (form.password !== form.confirmPassword) e.confirmPassword = 'Passwords do not match';
     } else if (form.password) {
-      if (form.password.length < 6) e.password = 'Minimum 6 characters';
+      if (form.password.length < 10) e.password = 'Minimum 10 characters';
       if (form.password !== form.confirmPassword) e.confirmPassword = 'Passwords do not match';
     }
     setErrors(e);
@@ -179,21 +181,34 @@ export default function UsersPage() {
         const initials = getInitials(cleanName);
         const overridesToSave = form.role === 'owner' ? EMPTY_OVERRIDES : form.overrides;
 
-        if (form.password) {
-          setFormError('Changing another user password needs a secure server-side owner endpoint. Service role keys cannot be used in the browser.');
+        let updatedProfile: Record<string, unknown> | undefined;
+
+        const { data, error } = await supabase.functions.invoke('update-user', {
+          body: {
+            userId: editTarget.id,
+            name: cleanName,
+            role: form.role,
+            status: form.status,
+            permissionOverrides: overridesToSave,
+            businessId: form.role === 'cashier' ? form.businessId : null,
+            ...(form.password ? { password: form.password } : {}),
+          },
+        });
+        if (error || (data as { error?: string } | null)?.error) {
+          let functionMessage = (data as { error?: string } | null)?.error;
+          if (!functionMessage && error && 'context' in error && error.context instanceof Response) {
+            const responseBody = await error.context.clone().json().catch(() => null) as { error?: string } | null;
+            functionMessage = responseBody?.error;
+          }
+          setFormError(functionMessage
+            ?? (error?.message === 'Failed to send a request to the Edge Function'
+              ? 'Unable to reach the secure user update service. Check the browser connection and allowed origin, then try again.'
+              : error?.message)
+            ?? 'User update failed.');
           return;
         }
-
-        const { error } = await supabase
-          .from('profiles')
-          .update({
-            name: cleanName, email: cleanEmail, role: form.role,
-            status: form.status, initials,
-            permission_overrides: overridesToSave,
-          })
-          .eq('id', editTarget.id);
-
-        if (error) { setFormError(error.message); return; }
+        updatedProfile = (data as { profile?: Record<string, unknown> } | null)?.profile;
+        if (!updatedProfile) { setFormError('User update returned no profile.'); return; }
 
         if (currentUser) {
           const changes = diffFields(
@@ -214,7 +229,7 @@ export default function UsersPage() {
 
         setUsers((prev) => prev.map((u) =>
           u.id === editTarget.id
-            ? { ...u, name: cleanName, email: cleanEmail, role: form.role, status: form.status, initials, permissionOverrides: overridesToSave }
+            ? { ...mapRow(updatedProfile), email: cleanEmail, initials }
             : u
         ));
         showFeedback({
@@ -538,7 +553,7 @@ export default function UsersPage() {
                 </div>
               </div>
 
-              {!editTarget && form.role === 'cashier' && (
+              {form.role === 'cashier' && (
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-1.5">
                     Assigned Business <span className="text-red-400">*</span>

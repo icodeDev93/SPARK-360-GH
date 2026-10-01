@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { writeLog } from '@/lib/activityLog';
 import { sanitizeUrl } from '@/lib/sanitize';
 import { isNetworkError } from '@/lib/localCache';
-import { setStoredActiveBusinessId } from '@/lib/businessScope';
+import { getStoredActiveBusinessId, setStoredActiveBusinessId } from '@/lib/businessScope';
 
 export type UserRole = 'cashier' | 'manager' | 'owner';
 
@@ -101,34 +101,34 @@ interface AuthContextValue {
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
-const AUTH_CACHE_KEY = 'bizzyapp:auth-user';
-const AUTH_SIGNED_OUT_KEY = 'bizzyapp:auth-signed-out';
-
-function getCachedAuthUser(): AuthUser | null {
-  try {
-    const cached = localStorage.getItem(AUTH_CACHE_KEY);
-    return cached ? JSON.parse(cached) as AuthUser : null;
-  } catch {
-    return null;
-  }
-}
-
-function cacheAuthUser(user: AuthUser) {
-  localStorage.setItem(AUTH_CACHE_KEY, JSON.stringify(user));
-  localStorage.removeItem(AUTH_SIGNED_OUT_KEY);
-}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser]       = useState<AuthUser | null>(null);
   const [authLoading, setAuthLoading]       = useState(false);
   const [sessionLoading, setSessionLoading] = useState(true);
   const [rolePermissions, setRolePermissions] = useState<DynamicPermissions>(DEFAULT_DYNAMIC);
+  const [permissionBusinessId, setPermissionBusinessId] = useState<string | null>(() => getStoredActiveBusinessId());
 
-  // Load dynamic permissions from Supabase + subscribe to real-time changes
   useEffect(() => {
+    const onBusinessChanged = (event: Event) => {
+      setPermissionBusinessId((event as CustomEvent<string | null>).detail ?? null);
+    };
+    window.addEventListener('bizzyapp:business-changed', onBusinessChanged);
+    return () => window.removeEventListener('bizzyapp:business-changed', onBusinessChanged);
+  }, []);
+
+  // Load permissions for the selected business and subscribe only to that tenant.
+  useEffect(() => {
+    if (!currentUser || !permissionBusinessId) {
+      setRolePermissions(DEFAULT_DYNAMIC);
+      return undefined;
+    }
     (async () => {
       try {
-        const { data } = await supabase.from('role_permissions').select('role, permissions');
+        const { data } = await supabase
+          .from('business_role_permissions')
+          .select('role, permissions')
+          .eq('business_id', permissionBusinessId);
         if (data?.length) {
           const perms = { ...DEFAULT_DYNAMIC };
           data.forEach((row: { role: string; permissions: string[] }) => {
@@ -144,10 +144,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })();
 
     const channel = supabase
-      .channel('role_permissions_rt')
+      .channel(`role_permissions_${permissionBusinessId}`)
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'role_permissions' },
+        { event: '*', schema: 'public', table: 'business_role_permissions', filter: `business_id=eq.${permissionBusinessId}` },
         (payload) => {
           const row = payload.new as { role: string; permissions: string[] };
           if (row?.role === 'manager' || row?.role === 'cashier') {
@@ -158,7 +158,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, []);
+  }, [currentUser, permissionBusinessId]);
 
   // Subscribe to own profile changes (e.g. owner updates permission overrides)
   useEffect(() => {
@@ -178,9 +178,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     (async () => {
       try {
-        const cached = getCachedAuthUser();
-        const signedOut = localStorage.getItem(AUTH_SIGNED_OUT_KEY) === 'true';
-        if (cached && !signedOut) setCurrentUser(cached);
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user?.id) {
           const { data: profile } = await supabase
@@ -191,7 +188,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (profile) {
             const user = mapRow(profile);
             setCurrentUser(user);
-            cacheAuthUser(user);
           }
         }
       } catch (error) {
@@ -204,22 +200,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
     const normalizedEmail = email.toLowerCase().trim();
-    const cachedUser = getCachedAuthUser();
-    const tryOfflineLogin = (error?: unknown) => {
-      if (!cachedUser || cachedUser.email.toLowerCase() !== normalizedEmail) return null;
-      if (!password) return null;
-      if (error && !isNetworkError(error) && navigator.onLine) return null;
-      setCurrentUser(cachedUser);
-      cacheAuthUser(cachedUser);
-      if (cachedUser.role !== 'cashier') setStoredActiveBusinessId(null);
-      writeLog(cachedUser, {
-        category: 'auth',
-        action: 'login',
-        description: `${cachedUser.name} (${ROLE_LABELS[cachedUser.role].label}) logged in offline`,
-      });
-      return { success: true };
-    };
-
     setAuthLoading(true);
     try {
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
@@ -229,8 +209,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (authError || !authData.user) {
         const msg = authError?.message ?? '';
-        const offlineResult = tryOfflineLogin(authError);
-        if (offlineResult) return offlineResult;
         if (msg.toLowerCase().includes('not confirmed') || msg.toLowerCase().includes('email_not_confirmed')) {
           return { success: false, error: 'Your account is not confirmed. Ask the owner to confirm it in Supabase.' };
         }
@@ -251,27 +229,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const user = mapRow(profile);
 
       if (user.role === 'cashier') {
-        const { data: accessible, error: accessError } = await supabase.rpc('get_accessible_businesses');
-        if (!accessError) {
-          const hasActiveBusiness = user.primaryBusinessId
+        let hasActiveBusiness = false;
+        let accessFailed = false;
+        for (let attempt = 1; attempt <= 3; attempt += 1) {
+          const { data: accessible, error: accessError } = await supabase.rpc('get_accessible_businesses');
+          accessFailed = Boolean(accessError);
+          hasActiveBusiness = !accessError && Boolean(user.primaryBusinessId)
             && Array.isArray(accessible)
-            && accessible.some((row: { id: string }) => row.id === user.primaryBusinessId);
-          if (!hasActiveBusiness) {
-            await supabase.auth.signOut();
-            return { success: false, error: 'Your business is currently deactivated. Contact your business owner for access.' };
-          }
+            && accessible.some((row: { id: string; status: string }) => row.id === user.primaryBusinessId && row.status === 'active');
+          if (hasActiveBusiness) break;
+          if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, attempt * 450));
+        }
+        if (!hasActiveBusiness) {
+          await supabase.auth.signOut();
+          return { success: false, error: accessFailed
+            ? 'Unable to verify business access right now. Check your connection and try again.'
+            : 'You are not assigned to an active business. Ask your business owner to check your Assigned Business in Edit User.' };
         }
       }
 
       setCurrentUser(user);
-      cacheAuthUser(user);
       if (user.role !== 'cashier') setStoredActiveBusinessId(null);
       writeLog(user, { category: 'auth', action: 'login', description: `${user.name} (${ROLE_LABELS[user.role].label}) logged in` });
       return { success: true };
     } catch (error) {
-      const offlineResult = tryOfflineLogin(error);
-      if (offlineResult) return offlineResult;
-      return { success: false, error: isNetworkError(error) ? 'No internet connection. Sign in online once on this device before using offline login.' : error instanceof Error ? error.message : 'Login failed.' };
+      return { success: false, error: isNetworkError(error) ? 'No internet connection. Connect to the internet and try again.' : error instanceof Error ? error.message : 'Login failed.' };
     } finally {
       setAuthLoading(false);
     }
@@ -284,7 +266,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut().catch((error) => {
       console.warn('Unable to sign out from Supabase. Local session was cleared.', error);
     });
-    localStorage.setItem(AUTH_SIGNED_OUT_KEY, 'true');
     setStoredActiveBusinessId(null);
     setCurrentUser(null);
   };
@@ -318,13 +299,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (data) {
       const user = mapRow(data as Record<string, unknown>);
       setCurrentUser(user);
-      cacheAuthUser(user);
     }
     return { success: true };
   };
 
   const updatePassword = async (nextPassword: string): Promise<{ success: boolean; error?: string }> => {
     if (!currentUser) return { success: false, error: 'No active user session.' };
+    if (nextPassword.length < 10) return { success: false, error: 'Password must be at least 10 characters.' };
     const { error } = await supabase.auth.updateUser({ password: nextPassword });
     if (error) return { success: false, error: error.message };
     return { success: true };

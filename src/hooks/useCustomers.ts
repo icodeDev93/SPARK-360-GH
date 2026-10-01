@@ -102,7 +102,7 @@ export function useCustomers() {
 
     const channel = supabase
       .channel('customers-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, fetchCustomers)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'customers', filter: `business_id=eq.${activeBusinessId}` }, fetchCustomers)
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };

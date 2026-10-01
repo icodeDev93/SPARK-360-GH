@@ -3,7 +3,7 @@ import AppLayout from '@/components/feature/AppLayout';
 import { supabase } from '@/lib/supabase';
 import { ROLE_LABELS, useAuth } from '@/hooks/useAuth';
 import { cleanLogText, type LogCategory, type LogAction, type LogChange } from '@/lib/activityLog';
-import { loadLocalCollection, saveLocalCollection } from '@/lib/localCache';
+import { saveLocalCollection } from '@/lib/localCache';
 import { useBusiness } from '@/contexts/BusinessContext';
 import { printHtml } from '@/lib/printDocument';
 
@@ -247,6 +247,8 @@ function avatarColor(name: string) {
   return AVATAR_CYCLE[Math.abs(hash) % AVATAR_CYCLE.length];
 }
 
+const LOGS_PER_PAGE = 25;
+
 export default function LogsPage() {
   const { activeBusiness, activeBusinessId } = useBusiness();
   const { currentUser } = useAuth();
@@ -258,45 +260,51 @@ export default function LogsPage() {
   const [search, setSearch]           = useState('');
   const [dateFrom, setDateFrom]       = useState('');
   const [dateTo, setDateTo]           = useState('');
+  const [page, setPage]               = useState(1);
+  const [totalCount, setTotalCount]   = useState(0);
 
   useEffect(() => {
-    (async () => {
+    const loadPage = async () => {
       if (!activeBusinessId) {
         setLogs([]);
+        setTotalCount(0);
         setLoading(false);
         return;
       }
-      const cached = await loadLocalCollection<LogRow>('user_logs');
-      if (cached.length) setLogs(cached.filter((log) => log.business_id === activeBusinessId));
-      const { data, error } = await supabase
+      setLoading(true);
+      let query = supabase
         .from('user_logs')
-        .select('*')
+        .select('*', { count: 'exact' })
         .eq('business_id', activeBusinessId)
-        .order('created_at', { ascending: false })
-        .limit(500);
+        .order('created_at', { ascending: false });
+      if (catFilter !== 'all') query = query.eq('category', catFilter);
+      if (actionFilter !== 'all') query = query.eq('action', actionFilter);
+      if (dateFrom) query = query.gte('created_at', `${dateFrom}T00:00:00`);
+      if (dateTo) query = query.lte('created_at', `${dateTo}T23:59:59.999`);
+      const cleanedSearch = search.trim().replace(/[,%()]/g, ' ');
+      if (cleanedSearch) {
+        query = query.or(`description.ilike.%${cleanedSearch}%,user_name.ilike.%${cleanedSearch}%`);
+      }
+      const from = (page - 1) * LOGS_PER_PAGE;
+      const { data, error, count } = await query.range(from, from + LOGS_PER_PAGE - 1);
       if (!error && data) {
         const nextLogs = data as LogRow[];
         setLogs(nextLogs);
+        setTotalCount(count ?? 0);
         saveLocalCollection('user_logs', nextLogs);
       }
       setLoading(false);
-    })();
+    };
+
+    const timer = window.setTimeout(loadPage, 250);
 
     const channel = supabase
-      .channel('user_logs_rt')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'user_logs' }, (payload) => {
-        const next = payload.new as LogRow;
-        if (next.business_id === activeBusinessId) {
-          setLogs((prev) => {
-            if (prev.some((log) => log.id === next.id)) return prev;
-            return [next, ...prev].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-          });
-        }
-      })
+      .channel(`user_logs_${activeBusinessId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_logs', filter: `business_id=eq.${activeBusinessId}` }, loadPage)
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
-  }, [activeBusinessId]);
+    return () => { window.clearTimeout(timer); supabase.removeChannel(channel); };
+  }, [actionFilter, activeBusinessId, catFilter, dateFrom, dateTo, page, search]);
 
   const categoryOptions = useMemo(() => {
     const present = new Set(logs.map((log) => normalizeFilterValue(log.category)).filter(Boolean));
@@ -329,28 +337,18 @@ export default function LogsPage() {
 
   useEffect(() => {
     setExpandedId(null);
+    setPage(1);
   }, [catFilter, actionFilter, search, dateFrom, dateTo, activeBusinessId]);
 
-  const filtered = useMemo(() => logs.filter((log) => {
-    const category = normalizeFilterValue(log.category);
-    const action = normalizeFilterValue(log.action);
-    if (catFilter !== 'all' && category !== catFilter) return false;
-    if (actionFilter !== 'all' && action !== actionFilter) return false;
+  const filtered = logs;
+  const paginatedLogs = logs;
+  const totalPages = Math.max(1, Math.ceil(totalCount / LOGS_PER_PAGE));
+  const pageStart = totalCount === 0 ? 0 : (page - 1) * LOGS_PER_PAGE + 1;
+  const pageEnd = Math.min(page * LOGS_PER_PAGE, totalCount);
 
-    const q = search.trim().toLowerCase();
-    if (q) {
-      const description = log.description.toLowerCase();
-      const userName = log.user_name.toLowerCase();
-      const categoryLabel = getCategoryMeta(log.category).label.toLowerCase();
-      const actionLabel = getActionMeta(log.action).label.toLowerCase();
-      if (!description.includes(q) && !userName.includes(q) && !categoryLabel.includes(q) && !actionLabel.includes(q)) return false;
-    }
-
-    const createdAt = new Date(log.created_at).getTime();
-    if (dateFrom && createdAt < new Date(`${dateFrom}T00:00:00`).getTime()) return false;
-    if (dateTo && createdAt > new Date(`${dateTo}T23:59:59`).getTime()) return false;
-    return true;
-  }), [actionFilter, catFilter, dateFrom, dateTo, logs, search]);
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
 
   const selectCategory = (category: string) => {
     setCatFilter(category);
@@ -363,6 +361,7 @@ export default function LogsPage() {
     if (!error) {
       const nextLogs = logs.filter((log) => log.id !== logId);
       setLogs(nextLogs);
+      setTotalCount((count) => Math.max(0, count - 1));
       saveLocalCollection('user_logs', nextLogs);
     }
   };
@@ -492,7 +491,7 @@ export default function LogsPage() {
           </div>
         ) : (
           <div className="divide-y divide-slate-50">
-            {filtered.map((log) => {
+            {paginatedLogs.map((log) => {
               const catMeta    = getCategoryMeta(log.category);
               const actionMeta = getActionMeta(log.action);
               const roleMeta   = ROLE_LABELS[log.user_role as keyof typeof ROLE_LABELS];
@@ -593,10 +592,36 @@ export default function LogsPage() {
 
         {/* Footer count */}
         {!loading && filtered.length > 0 && (
-          <div className="px-5 py-3 border-t border-slate-100 bg-slate-50">
+          <div className="flex flex-col gap-3 border-t border-slate-100 bg-slate-50 px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-slate-400 text-xs">
-              Showing <strong className="text-slate-600">{filtered.length}</strong> of <strong className="text-slate-600">{logs.length}</strong> entries
+              Showing <strong className="text-slate-600">{pageStart}–{pageEnd}</strong> of{' '}
+              <strong className="text-slate-600">{totalCount}</strong> matching entries
             </p>
+            {totalPages > 1 && (
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setPage((current) => Math.max(1, current - 1))}
+                  disabled={page === 1}
+                  aria-label="Previous page"
+                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition-colors hover:border-indigo-300 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <i className="ri-arrow-left-s-line"></i>
+                </button>
+                <span className="min-w-20 text-center text-xs font-semibold text-slate-500">
+                  Page {page} of {totalPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                  disabled={page === totalPages}
+                  aria-label="Next page"
+                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition-colors hover:border-indigo-300 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <i className="ri-arrow-right-s-line"></i>
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>

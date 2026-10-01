@@ -130,12 +130,12 @@ export function useInventory() {
 
     const channel = supabase
       .channel('inventory-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory' }, () => { fetchInventory(false); })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory_categories' }, () => { fetchInventory(false); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory', filter: `business_id=eq.${activeBusinessId}` }, () => { fetchInventory(false); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory_categories', filter: `business_id=eq.${activeBusinessId}` }, () => { fetchInventory(false); })
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [fetchInventory]);
+  }, [activeBusinessId, fetchInventory]);
 
   useEffect(() => {
     const handleStockAdjusted = (event: Event) => {

@@ -10,7 +10,7 @@ const COLLECTION_ID = '__collection__';
 const ACTIVE_BUSINESS_KEY = 'bizzyapp:active-business-id';
 
 function activeBusinessScope() {
-  return localStorage.getItem(ACTIVE_BUSINESS_KEY) || 'platform';
+  return sessionStorage.getItem(ACTIVE_BUSINESS_KEY) || 'platform';
 }
 
 function storageKey(entity: string) {
@@ -40,7 +40,7 @@ export async function loadLocalCollection<T>(entity: string): Promise<T[]> {
   }
 
   try {
-    const raw = localStorage.getItem(storageKey(entity));
+    const raw = sessionStorage.getItem(storageKey(entity));
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
@@ -48,7 +48,7 @@ export async function loadLocalCollection<T>(entity: string): Promise<T[]> {
 }
 
 export async function saveLocalCollection<T>(entity: string, records: T[]) {
-  localStorage.setItem(storageKey(entity), JSON.stringify(records));
+  sessionStorage.setItem(storageKey(entity), JSON.stringify(records));
   try {
     if (isOfflineStoreAvailable()) {
       await upsertLocalRecord(scopedEntity(entity), COLLECTION_ID, records);

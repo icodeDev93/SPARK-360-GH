@@ -79,7 +79,7 @@ export function useBanks() {
 
     const channel = supabase
       .channel('banks-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'banks' }, fetchBanks)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'banks', filter: `business_id=eq.${activeBusinessId}` }, fetchBanks)
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };

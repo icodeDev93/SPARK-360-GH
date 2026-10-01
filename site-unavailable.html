@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Site Unavailable</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #f8fafc;
+        color: #0f172a;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        min-width: 320px;
+        min-height: 100vh;
+        margin: 0;
+      }
+
+      main {
+        display: grid;
+        min-height: 100vh;
+        place-items: center;
+        padding: 24px;
+        background:
+          radial-gradient(circle at top left, rgba(79, 70, 229, 0.1), transparent 34rem),
+          #f8fafc;
+      }
+
+      .card {
+        width: min(100%, 520px);
+        padding: 48px 36px;
+        text-align: center;
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 24px;
+        box-shadow: 0 24px 60px rgba(15, 23, 42, 0.1);
+      }
+
+      .icon {
+        display: grid;
+        width: 72px;
+        height: 72px;
+        margin: 0 auto 24px;
+        place-items: center;
+        color: #4f46e5;
+        background: #eef2ff;
+        border-radius: 22px;
+      }
+
+      .icon svg {
+        width: 36px;
+        height: 36px;
+      }
+
+      h1 {
+        margin: 0 0 12px;
+        font-size: clamp(1.6rem, 5vw, 2.1rem);
+        line-height: 1.2;
+        letter-spacing: -0.03em;
+      }
+
+      p {
+        margin: 0;
+        color: #64748b;
+        font-size: 1rem;
+        line-height: 1.7;
+      }
+
+      @media (max-width: 480px) {
+        .card {
+          padding: 40px 24px;
+          border-radius: 20px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="card" role="alert" aria-labelledby="unavailable-title">
+        <div class="icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5.5 16.5a7 7 0 0 1 12.9-4.2A4.5 4.5 0 0 1 18 21H7.5a5.5 5.5 0 0 1-2-10.6" />
+            <path d="m4 4 16 16" />
+          </svg>
+        </div>
+        <h1 id="unavailable-title">Unable to reach site.</h1>
+        <p>Contact the Support Team for assistance.</p>
+      </section>
+    </main>
+  </body>
+</html>
