@@ -1,0 +1,73 @@
+import{t as e}from"./react-vendor-DHJkoFBs.js";import{r as t}from"./index-CarBoUWY.js";import{n,t as r}from"./printDocument-DvZ2-TiO.js";import{t as i}from"./useSettings-DuBD6TWI.js";var a=e(),o={Cash:`Cash`,MoMo:`Mobile Money`,Cheque:`Cheque`,"Bank Transfer":`Bank Transfer`};function s(e){try{return new Date(e).toLocaleDateString(`en-US`,{month:`short`,day:`numeric`,year:`numeric`})}catch{return e}}function c({receipt:e,onClose:c}){let{settings:l}=i(),{activeBusiness:u}=t(),d=l.currencySymbol||`₵`,f=e=>`${d}${e.toLocaleString(`en-GH`,{minimumFractionDigits:2})}`,p=e.balanceLeft<=.005,m=l.storeLogo||u?.logoUrl||``,h=l.storeName||u?.businessName||`Store`,g=l.storeAddress||u?.address||``,_=l.storePhone||u?.phone||``;return(0,a.jsx)(`div`,{className:`fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4`,children:(0,a.jsxs)(`div`,{className:`bg-white rounded-2xl w-full max-w-md overflow-hidden shadow-2xl`,children:[(0,a.jsxs)(`div`,{className:`flex items-center justify-between px-6 py-4 border-b border-slate-100`,children:[(0,a.jsxs)(`div`,{className:`flex items-center gap-3`,children:[(0,a.jsx)(`div`,{className:`w-10 h-10 flex items-center justify-center bg-indigo-100 rounded-xl`,children:(0,a.jsx)(`i`,{className:`ri-receipt-line text-indigo-600 text-xl`})}),(0,a.jsxs)(`div`,{children:[(0,a.jsx)(`h2`,{className:`text-slate-800 font-bold text-base`,children:`Payment Receipt`}),(0,a.jsxs)(`p`,{className:`text-slate-400 text-xs`,children:[`Receipt #`,e.receiptNo]})]})]}),(0,a.jsx)(`button`,{onClick:c,className:`w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600`,children:(0,a.jsx)(`i`,{className:`ri-close-line text-lg`})})]}),(0,a.jsxs)(`div`,{className:`p-6`,children:[(0,a.jsxs)(`div`,{className:`border border-slate-200 rounded-xl overflow-hidden`,children:[(0,a.jsxs)(`div`,{className:`bg-indigo-600 text-white text-center px-5 py-4`,children:[m&&(0,a.jsx)(`div`,{className:`mb-2 flex justify-center`,children:(0,a.jsx)(`div`,{className:`w-12 h-12 rounded-lg bg-white overflow-hidden flex items-center justify-center`,children:(0,a.jsx)(`img`,{src:m,alt:`${h} logo`,className:`w-full h-full object-contain p-1.5`})})}),(0,a.jsx)(`p`,{className:`font-bold text-base`,children:h}),(0,a.jsx)(`p`,{className:`text-xs text-white/80 mt-0.5`,children:`Credit Payment Receipt`})]}),(0,a.jsx)(`div`,{className:`px-5 py-4 space-y-2 border-b border-dashed border-slate-200`,children:[[`Receipt No.`,e.receiptNo],[`Invoice No.`,e.invoiceNo],[`Customer`,e.customerName],[`Payment Date`,s(e.paymentDate)],[`Payment Method`,o[e.paymentMethod]],[`Recorded By`,e.cashier]].map(([e,t])=>(0,a.jsxs)(`div`,{className:`flex justify-between gap-4 text-xs`,children:[(0,a.jsx)(`span`,{className:`text-slate-400`,children:e}),(0,a.jsx)(`span`,{className:`text-slate-700 font-bold text-right`,children:t})]},e))}),(0,a.jsxs)(`div`,{className:`px-5 py-4 bg-slate-50 space-y-2`,children:[(0,a.jsxs)(`div`,{className:`flex justify-between text-xs text-slate-500`,children:[(0,a.jsx)(`span`,{children:`Invoice Total`}),(0,a.jsx)(`span`,{className:`font-mono text-slate-700`,children:f(e.invoiceTotal)})]}),(0,a.jsxs)(`div`,{className:`flex justify-between text-xs text-slate-500`,children:[(0,a.jsx)(`span`,{children:`Previously Paid`}),(0,a.jsx)(`span`,{className:`font-mono text-slate-700`,children:f(e.previousPaid)})]}),(0,a.jsxs)(`div`,{className:`flex justify-between text-sm text-emerald-600 font-bold`,children:[(0,a.jsx)(`span`,{children:`Payment Received`}),(0,a.jsx)(`span`,{className:`font-mono`,children:f(e.amountPaid)})]}),(0,a.jsxs)(`div`,{className:`flex justify-between text-xs text-slate-500`,children:[(0,a.jsx)(`span`,{children:`Total Paid`}),(0,a.jsx)(`span`,{className:`font-mono text-slate-700`,children:f(e.totalPaid)})]}),(0,a.jsxs)(`div`,{className:`flex justify-between pt-2 border-t border-slate-300`,children:[(0,a.jsx)(`span`,{className:`text-slate-800 font-bold text-sm`,children:`Balance Left`}),(0,a.jsx)(`span`,{className:`font-mono font-extrabold text-base ${p?`text-emerald-600`:`text-rose-600`}`,children:f(e.balanceLeft)})]})]})]}),(0,a.jsx)(`div`,{className:`mt-4 rounded-xl px-4 py-3 text-center text-sm font-bold ${p?`bg-emerald-50 text-emerald-700`:`bg-amber-50 text-amber-700`}`,children:p?`Invoice settled in full`:`Partial payment recorded`})]}),(0,a.jsxs)(`div`,{className:`px-6 py-4 border-t border-slate-100 flex gap-3`,children:[(0,a.jsxs)(`button`,{onClick:()=>{let t=[[`Receipt No.`,e.receiptNo],[`Invoice No.`,e.invoiceNo],[`Customer`,e.customerName],[`Invoice Date`,s(e.invoiceDate)],[`Payment Date`,s(e.paymentDate)],[`Payment Method`,o[e.paymentMethod]],[`Recorded By`,e.cashier]];n(`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Payment Receipt ${e.receiptNo}</title>
+  <style>
+    @page { size: 80mm auto; margin: 0; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 80mm; background: #fff; color: #000; }
+    body { font-family: 'Courier New', Courier, monospace; font-size: 10pt; }
+    .receipt { width: 72mm; margin: 0 auto; padding: 2mm 0 4mm; }
+    .header { text-align: center; }
+    .logo { width: 12mm; height: 12mm; object-fit: contain; display: block; margin: 0 auto 2mm; }
+    .store-name { font-size: 12pt; font-weight: 700; line-height: 1.2; }
+    .store-detail { font-size: 8pt; line-height: 1.35; }
+    .title { margin-top: 2mm; font-size: 10pt; font-weight: 700; }
+    .rule { border: 0; border-top: 1px dashed #000; margin: 2mm 0; }
+    .meta-row, .summary-row { display: flex; justify-content: space-between; gap: 3mm; margin-bottom: 1.2mm; }
+    .meta-row { font-size: 8pt; }
+    .meta-row span:last-child, .summary-row span:last-child { text-align: right; font-weight: 700; }
+    .summary-row { font-size: 10pt; }
+    .amount-paid { display: flex; justify-content: space-between; align-items: center; gap: 3mm; margin: 2mm 0; padding: 2mm; border: 2px solid #000; font-size: 17pt; font-weight: 700; line-height: 1.1; }
+    .amount-paid .label { font-size: 10pt; text-transform: uppercase; }
+    .balance { padding-top: 1.5mm; border-top: 1px solid #000; font-weight: 700; }
+    .stamp { width: fit-content; margin: 3mm auto 0; padding: 1.5mm 3mm; border: 2px solid #000; font-size: 11pt; font-weight: 700; text-align: center; }
+    .thank-you { margin-top: 3mm; font-size: 9pt; font-weight: 700; text-align: center; }
+    .footer { margin-top: 1.5mm; font-size: 8pt; line-height: 1.35; text-align: center; }
+  </style>
+</head>
+<body>
+  <main class="receipt">
+    <header class="header">
+      ${m?`<img class="logo" src="${r(m)}" alt="${r(h)} logo">`:``}
+      <div class="store-name">${r(h)}</div>
+      ${g?`<div class="store-detail">${r(g)}</div>`:``}
+      ${_?`<div class="store-detail">${r(_)}</div>`:``}
+      <div class="title">PAYMENT RECEIPT</div>
+    </header>
+    <hr class="rule">
+    <section>
+    ${t.map(([e,t])=>`
+      <div class="meta-row">
+        <span>${e}</span>
+        <span>${r(t)}</span>
+      </div>
+    `).join(``)}
+    </section>
+    <hr class="rule">
+    <section>
+    <div class="summary-row">
+      <span>Invoice Total</span><span>${f(e.invoiceTotal)}</span>
+    </div>
+    <div class="summary-row">
+      <span>Previously Paid</span><span>${f(e.previousPaid)}</span>
+    </div>
+    <div class="amount-paid">
+      <span class="label">Amount Paid</span><span>${f(e.amountPaid)}</span>
+    </div>
+    <div class="summary-row">
+      <span>Total Paid</span><span>${f(e.totalPaid)}</span>
+    </div>
+    <div class="summary-row balance">
+      <span>BALANCE LEFT</span><span>${f(e.balanceLeft)}</span>
+    </div>
+    </section>
+    <div class="stamp">
+      ${p?`*** SETTLED ***`:`*** PARTIAL PAYMENT ***`}
+    </div>
+    <p class="thank-you">Thank you!</p>
+    ${l.receiptFooter?`<p class="footer">${r(l.receiptFooter)}</p>`:``}
+  </main>
+</body>
+</html>`,{title:`Payment Receipt ${e.receiptNo}`,windowFeatures:`width=360,height=720`,autoClose:!1})},className:`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border border-slate-200 text-slate-700 font-semibold text-sm hover:bg-slate-50 transition-all cursor-pointer`,children:[(0,a.jsx)(`i`,{className:`ri-printer-line text-base`}),`Print Receipt`]}),(0,a.jsx)(`button`,{onClick:c,className:`flex-1 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm transition-all cursor-pointer`,children:`Done`})]})]})})}export{c as t};

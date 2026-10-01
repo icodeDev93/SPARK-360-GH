@@ -1,1 +1,0 @@
-import{a as e}from"./rolldown-runtime-BYbx6iT9.js";import{d as t}from"./react-vendor-DHJkoFBs.js";import{t as n}from"./index-CpRR1eqq.js";var r=e(t(),1);function i(){let e=(0,r.useContext)(n);if(!e)throw Error(`useFeedbackModal must be used within FeedbackModalProvider`);return e}export{i as t};
